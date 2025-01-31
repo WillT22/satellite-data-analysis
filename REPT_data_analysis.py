@@ -2,6 +2,7 @@ from spacepy import pycdf
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import colors
+import os
 import glob
 
 textsize = 16
@@ -15,37 +16,63 @@ ephemeris_path = "C:/Users/wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm
 cdf_file_paths = glob.glob(folder_path + "*.cdf") 
 ephem_file_paths = glob.glob(ephemeris_path + "*.cdf")
 
-# Initialize empty lists to store data from all files
-Epoch = []
-L = []
-FESA = None
+# Initialize empty dictionaries to store data from all files (separate for A and B)
+Epoch_A = []
+L_A = []
+FESA_A = None
+
+Epoch_B = []
+L_B = []
+FESA_B = None
 
 for file_path in cdf_file_paths:
-    print(f"Processing file: {file_path}")
+    # Extract filename without path
+    file_name = os.path.basename(file_path)
+    print(f"Processing file: {file_name}")
     # Load the CDF data
     cdf_data = pycdf.CDF(file_path)
 
-    # Append data to lists
-    Epoch.extend(cdf_data["Epoch"][:])
-    L.extend(cdf_data["L"][:])
-
-    # Check if FESA is None (first iteration)
-    if FESA is None:
-        # If first iteration, directly assign FESA
-        FESA = cdf_data["FESA"][:]
-        energy_channels = cdf_data["FESA_Energy"][:]
+    # Separate data based on filename prefix
+    if file_name.startswith("rbspa"):
+        # Store data in A variables
+        Epoch_A.extend(cdf_data["Epoch"][:])
+        L_A.extend(cdf_data["L"][:])
+        if FESA_A is None:
+            FESA_A = cdf_data["FESA"][:]
+            energy_channels = cdf_data["FESA_Energy"][:]
+        else:
+            FESA_A = np.vstack((FESA_A, cdf_data["FESA"][:]))
     else:
-        # For subsequent iterations, stack vertically
-        FESA = np.vstack((FESA, cdf_data["FESA"][:]))
-        
+        # Store data in B variables
+        Epoch_B.extend(cdf_data["Epoch"][:])
+        L_B.extend(cdf_data["L"][:])
+        if FESA_B is None:
+            FESA_B = cdf_data["FESA"][:]
+            energy_channels = cdf_data["FESA_Energy"][:]
+        else:
+            FESA_B = np.vstack((FESA_B, cdf_data["FESA"][:]))
     cdf_data.close()
 
+# Handle cases where only A or B data is present (check which lists are not empty)
+if not Epoch_A and not L_A and not FESA_A:
+    print("No RBSPA data found in the folder.")
+if not Epoch_B and not L_B and not FESA_B:
+    print("No RBSPB data found in the folder.")
+    
 # Calculate minimum and maximum FESA values across all channels
 # divide by 1000 for keV to compare to Zhao 2018
-fesa_min = np.min(FESA/1000)
+if FESA_A is not None and FESA_B is not None:
+    fesa_min = np.min(np.vstack((FESA_A/1000, FESA_B/1000)))
+    fesa_max = np.max(np.vstack((FESA_A/1000, FESA_B/1000)))
+elif FESA_A is not None:
+    fesa_min = np.min(FESA_A/1000)
+    fesa_max = np.max(FESA_A/1000)
+elif FESA_B is not None:
+    fesa_min = np.min(FESA_B/1000)
+    fesa_max = np.max(FESA_B/1000)
 if fesa_min<1:
     fesa_min = 1
-norm = colors.LogNorm(vmin=fesa_min, vmax= np.max(FESA/1000))
+norm = colors.LogNorm(vmin=fesa_min, vmax= fesa_max)
 
 # Create a custom colormap based on 'nipy_spectral'
 cmap = plt.get_cmap('nipy_spectral') 
@@ -61,7 +88,10 @@ fig, axes = plt.subplots(len(energy_channels), 1, figsize=(16, 40), sharex=True)
 for i, ax in enumerate(axes.flat):
   # Create the scatter plot on the current subplot
   # divide by 1000 for keV to compare to Zhao 2018
-  subplot = ax.scatter(Epoch, L, c=FESA[:, i]/1000, cmap=custom_cmap, norm=norm)
+  if FESA_A is not None:
+      subplot = ax.scatter(Epoch_A, L_A, c=FESA_A[:, i]/1000, cmap=custom_cmap, norm=norm)
+  if FESA_B is not None:
+      subplot = ax.scatter(Epoch_B, L_B, c=FESA_B[:, i]/1000, cmap=custom_cmap, norm=norm)
 
   # Add labels and title
   ax.set_ylabel('L', fontsize=textsize)
