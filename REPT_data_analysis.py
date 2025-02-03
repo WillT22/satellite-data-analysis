@@ -8,8 +8,8 @@ import glob
 textsize = 16
 
 # Folder containing CDF files
-folder_path = "C:/Users/wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/"
-ephemeris_path = "C:/Users/wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/ephemeris"
+folder_path = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/"
+ephemeris_path = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/ephemeris/"
 
 # Get all CDF file paths in the folder
 #cdf_file_paths = glob.glob(folder_path + "rbspa*[!r]*.cdf") 
@@ -74,13 +74,85 @@ if fesa_min<1:
     fesa_min = 1
 norm = colors.LogNorm(vmin=fesa_min, vmax= fesa_max)
 
-# Create a custom colormap based on 'nipy_spectral'
+'''
+Interpolate Lm_eq from ephemeris data
+'''
+
+Epoch_ephem_A = []
+Lm_eq_A = []
+Epoch_ephem_B = []
+Lm_eq_B = []
+
+# Read in RBPS data
+for file_path in enumerate(ephem_file_paths):
+    # Extract filename without path
+    file_name = os.path.basename(file_path)
+    print(f"Processing file: {file_name}")
+    # Load the CDF data
+    ephem_data = pycdf.CDF(file_path)
+    
+    Epoch_ephem = ephem_data['Epoch'][:]
+    Lm_eq = ephem_data['Lm_eq'][:]
+    
+    # Separate data based on filename prefix
+    if file_name.startswith("rbsp-a"):
+        # Store data in A variables
+        if f < len(ephem_file_paths) - 1:  # Exclude the last file for Epoch_ephem_A and Lm_eq_A
+            Epoch_ephem_A.extend(ephem_data['Epoch'][:-1]) 
+            Lm_eq_A.extend(ephem_data['Lm_eq'][:-1])
+        else:
+            Epoch_ephem_A.extend(ephem_data['Epoch'][:])
+            Lm_eq_A.extend(ephem_data['Lm_eq'][:])
+    elif file_name.startswith("rbsp-b"):
+        # Store data in A variables
+        if f < len(ephem_file_paths) - 1:  # Exclude the last file for Epoch_ephem_A and Lm_eq_A
+            Epoch_ephem_B.extend(ephem_data['Epoch'][:-1]) 
+            Lm_eq_B.extend(ephem_data['Lm_eq'][:-1])
+        else:
+            Epoch_ephem_B.extend(ephem_data['Epoch'][:])
+            Lm_eq_B.extend(ephem_data['Lm_eq'][:])
+    ephem_data.close()
+
+# Interpolate for RBSP-A data
+if Epoch_ephem_A != []:
+    for t in range(len(Epoch_ephem_A)-1):
+        #t1 = Epoch_ephem[t]                 #t2 = Epoch_ephem[t+1]
+        #Lm_p1 = Lm_eq[t]                    #Lm_p2 = Lm_eq[t+1]
+        # Calculate change in time between two points
+        delta_t = Epoch_ephem_A[t+1]-Epoch_ephem_A[t]
+        # Calculate slope of linear equations (convert time delta to float)
+        m = (Lm_eq_A[t+1]-Lm_eq_A[t])/delta_t.total_seconds()
+        
+        # Caulcuate time since first point (set first point to t=0)
+        time_since_start = Epoch_ephem_A[t]-Epoch_ephem_A[0]
+        # Calculate y-int of linear equations (convert time delta to float)
+        b = Lm_eq_A[t] - m * time_since_start.total_seconds()
+'''
+# Interpolate for RBSP-B data
+if Epoch_ephem_B != []:
+    for t in range(len(Epoch_ephem_B)-1):
+        #t1 = Epoch_ephem[t]                 #t2 = Epoch_ephem[t+1]
+        #Lm_p1 = Lm_eq[t]                    #Lm_p2 = Lm_eq[t+1]
+        # Calculate change in time between two points
+        delta_t = Epoch_ephem_B[t+1]-Epoch_ephem_B[t]
+        # Calculate slope of linear equations (convert time delta to float)
+        m = (Lm_eq_B[t+1]-Lm_eq_B[t])/delta_t.total_seconds()
+        
+        # Caulcuate time since first point (set first point to t=0)
+        time_since_start = Epoch_ephem_B[t]-Epoch_ephem_B[0]
+        # Calculate y-int of linear equations (convert time delta to float)
+        b = Lm_eq_B[t] - m * time_since_start.total_seconds()
+'''
+'''
+Plot RBSP Flux Data with ephemeris Lm_eq
+'''
+# Create a custom colormap based on 'nipy_spectral' to match with IDL rainbow
 cmap = plt.get_cmap('nipy_spectral') 
 new_cmap = cmap(np.linspace(0, 0.875, 256))  # Use only the first 87.5% of the colormap
 
 # Create a new colormap object
 custom_cmap = colors.ListedColormap(new_cmap)
-
+'''
 # Create the figure with subplots
 fig, axes = plt.subplots(len(energy_channels), 1, figsize=(16, 40), sharex=True)
 
@@ -120,3 +192,4 @@ cbar.ax.tick_params(labelsize=textsize)
 
 # Show the plot
 plt.show()
+'''
