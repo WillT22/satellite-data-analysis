@@ -1,9 +1,12 @@
 from spacepy import pycdf
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import os
 import glob
+from datetime import datetime, timedelta
+import math
 
 textsize = 16
 
@@ -64,24 +67,6 @@ else:
     elif Epoch_B:
         min_epoch = min(Epoch_B)
         max_epoch = max(Epoch_B)
-    else:
-        min_epoch = None
-        max_epoch = None
-    
-# Calculate minimum and maximum FESA values across all channels
-# divide by 1000 for keV to compare to Zhao 2018
-if FESA_A is not None and FESA_B is not None:
-    fesa_min = np.min(np.vstack((FESA_A/1000, FESA_B/1000)))
-    fesa_max = np.max(np.vstack((FESA_A/1000, FESA_B/1000)))
-elif FESA_A is not None:
-    fesa_min = np.min(FESA_A/1000)
-    fesa_max = np.max(FESA_A/1000)
-elif FESA_B is not None:
-    fesa_min = np.min(FESA_B/1000)
-    fesa_max = np.max(FESA_B/1000)
-if fesa_min<1:
-    fesa_min = 1
-norm = colors.LogNorm(vmin=fesa_min, vmax= fesa_max)
 
 '''
 Interpolate Lm_eq from ephemeris data
@@ -134,43 +119,54 @@ new_cmap = cmap(np.linspace(0, 0.875, 256))  # Use only the first 87.5% of the c
 custom_cmap = colors.ListedColormap(new_cmap)
 
 # Create the figure with subplots
-fig, axes = plt.subplots(len(energy_channels_A), 1, figsize=(16, 40), sharex=True)
+fig, axes = plt.subplots(len(energy_channels_A), 1, figsize=(20, 40), sharex=True)
 
 # Loop through each energy channel
 for i, ax in enumerate(axes.flat):
   # Create the scatter plot on the current subplot
   # divide by 1000 for keV to compare to Zhao 2018
   if FESA_A is not None:
-      subplot = ax.scatter(Epoch_A, Lm_eq_A_interp, c=FESA_A[:, i]/1000, cmap=custom_cmap, norm=norm)
+      subplot_A = ax.scatter(Epoch_A, Lm_eq_A_interp, c=FESA_A[:, i]/1000, cmap=custom_cmap, norm=colors.LogNorm())
+      # Set colorbar limits to 5 orders of magnitude
+      vmin_A, vmax_A = subplot_A.get_clim() 
   if FESA_B is not None:
-      subplot = ax.scatter(Epoch_B, Lm_eq_B_interp, c=FESA_B[:, i]/1000, cmap=custom_cmap, norm=norm)
+      subplot_B = ax.scatter(Epoch_B, Lm_eq_B_interp, c=FESA_B[:, i]/1000, cmap=custom_cmap, norm=colors.LogNorm())
+      # Set colorbar limits to 5 orders of magnitude
+      vmin_B, vmax_B = subplot_B.get_clim() 
 
   # Add labels and title
   ax.set_ylabel('L', fontsize=textsize)
   ax.set_title(f'RBSP REPT {energy_channels_A[i]:.2f} MeV Electron Spin-Averaged Flux', fontsize=textsize)
-  if min_epoch is not None and max_epoch is not None:
-        ax.set_xlim(min_epoch, max_epoch) 
+  # Force labels for first and last x-axis tick marks 
+  min_epoch = datetime(1970, 1, 1) + timedelta(hours=math.floor((min_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+  max_epoch = datetime(1970, 1, 1) + timedelta(hours=math.ceil((max_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+  ax.set_xlim(min_epoch, max_epoch) 
+  # Set time labels every 12 hours
+  ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12) )
+  ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H')) 
   ax.tick_params(axis='both', which='major', labelsize=textsize)
   ax.set_yticks(np.arange(2, 8, 1))  # Set ticks from 2 to 7 with interval 1
   ax.set_ylim(2, 7)
   ax.grid(True)
+  
+  cbar = plt.colorbar(subplot_A, ax=ax, shrink=0.9)  # Adjust shrink as needed
+  vmax = 10**math.ceil(math.log10(max(vmax_A,vmax_B)))
+  vmin = vmax/10**4
+  subplot_A.set_clim(vmin, vmax) 
+  subplot_B.set_clim(vmin, vmax) 
+  cbar.set_ticks(np.logspace(np.log10(vmin), np.log10(vmax), num=5))
+  # Flux is in (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ keV$^{-1}$)
+  cbar.set_label(label = 'Flux', fontsize=textsize)
+  cbar.ax.tick_params(labelsize=textsize)
 
 # Add x-axis label for last plot
 ax.set_xlabel('UTC', fontsize=textsize)
-fig.suptitle('April 21-26, 2017 RBSP-B REPT Data', fontsize=textsize+4, y=0.9)
+fig.suptitle('April 21-26, 2017 RBSP REPT Data', fontsize=textsize+4, y=0.9)
 
 # Remove extra subplots if there aren't enough energy channels
 if len(energy_channels_A) < len(axes.flat):
   for ax in axes.flat[len(energy_channels_A):]:
     fig.delaxes(ax)
-
-# Create a single colorbar outside the loop for efficiency
-fig.subplots_adjust(right=0.9)
-cbar_ax = fig.add_axes([0.95, 0.15, 0.02, 0.7])
-cbar = fig.colorbar(subplot, cax=cbar_ax, label='Flux')
-# divide by 1000 for keV to compare to Zhao 2018
-cbar.set_label(label = 'Flux 'r"(cm$^{-2}$ s$^{-1}$ sr$^{-1}$ keV$^{-1}$)", fontsize=textsize)
-cbar.ax.tick_params(labelsize=textsize) 
 
 # Show the plot
 plt.show()
