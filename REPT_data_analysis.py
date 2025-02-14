@@ -1,16 +1,20 @@
 from spacepy import pycdf
 import numpy as np
+import os
+import glob
+# Plotting
+from datetime import datetime, timedelta
+import math
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import colors
-import os
-import glob
-from datetime import datetime, timedelta
-import math
+# Time conversion
+from spacepy.time import Ticktock
+import spacepy.coordinates as coords
 
 textsize = 16
 
-# Folder containing CDF files
+#%% Folder containing CDF files
 folder_path = "C:/Users/wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/"
 ephemeris_path = "C:/Users/wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/ephemeris/"
 
@@ -23,10 +27,11 @@ ephem_file_paths_A = glob.glob(ephemeris_path + "rbsp-a*[!r]*.cdf")
 ephem_file_paths_B = glob.glob(ephemeris_path + "rbsp-b*[!r]*.cdf")
 
 
-# Function for reading in RBSP flux data
+#%% Function for reading in RBSP flux data
 def process_flux_data(file_paths):
     Epoch = []
     L = []
+    Position = []
     FESA = None
     for file_path in file_paths:
         # Extract filename without path
@@ -37,17 +42,18 @@ def process_flux_data(file_paths):
 
         Epoch.extend(cdf_data["Epoch"][:])
         L.extend(cdf_data["L"][:])
+        Position.extend(cdf_data["Position"][:])
         if FESA is None:
             FESA = cdf_data["FESA"][:]
             energy_channels = cdf_data["FESA_Energy"][:]
         else:
                 FESA = np.vstack((FESA, cdf_data["FESA"][:]))
         cdf_data.close()
-    return Epoch, L, FESA, energy_channels
+    return Epoch, L, Position, FESA, energy_channels
 
 print("Processing Flux Data:")
-Epoch_A, L_A, FESA_A, energy_channels_A = process_flux_data(cdf_file_paths_A)
-Epoch_B, L_B, FESA_B, energy_channels_B = process_flux_data(cdf_file_paths_B)
+Epoch_A, L_A, Position_A, FESA_A, energy_channels_A = process_flux_data(cdf_file_paths_A)
+Epoch_B, L_B, Position_B, FESA_B, energy_channels_B = process_flux_data(cdf_file_paths_B)
 
 # Handle cases where only A or B data is present (check which lists are not empty)
 if not Epoch_A and not L_A and not FESA_A:
@@ -68,9 +74,7 @@ else:
         min_epoch = min(Epoch_B)
         max_epoch = max(Epoch_B)
 
-'''
-Interpolate Lm_eq from ephemeris data
-'''
+#%% Interpolate Lm_eq from ephemeris data
 # Function for reading in RBSP ephemeris data
 def process_ephem_data(ephem_file_paths):
     Epoch_ephem = []
@@ -107,8 +111,7 @@ Lm_eq_A_interp = interpolate_Lm_eq(Epoch_A, Epoch_ephem_A, Lm_eq_A)
 Lm_eq_B_interp = interpolate_Lm_eq(Epoch_B, Epoch_ephem_B, Lm_eq_B)
 
 
-'''
-Plot RBSP Flux Data with ephemeris Lm_eq
+#%%Plot RBSP Flux Data with ephemeris Lm_eq
 '''
 print("Plotting Data:")
 # Create a custom colormap based on 'nipy_spectral' to match with IDL rainbow
@@ -149,7 +152,7 @@ for i, ax in enumerate(axes.flat):
   ax.set_ylim(2, 7)
   ax.grid(True)
   
-  cbar = plt.colorbar(subplot_A, ax=ax, shrink=0.9)  # Adjust shrink as needed
+  cbar = plt.colorbar(subplot_A, ax=ax, shrink=0.9, pad=0.01)  # Adjust shrink as needed
   vmax = 10**math.ceil(math.log10(max(vmax_A,vmax_B)))
   vmin = vmax/10**4
   subplot_A.set_clim(vmin, vmax) 
@@ -170,3 +173,24 @@ if len(energy_channels_A) < len(axes.flat):
 
 # Show the plot
 plt.show()
+'''
+
+#%% GEO to GSM
+'''
+def geo_to_gsm(epoch, position):
+    # assumes UTC time
+    epoch_ticks = Ticktock(epoch, 'UTC') 
+    geo_coords = coords.Coords(position, 'GEO', 'car', ticks=epoch_ticks)
+    
+    # Convert to GSM coordinates
+    gsm_coords = geo_coords.convert('GSM','car') 
+    
+    # Extract GSM coordinates as a NumPy array
+    gsm_position = gsm_coords.data
+    return gsm_position
+print("Converting from GEO to GSM:")
+print("Processing RBPS-A")
+gsm_A = geo_to_gsm(Epoch_A, Position_A)
+print("Processing RBPS-B")
+gsm_B = geo_to_gsm(Epoch_B, Position_B)
+'''
