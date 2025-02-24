@@ -15,8 +15,8 @@ import spacepy.coordinates as coords
 textsize = 16
 
 #%% Folder containing CDF files
-folder_path = "C:/Users/wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/"
-ephemeris_path = "C:/Users/wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/ephemeris/"
+folder_path = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/"
+ephemeris_path = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/ephemeris/"
 
 # Get all CDF file paths in the folder
 #cdf_file_paths = glob.glob(folder_path + "*.cdf") 
