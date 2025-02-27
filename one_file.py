@@ -18,7 +18,7 @@ textsize = 16
 #l2
 #file_path = "C:/Users/wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/l2/rbspa_rel03_ect-rept-sci-l2_20170421_v5.4.0.cdf"
 #l3
-file_path = "C:/Users/wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/l3/rbspa_rel03_ect-rept-sci-l3_20170421_v5.6.0.cdf"
+file_path = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/l3/rbspa_rel03_ect-rept-sci-l3_20170421_v5.6.0.cdf"
 cdf_data = pycdf.CDF(file_path)
 #print(cdf_data)
 Epoch = cdf_data['Epoch'][:]
@@ -37,7 +37,7 @@ cdf_data.close()
 Re = 6378.137
 Position = Position / Re
 
-ephemeris_path = "C:/Users/wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/ephemeris/rbsp-a_mag-ephem_def-1min-t89d_20170421_v01.cdf"
+ephemeris_path = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/ephemeris/rbsp-a_mag-ephem_def-1min-t89d_20170421_v01.cdf"
 ephem_data = pycdf.CDF(ephemeris_path)
 #print(ephem_data)
 Epoch_ephem = ephem_data['Epoch'][:]
@@ -59,12 +59,12 @@ Lstar = np.zeros((len(Epoch)))
 MLT = np.zeros((len(Epoch)))
 Xj = np.zeros((len(Epoch)))
 
-#Bmin = np.zeros((len(Epoch)-1, len(alpha)))
-#Bmirr = np.zeros((len(Epoch)-1, len(alpha)))
-#Lm = np.zeros((len(Epoch)-1, len(alpha)))
-#Lstar = np.zeros((len(Epoch)-1, len(alpha)))
-#MLT = np.zeros((len(Epoch)-1, len(alpha)))
-#Xj = np.zeros((len(Epoch)-1, len(alpha)))
+#Bmin = np.zeros((len(Epoch), len(alpha)))
+#Bmirr = np.zeros((len(Epoch), len(alpha)))
+#Lm = np.zeros((len(Epoch), len(alpha)))
+#Lstar = np.zeros((len(Epoch), len(alpha)))
+#MLT = np.zeros((len(Epoch), len(alpha)))
+#Xj = np.zeros((len(Epoch), len(alpha)))
 
 print("Converting Time")
 time = Ticktock(Epoch, 'UTC')
@@ -103,10 +103,10 @@ for cdf_key, mag_key in mag_key_mapping.items():
 #keys = ["Bmin", "Bmirr", "Lm", "MLT", "Xj"]
 
 #print("Calculating L*")
-#results = irbem.get_Lstar(time, position, alpha=alpha, extMag='T89', omnivals=omnivals_refined)
-#keys = ["Bmin", "Bmirr", "Lm", "Lstar", "MLT", "Xj"]
-#for j, key in enumerate(keys):
-#    locals()[key] = results[key]
+results = irbem.get_Lstar(time, position, alpha=alpha, extMag='T89', omnivals=omnivals_refined)
+keys = ["Bmin", "Bmirr", "Lm", "Lstar", "MLT", "Xj"]
+for j, key in enumerate(keys):
+    locals()[key] = results[key]
 
 # Create the scatter plot
 #plt.scatter(Epoch[0:100], Lstar[0:100,1]) 
@@ -143,7 +143,7 @@ fig.autofmt_xdate()
 plt.show()
 
 fig, ax = plt.subplots()  
-ax.scatter(Lstar_interp/max(Lstar_interp), Lstar/max(Lstar), s=2, color = 'black')
+ax.scatter(Lstar_interp, Lstar, s=2, color = 'black')
 ax.plot([0, 1], [0, 1], color='red', linestyle='--')
 ax.set_xlim(0, 1)
 ax.set_ylim(0, 1)
