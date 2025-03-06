@@ -14,6 +14,7 @@ from spacepy.time import Ticktock
 from spacepy.coordinates import Coords
 import spacepy.omni as omni
 import spacepy.irbempy as irbem
+import scipy.constants as sc
 
 # Import the latest version of OMNI data
 #tb.update(omni2=True)
@@ -25,11 +26,11 @@ Re = 6378.137 #Earth's Radius
 # Start main class
 if __name__ == '__main__':
 #%% Folder containing CDF files
-    folder_path = "C:/Users/wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/l2/"
+    folder_path = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/l2/"
     if not os.path.exists(folder_path):
         raise FileNotFoundError(f"Error: Folder path not found: {folder_path}")
     
-    ephemeris_path = "C:/Users/wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/ephemeris/"
+    ephemeris_path = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/ephemeris/"
     if not os.path.exists(ephemeris_path):
         raise FileNotFoundError(f"Error: Ephemeris path not found: {ephemeris_path}")
     
@@ -176,11 +177,7 @@ if __name__ == '__main__':
     omnivals_refined = {}
     mag_key_unused = ['G1', 'G2', 'G3', 'W1', 'W2', 'W3', 'W4', 'W5', 'W6']
     
-    def IRBEM_Lstar(Epoch, Position, alpha, extMag ='0'):
-        alpha = np.atleast_1d(alpha)  # Ensure alpha is an array
-        time = Ticktock(Epoch, 'UTC')
-        position = Coords(Position, 'GEO', 'car')
-        
+    def get_Omni(time, position):      
         for key in mag_key_unused:
             omnivals_refined[key] = np.full(len(time), np.nan)
         omnivals=omni.get_omni(time, dbase='OMNI2hourly')
@@ -190,17 +187,40 @@ if __name__ == '__main__':
                 omnivals_refined[mag_key] = omnivals[cdf_key][:].copy()
             else:
                 print(f"Warning: Key '{cdf_key}' not found in CDF data. Skipping.")
-                
-        results = irbem.get_Lstar(time, position, alpha=alpha, extMag=extMag, omnivals=omnivals_refined)
-        Bmin, Bmirr, Lm, Lstar, MLT, Xj = results["Bmin"], results["Bmirr"], results["Lm"], results["Lstar"], results["MLT"], results["Xj"]
-        #return results
-        return Bmin, Bmirr, Lm, Lstar, MLT, Xj
+        return omnivals_refined
+    
+    time_A = Ticktock(Epoch_A[0:99], 'UTC')
+    time_B = Ticktock(Epoch_B[0:99], 'UTC')
+    position_A = Coords(Position_A[0:99,:], 'GEO', 'car')
+    position_B = Coords(Position_B[0:99,:], 'GEO', 'car')
+    alpha = 40
+    alpha = np.atleast_1d(alpha)  # Ensure alpha is an array
+    extMag = 'T89'
+    omnivals_refined_A = get_Omni(Epoch_A, Position_A)
+    omnivals_refined_B = get_Omni(Epoch_B, Position_B)
+    
+    electron_mass_mev = sc.electron_mass / (1e6 * sc.electron_volt)
+    print("Calculating Mu (RBSP-A)")
+    B_A = irbem.get_Bfield(time_A, position_A, extMag=extMag, omnivals=omnivals_refined_A)
+    Blocal_A, Bvec_A = B_A["Blocal"], B_A["Bvec"]
+    energy_grid, alpha_grid, blocal_grid = np.meshgrid(energy_channels_A, np.deg2rad(alpha_ephem_A), Blocal_A*1e-5, indexing='ij')
+    Mu_A = (energy_grid**2 + 2 * energy_grid * electron_mass_mev * sc.c**2) * np.sin(alpha_grid)**2 / (2 * electron_mass_mev * sc.c**2 * blocal_grid)
+    #Mu_A = (energy_channels_A^2+2*energy_channels_A*sc.electron_mass*sc.c^2)*np.sin(alpha)/(2*sc.electron_mass*sc.c^2*Blocal_A) 
+    
+    print("Calculating Mu (RBSP-B)")
+    B_B = irbem.get_Bfield(time_B, position_B, extMag=extMag, omnivals=omnivals_refined_B)
+    Blocal_B, Bvec_B = B_B["Blocal"], B_B["Bvec"]
+    energy_grid, alpha_grid, blocal_grid = np.meshgrid(energy_channels_B, np.deg2rad(alpha_ephem_B), Blocal_B*1e-5, indexing='ij')
+    Mu_B = (energy_grid**2 + 2 * energy_grid * electron_mass_mev * sc.c**2) * np.sin(alpha_grid)**2 / (2 * electron_mass_mev * sc.c**2 * blocal_grid)
+
     
     print("Calculating L* (RBSP-A)")
-    Bmin_A, Bmirr_A, Lm_A, Lstar_A, MLT_A, Xj_A = IRBEM_Lstar(Epoch_A, Position_A, alpha = 40, extMag='T89')
+    results_A = irbem.get_Lstar(time_A, position_A, alpha=alpha, extMag=extMag, omnivals=omnivals_refined_A)
+    Bmin_A, Bmirr_A, Lm_A, Lstar_A, MLT_A, Xj_A = results_A["Bmin"], results_A["Bmirr"], results_A["Lm"], results_A["Lstar"], results_A["MLT"], results_A["Xj"]
     #results = irbem.get_Lstar(Ticktock(Epoch_A[0:99], 'UTC'), Coords(Position_A[0:99,:], 'GEO', 'car'), alpha=40, extMag='T89', omnivals=omnivals_refined)
     print("Calculating L* (RBSP-B)")
-    Bmin_B, Bmirr_B, Lm_B, Lstar_B, MLT_B, Xj_B = IRBEM_Lstar(Epoch_B, Position_B, alpha = 40, extMag='T89')
+    results_B = irbem.get_Lstar(time_A, position_A, alpha=alpha, extMag=extMag, omnivals=omnivals_refined_B)
+    Bmin_B, Bmirr_B, Lm_B, Lstar_B, MLT_B, Xj_B = results_B["Bmin"], results_B["Bmirr"], results_B["Lm"], results_B["Lstar"], results_B["MLT"], results_B["Xj"]
 
     '''
     # Plot ephemeris file data and calculated L* data for RBSP A&B

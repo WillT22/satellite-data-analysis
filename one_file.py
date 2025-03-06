@@ -103,10 +103,10 @@ for cdf_key, mag_key in mag_key_mapping.items():
 #keys = ["Bmin", "Bmirr", "Lm", "MLT", "Xj"]
 
 #print("Calculating L*")
-results = irbem.get_Lstar(time, position, alpha=alpha, extMag='T89', omnivals=omnivals_refined)
-keys = ["Bmin", "Bmirr", "Lm", "Lstar", "MLT", "Xj"]
-for j, key in enumerate(keys):
-    locals()[key] = results[key]
+#results = irbem.get_Lstar(time, position, alpha=alpha, extMag='T89', omnivals=omnivals_refined)
+#keys = ["Bmin", "Bmirr", "Lm", "Lstar", "MLT", "Xj"]
+#for j, key in enumerate(keys):
+#    locals()[key] = results[key]
 
 # Create the scatter plot
 #plt.scatter(Epoch[0:100], Lstar[0:100,1]) 
