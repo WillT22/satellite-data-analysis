@@ -1,42 +1,50 @@
 #%% Import and Initialize
-from spacepy import pycdf, toolbox as tb
+from spacepy import pycdf
 import numpy as np
 import os
 import glob
+import scipy.constants as sc
+# Time conversion & IRBEM
+from spacepy.time import Ticktock
+from spacepy.coordinates import Coords
+import spacepy.omni as omni
+import spacepy.irbempy as irbem
 # Plotting
 from datetime import datetime, timedelta
 import math
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import colors
-# Time conversion
-from spacepy.time import Ticktock
-from spacepy.coordinates import Coords
-import spacepy.omni as omni
-import spacepy.irbempy as irbem
-import scipy.constants as sc
 
 # Import the latest version of OMNI data
+#from spacepy import toolbox as tb
 #tb.update(omni2=True)
 
 # Initialize global variables
 textsize = 16
 Re = 6378.137 #Earth's Radius
+Mu_select = 4000
+K_select = 0.10
 
 # Start main class
 if __name__ == '__main__':
 #%% Folder containing CDF files
-    folder_path = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/l2/"
-    if not os.path.exists(folder_path):
-        raise FileNotFoundError(f"Error: Folder path not found: {folder_path}")
+    folder_path_l2 = "C:/Users/Wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/l2/"
+    if not os.path.exists(folder_path_l2):
+        raise FileNotFoundError(f"Error: Folder path not found: {folder_path_l2}")
+    folder_path_l3 = "C:/Users/wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/l3/"
+    if not os.path.exists(folder_path_l3):
+        raise FileNotFoundError(f"Error: Folder path not found: {folder_path_l3}")
     
-    ephemeris_path = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/ephemeris/"
+    ephemeris_path = "C:/Users/wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/ephemeris/"
     if not os.path.exists(ephemeris_path):
         raise FileNotFoundError(f"Error: Ephemeris path not found: {ephemeris_path}")
     
     # Get all CDF file paths in the folder
-    cdf_file_paths_A = glob.glob(folder_path + "rbspa*[!r]*.cdf") 
-    cdf_file_paths_B = glob.glob(folder_path + "rbspb*[!r]*.cdf") 
+    file_paths_l2_A = glob.glob(folder_path_l2 + "rbspa*[!r]*.cdf") 
+    file_paths_l2_B = glob.glob(folder_path_l2 + "rbspb*[!r]*.cdf") 
+    file_paths_l3_A = glob.glob(folder_path_l3 + "rbspa*[!r]*.cdf") 
+    file_paths_l3_B = glob.glob(folder_path_l3 + "rbspb*[!r]*.cdf") 
     ephem_file_paths_A = glob.glob(ephemeris_path + "rbsp-a*[!r]*.cdf")
     ephem_file_paths_B = glob.glob(ephemeris_path + "rbsp-b*[!r]*.cdf")
     
@@ -66,17 +74,19 @@ if __name__ == '__main__':
                 energy_channels = cdf_data["FEDU_Energy"][:]
             else:
                 FEDU = np.vstack((FEDU, cdf_data["FEDU"][:]))
+            pitch_angle = cdf_data['FEDU_Alpha'][:]
+            pitch_angle = np.where(pitch_angle <= 90, pitch_angle, 180 - pitch_angle)
             cdf_data.close()
         # Convert from km to R_E
         Position = np.array(Position)
         Position = Position / Re
         # finish reading in data
-        return Epoch, L, Position, FEDU, energy_channels
+        return Epoch, L, Position, FEDU, energy_channels, pitch_angle
     
     # Read in data from RBSP CDF files
     print("Processing Flux Data:")
-    Epoch_A, L_A, Position_A, FEDU_A, energy_channels_A = process_flux_data(cdf_file_paths_A)
-    Epoch_B, L_B, Position_B, FEDU_B, energy_channels_B = process_flux_data(cdf_file_paths_B)
+    Epoch_A, L_A, Position_A, FEDU_A, energy_channels_A, alpha_A = process_flux_data(file_paths_l3_A)
+    Epoch_B, L_B, Position_B, FEDU_B, energy_channels_B, alpha_B = process_flux_data(file_paths_l3_B)
     
     # Handle cases where only A or B data is present (check which lists are not empty)
     if not Epoch_A and not L_A and not FEDU_A:
@@ -174,10 +184,10 @@ if __name__ == '__main__':
         'Bz_GSM': 'BzIMF',  # 'BZ_GSM' maps to 'BzIMF'
         'AL_index': 'AL',
     }
-    omnivals_refined = {}
     mag_key_unused = ['G1', 'G2', 'G3', 'W1', 'W2', 'W3', 'W4', 'W5', 'W6']
     
     def get_Omni(time, position):      
+        omnivals_refined = {}
         for key in mag_key_unused:
             omnivals_refined[key] = np.full(len(time), np.nan)
         omnivals=omni.get_omni(time, dbase='OMNI2hourly')
@@ -189,39 +199,57 @@ if __name__ == '__main__':
                 print(f"Warning: Key '{cdf_key}' not found in CDF data. Skipping.")
         return omnivals_refined
     
-    time_A = Ticktock(Epoch_A[0:99], 'UTC')
-    time_B = Ticktock(Epoch_B[0:99], 'UTC')
-    position_A = Coords(Position_A[0:99,:], 'GEO', 'car')
-    position_B = Coords(Position_B[0:99,:], 'GEO', 'car')
-    alpha = 40
-    alpha = np.atleast_1d(alpha)  # Ensure alpha is an array
+    # Set up for IRBEM Calculations
+    time_A = Ticktock(Epoch_A, 'UTC')
+    time_B = Ticktock(Epoch_B, 'UTC')
+    position_A = Coords(Position_A, 'GEO', 'car')
+    position_B = Coords(Position_B, 'GEO', 'car')
     extMag = 'T89'
     omnivals_refined_A = get_Omni(Epoch_A, Position_A)
     omnivals_refined_B = get_Omni(Epoch_B, Position_B)
-    
     electron_mass_mev = sc.electron_mass / (1e6 * sc.electron_volt)
+    
     print("Calculating Mu (RBSP-A)")
     B_A = irbem.get_Bfield(time_A, position_A, extMag=extMag, omnivals=omnivals_refined_A)
     Blocal_A, Bvec_A = B_A["Blocal"], B_A["Bvec"]
-    energy_grid, alpha_grid, blocal_grid = np.meshgrid(energy_channels_A, np.deg2rad(alpha_ephem_A), Blocal_A*1e-5, indexing='ij')
+    energy_grid, alpha_grid, blocal_grid = np.meshgrid(energy_channels_A, np.deg2rad(alpha_A[0:9]), Blocal_A*1e-5, indexing='ij')
     Mu_A = (energy_grid**2 + 2 * energy_grid * electron_mass_mev * sc.c**2) * np.sin(alpha_grid)**2 / (2 * electron_mass_mev * sc.c**2 * blocal_grid)
     #Mu_A = (energy_channels_A^2+2*energy_channels_A*sc.electron_mass*sc.c^2)*np.sin(alpha)/(2*sc.electron_mass*sc.c^2*Blocal_A) 
     
     print("Calculating Mu (RBSP-B)")
     B_B = irbem.get_Bfield(time_B, position_B, extMag=extMag, omnivals=omnivals_refined_B)
     Blocal_B, Bvec_B = B_B["Blocal"], B_B["Bvec"]
-    energy_grid, alpha_grid, blocal_grid = np.meshgrid(energy_channels_B, np.deg2rad(alpha_ephem_B), Blocal_B*1e-5, indexing='ij')
+    energy_grid, alpha_grid, blocal_grid = np.meshgrid(energy_channels_B, np.deg2rad(alpha_B[0:9]), Blocal_B*1e-5, indexing='ij')
     Mu_B = (energy_grid**2 + 2 * energy_grid * electron_mass_mev * sc.c**2) * np.sin(alpha_grid)**2 / (2 * electron_mass_mev * sc.c**2 * blocal_grid)
 
-    
-    print("Calculating L* (RBSP-A)")
-    results_A = irbem.get_Lstar(time_A, position_A, alpha=alpha, extMag=extMag, omnivals=omnivals_refined_A)
-    Bmin_A, Bmirr_A, Lm_A, Lstar_A, MLT_A, Xj_A = results_A["Bmin"], results_A["Bmirr"], results_A["Lm"], results_A["Lstar"], results_A["MLT"], results_A["Xj"]
-    #results = irbem.get_Lstar(Ticktock(Epoch_A[0:99], 'UTC'), Coords(Position_A[0:99,:], 'GEO', 'car'), alpha=40, extMag='T89', omnivals=omnivals_refined)
-    print("Calculating L* (RBSP-B)")
-    results_B = irbem.get_Lstar(time_A, position_A, alpha=alpha, extMag=extMag, omnivals=omnivals_refined_B)
-    Bmin_B, Bmirr_B, Lm_B, Lstar_B, MLT_B, Xj_B = results_B["Bmin"], results_B["Bmirr"], results_B["Lm"], results_B["Lstar"], results_B["MLT"], results_B["Xj"]
 
+    print("Calculating L* (RBSP-A)")
+    results_A = irbem.get_Lstar(time_A, position_A, alpha=alpha_A[0:9], extMag=extMag, omnivals=omnivals_refined_A)
+    Bmin_A, Bmirr_A, Lm_A, Lstar_A, MLT_A, Xj_A = results_A["Bmin"], results_A["Bmirr"], results_A["Lm"], results_A["Lstar"], results_A["MLT"], results_A["Xj"]
+    if len(Bmin_A.shape) == 1:
+        Bmin_A = Bmin_A.reshape(len(Bmin_A), 1)
+    Bmirr_A = np.concatenate((Bmirr_A[:,:-1], Bmirr_A[:, ::-1]), axis=1)
+    Lm_A    = np.concatenate((Lm_A[:,:-1], Lm_A[:, ::-1]), axis=1)
+    Lstar_A = np.concatenate((Lstar_A[:,:-1], Lstar_A[:, ::-1]), axis=1)
+    Xj_A    = np.concatenate((Xj_A[:,:-1], Xj_A[:, ::-1]), axis=1)
+    
+    print("Calculating L* (RBSP-B)")
+    results_B = irbem.get_Lstar(time_B, position_B, alpha=alpha_B[0:9], extMag=extMag, omnivals=omnivals_refined_B)
+    Bmin_B, Bmirr_B, Lm_B, Lstar_B, MLT_B, Xj_B = results_B["Bmin"], results_B["Bmirr"], results_B["Lm"], results_B["Lstar"], results_B["MLT"], results_B["Xj"]
+    if len(Bmin_B.shape) == 1:
+        Bmin_B = Bmin_B.reshape(len(Bmin_B), 1)
+    Bmirr_B = np.concatenate((Bmirr_B[:,:-1], Bmirr_B[:, ::-1]), axis=1)
+    Lm_B    = np.concatenate((Lm_B[:,:-1], Lm_B[:, ::-1]), axis=1)
+    Lstar_B = np.concatenate((Lstar_B[:,:-1], Lstar_B[:, ::-1]), axis=1)
+    Xj_B    = np.concatenate((Xj_B[:,:-1], Xj_B[:, ::-1]), axis=1)
+
+    # NOTE: Xj =I/\sqrt(B_eq) = I/\sqrt(B_min) is in units of R_E*T^(-1/2)
+    # where 1 R_E*T^(-1/2) = 0.01 R_E*G^(-1/2)
+    # and Bmin and Bmirr are in nT. 1 nT = 1e-5 G
+    K_A = Xj_A*100 * np.sqrt(Bmin_A*1e-5) * np.sqrt(Bmirr_A*1e-5)
+    K_B = Xj_B*100 * np.sqrt(Bmin_B*1e-5) * np.sqrt(Bmirr_B*1e-5)
+
+#%% Plots
     '''
     # Plot ephemeris file data and calculated L* data for RBSP A&B
     fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(10, 5))  
@@ -268,6 +296,41 @@ if __name__ == '__main__':
     ax.set_title('Comparison of Ephemeris L* and L* for RBSP-B')
     ax.grid(True)
     ax.set_aspect('equal')
+    plt.show()
+    '''
+    '''
+    # Plot ephemeris file data and calculated K data for RBSP A&B
+    # setting pitch angle, for all time
+    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(10, 5))  
+    ax1.scatter(Epoch_A, K_interp_A[:,9], s=5)
+    ax1.scatter(Epoch_B, K_interp_B[:,9], s=5)
+    ax1.set_title("Ephemeris K")  # Top plot label
+    ax2.scatter(Epoch_A, K_A[:,4], s=5)
+    ax2.scatter(Epoch_B, K_B[:,4], s=5)
+    ax2.set_title("Calculated K")           # Bottom plot label
+    # Force labels for first and last x-axis tick marks 
+    #ax1.set_yticks(np.arange(2, 8, 1))
+    ax1.set_ylim(-1, 3)
+    #ax2.set_yticks(np.arange(2, 8, 1))
+    ax2.set_ylim(-1, 3)
+    fig.suptitle(f"Pitch Angle = 45 degrees")
+    plt.show()
+    
+    # Plot ephemeris file data and calculated L* data for RBSP A&B
+    # setting time point, for all pitch angles
+    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(10, 5))  
+    ax1.scatter(alpha_ephem_A, K_interp_A[20000,:])
+    ax1.scatter(alpha_ephem_B, K_interp_B[20000,:])
+    ax1.set_title("Ephemeris K")  # Top plot label
+    ax2.scatter(alpha_A, K_A[20000,:])
+    ax2.scatter(alpha_A, K_B[20000,:])
+    ax2.set_title("Calculated K")           # Bottom plot label
+    # Force labels for first and last x-axis tick marks 
+    #ax1.set_yticks(np.arange(2, 8, 1))
+    #ax1.set_ylim(-1, 5)
+    #ax2.set_yticks(np.arange(2, 8, 1))
+    #ax2.set_ylim(-1, 5)
+    fig.suptitle(f"Time = {Epoch_A[20000]}")
     plt.show()
     '''
     

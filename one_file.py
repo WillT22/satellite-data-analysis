@@ -16,7 +16,7 @@ import spacepy.omni as omni
 textsize = 16
 
 #l2
-#file_path = "C:/Users/wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/l2/rbspa_rel03_ect-rept-sci-l2_20170421_v5.4.0.cdf"
+#file_path = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/l2/rbspa_rel03_ect-rept-sci-l2_20170421_v5.4.0.cdf"
 #l3
 file_path = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/l3/rbspa_rel03_ect-rept-sci-l3_20170421_v5.6.0.cdf"
 cdf_data = pycdf.CDF(file_path)
