@@ -1,5 +1,4 @@
 #%% Import and Initialize
-from spacepy import pycdf
 import numpy as np
 import os
 import glob
@@ -7,7 +6,6 @@ import scipy.constants as sc
 # Time conversion & IRBEM
 from spacepy.time import Ticktock
 from spacepy.coordinates import Coords
-import spacepy.omni as omni
 import spacepy.irbempy as irbem
 # Plotting
 from datetime import datetime, timedelta
@@ -16,6 +14,13 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import colors
 
+# Import functions
+from analysis_functions import process_flux_data
+from analysis_functions import process_ephem_data
+from analysis_functions import get_Omni
+from analysis_functions import find_apogee_times
+from analysis_functions import find_perigee_times
+
 # Import the latest version of OMNI data
 #from spacepy import toolbox as tb
 #tb.update(omni2=True)
@@ -23,20 +28,26 @@ from matplotlib import colors
 # Initialize global variables
 textsize = 16
 Re = 6378.137 #Earth's Radius
-Mu_select = 4000
-K_select = 0.10
+Mu_select = 4000 # MeV/G
+K_select = 0.10 # R_E*G^(1/2)
+
+# Conversions
+# electron mass in MeV is (m_e [kg] * c^2 [m^2/s^2]) [J] / (sc.eV [J/eV] * 10^6 [eV/MeV])
+electron_mass_mev = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6)
+# B_local, B_min, B_mirr are in nT: 1 nT = 10^-5 G
+# 1 R_E*T^(-1/2) = 0.01 R_E*G^(-1/2)
 
 # Start main class
 if __name__ == '__main__':
 #%% Folder containing CDF files
-    folder_path_l2 = "C:/Users/Wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/l2/"
+    folder_path_l2 = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/l2/"
     if not os.path.exists(folder_path_l2):
         raise FileNotFoundError(f"Error: Folder path not found: {folder_path_l2}")
-    folder_path_l3 = "C:/Users/wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/l3/"
+    folder_path_l3 = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/l3/"
     if not os.path.exists(folder_path_l3):
         raise FileNotFoundError(f"Error: Folder path not found: {folder_path_l3}")
     
-    ephemeris_path = "C:/Users/wzt0020/Box/Multipoint_Box/REPT Data/April 2017 Storm/ephemeris/"
+    ephemeris_path = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/ephemeris/"
     if not os.path.exists(ephemeris_path):
         raise FileNotFoundError(f"Error: Ephemeris path not found: {ephemeris_path}")
     
@@ -50,39 +61,6 @@ if __name__ == '__main__':
     
     
 #%% Function for reading in RBSP flux data
-    def process_flux_data(file_paths):
-        # Initialize varaibles to be read in
-        Epoch = []
-        L = []
-        Position = []
-        FEDU = None
-        energy_channels = []
-        # Itterate over files in file path
-        for file_path in file_paths:
-            # Extract filename without path
-            file_name = os.path.basename(file_path)
-            print(f"Processing file: {file_name}")
-            # Load the CDF data
-            cdf_data = pycdf.CDF(file_path)
-            # Read in data
-            Epoch.extend(cdf_data["Epoch"][:])
-            L.extend(cdf_data["L"][:])
-            Position.extend(cdf_data["Position"][:])
-            # Get energy channels from first file
-            if FEDU is None:
-                FEDU = cdf_data["FEDU"][:]
-                energy_channels = cdf_data["FEDU_Energy"][:]
-            else:
-                FEDU = np.vstack((FEDU, cdf_data["FEDU"][:]))
-            pitch_angle = cdf_data['FEDU_Alpha'][:]
-            pitch_angle = np.where(pitch_angle <= 90, pitch_angle, 180 - pitch_angle)
-            cdf_data.close()
-        # Convert from km to R_E
-        Position = np.array(Position)
-        Position = Position / Re
-        # finish reading in data
-        return Epoch, L, Position, FEDU, energy_channels, pitch_angle
-    
     # Read in data from RBSP CDF files
     print("Processing Flux Data:")
     Epoch_A, L_A, Position_A, FEDU_A, energy_channels_A, alpha_A = process_flux_data(file_paths_l3_A)
@@ -108,47 +86,6 @@ if __name__ == '__main__':
             max_epoch = max(Epoch_B)
     
 #%% Read ephemeris data and interpolate over satellite times
-    # Function for reading in RBSP ephemeris data
-    def process_ephem_data(ephem_file_paths):
-        # Initialize variables to be read in
-        Epoch_ephem = []
-        alpha_ephem = []
-        Bm_ephem = []
-        Lm_ephem = []
-        Lstar_ephem = []
-        K_ephem = []
-        # Itterate over files in file path
-        for f, file_path in enumerate(ephem_file_paths):
-            # Extract filename without path
-            file_name = os.path.basename(file_path)
-            print(f"Processing file: {file_name}")
-            # Load the CDF data
-            ephem_data = pycdf.CDF(file_path)
-            # Read all but last value for all but last file to prevent duplicated data
-            if f < len(ephem_file_paths) - 1:  
-                Epoch_ephem.extend(ephem_data['Epoch'][:-1]) 
-                Bm_ephem.extend(ephem_data['Bm'][:-1])
-                Lm_ephem.extend(ephem_data['Lm_eq'][:-1])
-                Lstar_ephem.extend(ephem_data['Lstar'][:-1])
-                K_ephem.extend(ephem_data['K'][:-1])
-            else:
-                Epoch_ephem.extend(ephem_data['Epoch'][:]) 
-                alpha_ephem.extend(ephem_data['Alpha'][:])
-                Bm_ephem.extend(ephem_data['Bm'][:])
-                Lm_ephem.extend(ephem_data['Lm_eq'][:])
-                Lstar_ephem.extend(ephem_data['Lstar'][:])
-                K_ephem.extend(ephem_data['K'][:])
-            ephem_data.close()
-        # Convert lists to NumPy arrays
-        Epoch_ephem = np.array(Epoch_ephem)
-        alpha_ephem = np.array(alpha_ephem)
-        Bm_ephem = np.array(Bm_ephem)
-        Lm_ephem = np.array(Lm_ephem)
-        Lstar_ephem = np.array(Lstar_ephem)
-        K_ephem = np.array(K_ephem)
-        # Finish rading in and return data
-        return Epoch_ephem, alpha_ephem, Lm_ephem, Lstar_ephem, K_ephem
-    
     # Read in data from RBSP Ephemeris files
     print("Processing Ephemeris Data:")
     Epoch_ephem_A, alpha_ephem_A, Lm_ephem_A, Lstar_ephem_A, K_ephem_A = process_ephem_data(ephem_file_paths_A)
@@ -173,32 +110,7 @@ if __name__ == '__main__':
     Lm_interp_B, Lstar_interp_B, K_interp_B = interpolate_Ephem(Epoch_B, Epoch_ephem_B, Lm_ephem_B, Lstar_ephem_B, K_ephem_B)
     
     
-    #%% Obtain Omni Information & prepare for calculating K and L*
-    mag_key_mapping = {
-        'Kp_index': 'Kp',
-        'Dst_index': 'Dst',
-        'PC_N_index': 'dens',  # 'N' maps to 'dens'
-        'Plasma_bulk_speed': 'velo',  # 'V' maps to 'velo'
-        'Flow_pressure': 'Pdyn',  # 'Pressure' maps to 'Pdyn'  (Using Flow_pressure)
-        'By_GSM': 'ByIMF',  # 'BY_GSM' maps to 'ByIMF'
-        'Bz_GSM': 'BzIMF',  # 'BZ_GSM' maps to 'BzIMF'
-        'AL_index': 'AL',
-    }
-    mag_key_unused = ['G1', 'G2', 'G3', 'W1', 'W2', 'W3', 'W4', 'W5', 'W6']
-    
-    def get_Omni(time, position):      
-        omnivals_refined = {}
-        for key in mag_key_unused:
-            omnivals_refined[key] = np.full(len(time), np.nan)
-        omnivals=omni.get_omni(time, dbase='OMNI2hourly')
-        omnivals['Kp_index'] = omnivals['Kp_index']/10
-        for cdf_key, mag_key in mag_key_mapping.items():
-            if cdf_key in omnivals:  # Check if the key exists in the CDF
-                omnivals_refined[mag_key] = omnivals[cdf_key][:].copy()
-            else:
-                print(f"Warning: Key '{cdf_key}' not found in CDF data. Skipping.")
-        return omnivals_refined
-    
+#%% Obtain Omni Information & prepare for calculating K and L*
     # Set up for IRBEM Calculations
     time_A = Ticktock(Epoch_A, 'UTC')
     time_B = Ticktock(Epoch_B, 'UTC')
@@ -207,24 +119,23 @@ if __name__ == '__main__':
     extMag = 'T89'
     omnivals_refined_A = get_Omni(Epoch_A, Position_A)
     omnivals_refined_B = get_Omni(Epoch_B, Position_B)
-    electron_mass_mev = sc.electron_mass / (1e6 * sc.electron_volt)
     
     print("Calculating Mu (RBSP-A)")
     B_A = irbem.get_Bfield(time_A, position_A, extMag=extMag, omnivals=omnivals_refined_A)
     Blocal_A, Bvec_A = B_A["Blocal"], B_A["Bvec"]
     energy_grid, alpha_grid, blocal_grid = np.meshgrid(energy_channels_A, np.deg2rad(alpha_A[0:9]), Blocal_A*1e-5, indexing='ij')
-    Mu_A = (energy_grid**2 + 2 * energy_grid * electron_mass_mev * sc.c**2) * np.sin(alpha_grid)**2 / (2 * electron_mass_mev * sc.c**2 * blocal_grid)
+    Mu_A = (energy_grid**2 + 2 * energy_grid * electron_mass_mev) * np.sin(alpha_grid)**2 / (2 * electron_mass_mev * blocal_grid)
     #Mu_A = (energy_channels_A^2+2*energy_channels_A*sc.electron_mass*sc.c^2)*np.sin(alpha)/(2*sc.electron_mass*sc.c^2*Blocal_A) 
     
     print("Calculating Mu (RBSP-B)")
     B_B = irbem.get_Bfield(time_B, position_B, extMag=extMag, omnivals=omnivals_refined_B)
     Blocal_B, Bvec_B = B_B["Blocal"], B_B["Bvec"]
     energy_grid, alpha_grid, blocal_grid = np.meshgrid(energy_channels_B, np.deg2rad(alpha_B[0:9]), Blocal_B*1e-5, indexing='ij')
-    Mu_B = (energy_grid**2 + 2 * energy_grid * electron_mass_mev * sc.c**2) * np.sin(alpha_grid)**2 / (2 * electron_mass_mev * sc.c**2 * blocal_grid)
+    Mu_B = (energy_grid**2 + 2 * energy_grid * electron_mass_mev) * np.sin(alpha_grid)**2 / (2 * electron_mass_mev * blocal_grid)
 
 
     print("Calculating L* (RBSP-A)")
-    results_A = irbem.get_Lstar(time_A, position_A, alpha=alpha_A[0:9], extMag=extMag, omnivals=omnivals_refined_A)
+    #results_A = irbem.get_Lstar(time_A, position_A, alpha=alpha_A[0:9], extMag=extMag, omnivals=omnivals_refined_A)
     Bmin_A, Bmirr_A, Lm_A, Lstar_A, MLT_A, Xj_A = results_A["Bmin"], results_A["Bmirr"], results_A["Lm"], results_A["Lstar"], results_A["MLT"], results_A["Xj"]
     if len(Bmin_A.shape) == 1:
         Bmin_A = Bmin_A.reshape(len(Bmin_A), 1)
@@ -233,30 +144,41 @@ if __name__ == '__main__':
     Lstar_A = np.concatenate((Lstar_A[:,:-1], Lstar_A[:, ::-1]), axis=1)
     Xj_A    = np.concatenate((Xj_A[:,:-1], Xj_A[:, ::-1]), axis=1)
     
+    # Find when Lstar is NaN, typically indicating apogee
+    apogee_times_A = find_apogee_times(Lstar_A, Epoch_A)
+    # Find local maxima, indicating perigee
+    perigee_times_A = find_perigee_times(Lstar_A, Epoch_A)
+    
+    print("Calculating K (RBSP-A)")
+    K_A = Xj_A*100 * np.sqrt(Bmin_A*1e-5) * np.sqrt(Bmirr_A*1e-5) # R_E*G^(1/2)
+    
     print("Calculating L* (RBSP-B)")
-    results_B = irbem.get_Lstar(time_B, position_B, alpha=alpha_B[0:9], extMag=extMag, omnivals=omnivals_refined_B)
+    #results_B = irbem.get_Lstar(time_B, position_B, alpha=alpha_B[0:9], extMag=extMag, omnivals=omnivals_refined_B)
     Bmin_B, Bmirr_B, Lm_B, Lstar_B, MLT_B, Xj_B = results_B["Bmin"], results_B["Bmirr"], results_B["Lm"], results_B["Lstar"], results_B["MLT"], results_B["Xj"]
     if len(Bmin_B.shape) == 1:
         Bmin_B = Bmin_B.reshape(len(Bmin_B), 1)
     Bmirr_B = np.concatenate((Bmirr_B[:,:-1], Bmirr_B[:, ::-1]), axis=1)
     Lm_B    = np.concatenate((Lm_B[:,:-1], Lm_B[:, ::-1]), axis=1)
     Lstar_B = np.concatenate((Lstar_B[:,:-1], Lstar_B[:, ::-1]), axis=1)
+    Lstar_B_nan = np.where(np.all(np.isnan(Lstar_B), axis=1))[0]
     Xj_B    = np.concatenate((Xj_B[:,:-1], Xj_B[:, ::-1]), axis=1)
 
-    # NOTE: Xj =I/\sqrt(B_eq) = I/\sqrt(B_min) is in units of R_E*T^(-1/2)
-    # where 1 R_E*T^(-1/2) = 0.01 R_E*G^(-1/2)
-    # and Bmin and Bmirr are in nT. 1 nT = 1e-5 G
-    K_A = Xj_A*100 * np.sqrt(Bmin_A*1e-5) * np.sqrt(Bmirr_A*1e-5)
-    K_B = Xj_B*100 * np.sqrt(Bmin_B*1e-5) * np.sqrt(Bmirr_B*1e-5)
+    # Find when Lstar is NaN, typically indicating apogee
+    apogee_times_B = find_apogee_times(Lstar_B, Epoch_B)
+    # Find local maxima, indicating perigee
+    perigee_times_B = find_perigee_times(Lstar_B, Epoch_B)
+
+    print("Calculating K (RBSP-B)")
+    K_B = Xj_B*100 * np.sqrt(Bmin_B*1e-5) * np.sqrt(Bmirr_B*1e-5) # R_E*G^(1/2)
 
 #%% Plots
     '''
     # Plot ephemeris file data and calculated L* data for RBSP A&B
     fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(10, 5))  
-    ax1.scatter(Epoch_A, Lstar_interp_A[:,10], s=5)
-    ax1.scatter(Epoch_B, Lstar_interp_B[:,10], s=5)
-    ax2.scatter(Epoch_A, Lstar_A, s=5)
-    ax2.scatter(Epoch_B, Lstar_B, s=5)
+    ax1.scatter(Epoch_A, Lstar_interp_A[:,9], s=5)
+    ax1.scatter(Epoch_B, Lstar_interp_B[:,9], s=5)
+    ax2.scatter(Epoch_A, Lstar_A[:,4], s=5)
+    ax2.scatter(Epoch_B, Lstar_B[:,4], s=5)
     ax1.set_title("Ephemeris L*")  # Top plot label
     ax2.set_title("L*")           # Bottom plot label
     # Force labels for first and last x-axis tick marks 
@@ -299,102 +221,97 @@ if __name__ == '__main__':
     plt.show()
     '''
     '''
+    # Plot calculated Mu data against L* for RBSP A for each pitch angle
+    fig, axes = plt.subplots(9, 1, figsize=(12, 30), sharex=True)
+    handles, labels = [], []
+    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, 12, dtype=int)]
+    for i in range(9):
+        ax = axes[i]
+        for j in range(12):
+            scatter = ax.scatter(Lstar_A[4138:5655, i], Mu_A[j, i, 4138:5655], s=4, color=colors[j])
+            if i == 0:
+                handles.append(scatter)
+                labels.append(energy_channels_A[j])
+        ax.set_title(f"Pitch Angle {alpha_A[i]:.2f}",fontsize=textsize+2)
+        ax.set_ylabel(r'$\mu$', fontsize=textsize)
+        ax.set_yscale('log') # Set y-axis to logarithmic scale
+        ax.set_xlim(2, np.nanmax(Lstar_A[4138:5655, :]))
+        ax.tick_params(axis='x', labelsize=textsize)
+        ax.tick_params(axis='y', labelsize=textsize)
+        ax.grid(True)
+    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1.1, 0.5), fontsize=textsize, markerscale=5, title="Energy\nChannels\n(MeV)\n", title_fontsize=textsize) # Adjust legend
+    ax.set_xlabel("L* from T89d", fontsize=textsize)
+    plt.subplots_adjust(right=0.95, top=0.95)
+    fig.suptitle(f"RBSP-A: {Epoch_A[4138]} to {Epoch_A[5655]}", fontsize=textsize + 4) # Add figure title
+    plt.show()
+    
+    # Plot Mu vs time for each energy channel at each pitch angle for RBSP-A
+    fig, axes = plt.subplots(9, 1, figsize=(12, 30), sharex=True)
+    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, 12, dtype=int)]
+    for i in range(9):
+        ax = axes[i]
+        for j in range(12):
+            scatter = ax.scatter(Epoch_A[:], Mu_A[j, i, :], s=4, color=colors[j])
+        ax.set_title(f"Pitch Angle {alpha_A[i]:.2f}",fontsize=textsize+2)
+        ax.set_ylabel(r'$\mu$', fontsize=textsize)
+        ax.set_yscale('log') # Set y-axis to logarithmic scale
+        ax.tick_params(axis='x', labelsize=textsize)
+        ax.tick_params(axis='y', labelsize=textsize)
+        ax.grid(True)
+        ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
+        ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+    # Force labels for first and last x-axis tick marks 
+    min_epoch = datetime(1970, 1, 1) + timedelta(hours=math.floor((min_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+    max_epoch = datetime(1970, 1, 1) + timedelta(hours=math.ceil((max_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+    ax.set_xlim(min_epoch, max_epoch)
+    plt.xticks(rotation=45, ha='right', fontsize=textsize)  # Rotate 45 degrees, align right
+    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1.1, 0.5), fontsize=textsize, markerscale=5, title="Energy\nChannels\n(MeV)\n", title_fontsize=textsize) # Adjust legend
+    ax.set_xlabel("Time", fontsize=textsize)
+    plt.subplots_adjust(right=0.95, top=0.95)
+    fig.suptitle(f"RBSP-A: Mu V Time", fontsize=textsize + 4) # Add figure title
+    plt.show()
+    
     # Plot ephemeris file data and calculated K data for RBSP A&B
     # setting pitch angle, for all time
-    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(10, 5))  
-    ax1.scatter(Epoch_A, K_interp_A[:,9], s=5)
-    ax1.scatter(Epoch_B, K_interp_B[:,9], s=5)
-    ax1.set_title("Ephemeris K")  # Top plot label
-    ax2.scatter(Epoch_A, K_A[:,4], s=5)
-    ax2.scatter(Epoch_B, K_B[:,4], s=5)
-    ax2.set_title("Calculated K")           # Bottom plot label
-    # Force labels for first and last x-axis tick marks 
-    #ax1.set_yticks(np.arange(2, 8, 1))
-    ax1.set_ylim(-1, 3)
-    #ax2.set_yticks(np.arange(2, 8, 1))
-    ax2.set_ylim(-1, 3)
-    fig.suptitle(f"Pitch Angle = 45 degrees")
+    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(15, 5))
+    ax1.scatter(Epoch_A, K_interp_A[:, 2], s=5)
+    ax1.scatter(Epoch_B, K_interp_B[:, 2], s=5)
+    ax1.set_title("Ephemeris K", fontsize=textsize)
+    ax1.set_ylim(-0.1, 3)
+    ax1.set_yticks(np.arange(0, 4, 1))
+    ax1.set_ylabel("K", fontsize=textsize)
+    ax1.tick_params(axis='both', labelsize=textsize)  # Set tick label size
+    ax2.scatter(Epoch_A, K_A[:, 7], s=5, color='tab:blue')
+    ax2.scatter(Epoch_A, K_A[:, 9], s=5, color='tab:blue')
+    ax2.scatter(Epoch_B, K_B[:, 7], s=5, color='tab:orange')
+    ax2.scatter(Epoch_B, K_B[:, 9], s=5, color='tab:orange')
+    ax2.set_title("Calculated K", fontsize=textsize)
+    ax2.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
+    ax2.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+    plt.xticks(rotation=45, ha='right', fontsize=textsize)  # Rotate 45 degrees, align right
+    ax2.set_ylim(-0.1, 3)
+    ax2.set_yticks(np.arange(0, 4, 1))
+    ax2.set_xlabel("Time", fontsize=textsize)
+    ax2.set_ylabel("K", fontsize=textsize)
+    ax2.tick_params(axis='both', labelsize=textsize)  # Set tick label size
+    fig.suptitle("Pitch Angle = 80 degrees", fontsize=textsize)
     plt.show()
     
-    # Plot ephemeris file data and calculated L* data for RBSP A&B
+    # Plot ephemeris file data and calculated K data for RBSP A&B
     # setting time point, for all pitch angles
-    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(10, 5))  
-    ax1.scatter(alpha_ephem_A, K_interp_A[20000,:])
-    ax1.scatter(alpha_ephem_B, K_interp_B[20000,:])
-    ax1.set_title("Ephemeris K")  # Top plot label
-    ax2.scatter(alpha_A, K_A[20000,:])
-    ax2.scatter(alpha_A, K_B[20000,:])
-    ax2.set_title("Calculated K")           # Bottom plot label
-    # Force labels for first and last x-axis tick marks 
-    #ax1.set_yticks(np.arange(2, 8, 1))
-    #ax1.set_ylim(-1, 5)
-    #ax2.set_yticks(np.arange(2, 8, 1))
-    #ax2.set_ylim(-1, 5)
-    fig.suptitle(f"Time = {Epoch_A[20000]}")
-    plt.show()
-    '''
-    
-    #%%Plot RBSP Flux Data with ephemeris Lm_ephem
-    '''
-    print("Plotting Data:")
-    # Create a custom colormap based on 'nipy_spectral' to match with IDL rainbow
-    cmap = plt.get_cmap('nipy_spectral') 
-    new_cmap = cmap(np.linspace(0, 0.875, 256))  # Use only the first 87.5% of the colormap
-    
-    # Create a new colormap object
-    custom_cmap = colors.ListedColormap(new_cmap)
-    
-    # Create the figure with subplots
-    fig, axes = plt.subplots(len(energy_channels_A), 1, figsize=(20, 40), sharex=True)
-    
-    # Loop through each energy channel
-    for i, ax in enumerate(axes.flat):
-      # Create the scatter plot on the current subplot
-      # divide by 1000 for keV to compare to Zhao 2018
-      if FEDU_A is not None:
-          subplot_A = ax.scatter(Epoch_A, Lm_ephem_A_interp, c=FEDU_A[:, i]/1000, cmap=custom_cmap, norm=colors.LogNorm())
-          # Set colorbar limits to 5 orders of magnitude
-          vmin_A, vmax_A = subplot_A.get_clim() 
-      if FEDU_B is not None:
-          subplot_B = ax.scatter(Epoch_B, Lm_ephem_B_interp, c=FEDU_B[:, i]/1000, cmap=custom_cmap, norm=colors.LogNorm())
-          # Set colorbar limits to 5 orders of magnitude
-          vmin_B, vmax_B = subplot_B.get_clim() 
-    
-      # Add labels and title
-      ax.set_ylabel('L', fontsize=textsize)
-      ax.set_title(f'RBSP REPT {energy_channels_A[i]:.2f} MeV Electron Spin-Averaged Flux', fontsize=textsize)
-      # Force labels for first and last x-axis tick marks 
-      min_epoch = datetime(1970, 1, 1) + timedelta(hours=math.floor((min_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
-      max_epoch = datetime(1970, 1, 1) + timedelta(hours=math.ceil((max_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
-      ax.set_xlim(min_epoch, max_epoch) 
-      # Set time labels every 12 hours
-      ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12) )
-      ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H')) 
-      ax.tick_params(axis='both', which='major', labelsize=textsize)
-      ax.set_yticks(np.arange(2, 8, 1))  # Set ticks from 2 to 7 with interval 1
-      ax.set_ylim(2, 7)
-      ax.grid(True)
-      
-      cbar = plt.colorbar(subplot_A, ax=ax, shrink=0.9, pad=0.01)  # Adjust shrink as needed
-      vmax = 10**math.ceil(math.log10(max(vmax_A,vmax_B)))
-      vmin = vmax/10**4
-      subplot_A.set_clim(vmin, vmax) 
-      subplot_B.set_clim(vmin, vmax) 
-      cbar.set_ticks(np.logspace(np.log10(vmin), np.log10(vmax), num=5))
-      # Flux is in (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ keV$^{-1}$)
-      cbar.set_label(label = 'Flux', fontsize=textsize)
-      cbar.ax.tick_params(labelsize=textsize)
-    
-    # Add x-axis label for last plot
-    ax.set_xlabel('UTC', fontsize=textsize)
-    fig.suptitle('April 21-26, 2017 RBSP REPT Data', fontsize=textsize+4, y=0.9)
-    
-    # Remove extra subplots if there aren't enough energy channels
-    if len(energy_channels_A) < len(axes.flat):
-      for ax in axes.flat[len(energy_channels_A):]:
-        fig.delaxes(ax)
-    
-    # Show the plot
+    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(15, 5))
+    ax1.scatter(alpha_ephem_A, K_interp_A[500, :])
+    ax1.scatter(alpha_ephem_B, K_interp_B[500, :])
+    ax1.set_title("Ephemeris K", fontsize=textsize)
+    ax1.set_ylabel("K", fontsize=textsize)
+    ax1.tick_params(axis='both', labelsize=textsize)
+    ax2.scatter(alpha_A, K_A[500, :])
+    ax2.scatter(alpha_A, K_B[500, :])
+    ax2.set_title("Calculated K", fontsize=textsize)
+    ax2.set_xlabel("Pitch Angle (degrees)", fontsize=textsize)
+    ax2.set_ylabel("K", fontsize=textsize)
+    ax2.tick_params(axis='both', labelsize=textsize)
+    fig.suptitle(f"Time = {Epoch_A[500]}", fontsize=textsize)
     plt.show()
     '''
     
