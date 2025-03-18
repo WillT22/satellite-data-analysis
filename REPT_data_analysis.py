@@ -7,7 +7,6 @@ import scipy.constants as sc
 from spacepy.time import Ticktock
 from spacepy.coordinates import Coords
 import spacepy.irbempy as irbem
-from scipy.optimize import curve_fit
 # Plotting
 from datetime import datetime, timedelta
 import math
@@ -23,9 +22,6 @@ from analysis_functions import get_Omni
 from analysis_functions import extend_alpha
 from analysis_functions import find_perigee_times
 from analysis_functions import find_apogee_times
-from analysis_functions import fit_K_v_alpha
-from analysis_functions import exponential_fit
-from analysis_functions import power_law_fit
 from analysis_functions import find_alpha
 
 # Import the latest version of OMNI data
@@ -102,7 +98,7 @@ if __name__ == '__main__':
     Lm_interp_A, Lstar_interp_A, K_interp_A = interpolate_Ephem(Epoch_A, Epoch_ephem_A, Lm_ephem_A, Lstar_ephem_A, K_ephem_A)
     Lm_interp_B, Lstar_interp_B, K_interp_B = interpolate_Ephem(Epoch_B, Epoch_ephem_B, Lm_ephem_B, Lstar_ephem_B, K_ephem_B)
     
-#%% Load Saved Data
+#%% Load Computationally Intensive Saved Data
     '''
     loaded_data = np.load('vital_data.npz')
     
@@ -119,29 +115,46 @@ if __name__ == '__main__':
     time_B = Ticktock(Epoch_B, 'UTC')
     position_A = Coords(Position_A, 'GEO', 'car')
     position_B = Coords(Position_B, 'GEO', 'car')
-    extMag = 'T89'
+    extMag = 'T89' # Set magnetic field model
+    # Set Omni values from downloaded file
     omnivals_refined_A = get_Omni(Epoch_A, Position_A)
     omnivals_refined_B = get_Omni(Epoch_B, Position_B)
     
+#%% Calculate the first adiabatic invariant
+    # Calculate the first adiabatic invariant for RBSP-A
     print("Calculating Mu (RBSP-A)")
+    # Extend alpha to have a better resolution
     alpha_A_extend = extend_alpha(alpha_A)
-    
+    # Calculate the B field from IRBEM
     B_A = irbem.get_Bfield(time_A, position_A, extMag=extMag, omnivals=omnivals_refined_A)
+    # Separate dictionary into separate variables
     Blocal_A, Bvec_A = B_A["Blocal"], B_A["Bvec"]
+    # Create a 3D grid of energy channel nominal energy, pitch angle, and local magnetic field for calculations in mu
     energy_grid, alpha_grid, blocal_grid = np.meshgrid(energy_channels_A, np.deg2rad(alpha_A_extend), Blocal_A*1e-5, indexing='ij')
+    # Calculate first adiabatic invariant: [energy channels, pitch angles, time points]
+    # At each time point, mu depends on particle energy and pitch angle
     Mu_A = (energy_grid**2 + 2 * energy_grid * electron_mass_mev) * np.sin(alpha_grid)**2 / (2 * electron_mass_mev * blocal_grid)
     
+    # Calculate the first adiabatic invariant for RBSP-B
     print("Calculating Mu (RBSP-B)")
+    # Extend alpha to have a better resolution
     alpha_B_extend = extend_alpha(alpha_B)
-    
+    # Calculate the B field from IRBEM
     B_B = irbem.get_Bfield(time_B, position_B, extMag=extMag, omnivals=omnivals_refined_B)
+    # Separate dictionary into separate variables
     Blocal_B, Bvec_B = B_B["Blocal"], B_B["Bvec"]
+    # Create a 3D grid of energy channel nominal energy, pitch angle, and local magnetic field for calculations in mu
     energy_grid, alpha_grid, blocal_grid = np.meshgrid(energy_channels_B, np.deg2rad(alpha_B_extend), Blocal_B*1e-5, indexing='ij')
+    # Calculate first adiabatic invariant: [energy channels, pitch angles, time points]
+    # At each time point, mu depends on particle energy and pitch angle
     Mu_B = (energy_grid**2 + 2 * energy_grid * electron_mass_mev) * np.sin(alpha_grid)**2 / (2 * electron_mass_mev * blocal_grid)
 
-
+#%% Calculate L*
+    # Calculate L* for RBSP-A    
     print("Calculating L* (RBSP-A)")
+    # Use IRBEM get_Lstar function  ***COMPUTATIONALLY EXPENSIVE***
     results_A = irbem.get_Lstar(time_A, position_A, alpha=alpha_A_extend, extMag=extMag, omnivals=omnivals_refined_A)
+    # Separate dictionary ino variables
     Bmin_A, Bmirr_A, Lm_A, Lstar_A, MLT_A, Xj_A = results_A["Bmin"], results_A["Bmirr"], results_A["Lm"], results_A["Lstar"], results_A["MLT"], results_A["Xj"]
     
     # Find when Lstar is NaN, typically indicating perigee
@@ -149,19 +162,19 @@ if __name__ == '__main__':
     # Find local maxima, indicating apogee
     apogee_times_A = find_apogee_times(Lstar_A, Epoch_A)
     
+    # Calculate K from X_j: K = X_j * \sqrt(B_mirr)
     print("Calculating K (RBSP-A)")
     K_A = Xj_A * np.sqrt(Bmirr_A*1e-5) # R_E*G^(1/2)
-    # Find equation of K v alpha at each time point (assume exponential)
-    K_alpha_fit_A = fit_K_v_alpha(K_A, alpha_A_extend)
     # Find alpha at each time point given a set K
     alpha_set_A = find_alpha(K_set, K_A, alpha_A_extend)   
-    #np.isnan(alpha_set_A).sum()
-    
+    # Find alpha for a given K at each time point from IRBEM AlphaofK
     alphaofK_A = irbem.AlphaOfK(time_A, position_A, K=K_set, extMag=extMag, omnivals=omnivals_refined_A)
-    #np.isnan(alphaofK_A).sum()
     
+    # Calculate L* for RBSP-B  
     print("Calculating L* (RBSP-B)")
+    # Use IRBEM get_Lstar function  ***COMPUTATIONALLY EXPENSIVE***
     results_B = irbem.get_Lstar(time_B, position_B, alpha=alpha_B_extend, extMag=extMag, omnivals=omnivals_refined_B)
+    # Separate dictionary ino variables
     Bmin_B, Bmirr_B, Lm_B, Lstar_B, MLT_B, Xj_B = results_B["Bmin"], results_B["Bmirr"], results_B["Lm"], results_B["Lstar"], results_B["MLT"], results_B["Xj"]
 
     # Find when Lstar is NaN, typically indicating perigee
@@ -169,13 +182,12 @@ if __name__ == '__main__':
     # Find local maxima, indicating apogee
     apogee_times_A = find_apogee_times(Lstar_B, Epoch_B)
 
+    # Calculate K from X_j: K = X_j * \sqrt(B_mirr)
     print("Calculating K (RBSP-B)")
     K_B = Xj_B * np.sqrt(Bmirr_B*1e-5) # R_E*G^(1/2)
-    # Find equation of K v alpha at each time point (assume exponential)
-    K_alpha_fit_B = fit_K_v_alpha(K_B, alpha_B_extend)
     # Find alpha at each time point given a set K
     alpha_set_B = find_alpha(K_set, K_B, alpha_B_extend) 
-    
+    # Find alpha for a given K at each time point from IRBEM AlphaofK
     alphaofK_B = irbem.AlphaOfK(time_B, position_B, K=K_set, extMag=extMag, omnivals=omnivals_refined_B)
 
 #%% Save chosen data
