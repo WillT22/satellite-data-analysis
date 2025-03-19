@@ -20,7 +20,7 @@ from analysis_functions import process_ephem_data
 from analysis_functions import interpolate_Ephem
 from analysis_functions import get_Omni
 from analysis_functions import extend_alpha
-from analysis_functions import find_alpha
+from analysis_functions import energy_from_mu_alpha
 
 # Import the latest version of OMNI data
 #from spacepy import toolbox as tb
@@ -193,8 +193,12 @@ if __name__ == '__main__':
     '''
 
 #%% Find energy for a given mu at each time point
-
-        
+    # Test to ensure derivation is correct    
+    Energy_kin = np.sqrt(2*electron_E0*Mu_A[:,:,0]*(Blocal_A[0]*1e-5)/np.sin(np.radians(alpha_A_extend))**2+electron_E0**2)-electron_E0    
+    # Find kinetic energy of particle population with a given Mu and alpha calculated from a given K 
+    EnergyofMuAlpha_A = energy_from_mu_alpha(Mu_set, alphaofK_A, Blocal_A)
+    # Find kinetic energy of particle population with a given Mu and alpha calculated from a given K 
+    EnergyofMuAlpha_B = energy_from_mu_alpha(Mu_set, alphaofK_B, Blocal_B)
 
 
 #%% Plots

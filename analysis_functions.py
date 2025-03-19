@@ -2,6 +2,7 @@ import numpy as np
 import os
 from spacepy import pycdf
 import spacepy.omni as omni
+import scipy.constants as sc
 
 #%% Proccess REPT CDF
 def process_flux_data(file_paths):
@@ -198,3 +199,28 @@ def extend_alpha(alpha):
     return alpha_extend
         
     
+#%% Calculate energy from set mu and alpha:
+electron_E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6)
+def energy_from_mu_alpha(Mu_set, Alpha_set, B_local):
+    """
+    Calculates energy from Mu_set, Alpha_set, and B_local.
+
+    Args:
+        Mu_set (numpy.ndarray): A predefined constant value (MeV/G).
+        Alpha_set (numpy.ndarray): NumPy array of Alpha values (in degrees).
+        B_local (numpy.ndarray): NumPy array of local magnetic field values (in nT).
+
+    Returns:
+        numpy.ndarray: NumPy array of calculated energy values (MeV).
+    """
+
+    # Convert Alpha_set to radians
+    alpha_rad = np.radians(Alpha_set)
+
+    # Calculate sin^2(Alpha)
+    sin_squared_alpha = np.sin(alpha_rad)**2
+
+    # Calculate the energy
+    kinetic_energy = np.sqrt(2 * electron_E0 * Mu_set * (B_local * 1e-5) / sin_squared_alpha + electron_E0**2) - electron_E0
+
+    return kinetic_energy
