@@ -20,8 +20,6 @@ from analysis_functions import process_ephem_data
 from analysis_functions import interpolate_Ephem
 from analysis_functions import get_Omni
 from analysis_functions import extend_alpha
-from analysis_functions import find_perigee_times
-from analysis_functions import find_apogee_times
 from analysis_functions import find_alpha
 
 # Import the latest version of OMNI data
@@ -36,7 +34,7 @@ K_set = 0.10 # R_E*G^(1/2)
 
 # Conversions
 # electron mass in MeV is (m_e [kg] * c^2 [m^2/s^2]) [J] / (sc.eV [J/eV] * 10^6 [eV/MeV])
-electron_mass_mev = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6)
+electron_E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6)
 # B_local, B_min, B_mirr are in nT: 1 nT = 10^-5 G
 
 #%% Start main class
@@ -99,15 +97,16 @@ if __name__ == '__main__':
     Lm_interp_B, Lstar_interp_B, K_interp_B = interpolate_Ephem(Epoch_B, Epoch_ephem_B, Lm_ephem_B, Lstar_ephem_B, K_ephem_B)
     
 #%% Load Computationally Intensive Saved Data
-    '''
-    loaded_data = np.load('vital_data.npz')
+    
+    print("Loading Saved Data")
+    loaded_data = np.load('vital_data.npz', allow_pickle=True)
     
     # Access the loaded variables
-    results_A = loaded_data['results_A']
-    results_B = loaded_data['results_B']
+    results_A = loaded_data['results_A'].item()
+    results_B = loaded_data['results_B'].item()
     alphaofK_A = loaded_data['alphaofK_A']
     alphaofK_B = loaded_data['alphaofK_B']
-    '''
+    
 
 #%% Obtain Omni Information & prepare for calculating K and L*
     # Set up for IRBEM Calculations
@@ -133,7 +132,7 @@ if __name__ == '__main__':
     energy_grid, alpha_grid, blocal_grid = np.meshgrid(energy_channels_A, np.deg2rad(alpha_A_extend), Blocal_A*1e-5, indexing='ij')
     # Calculate first adiabatic invariant: [energy channels, pitch angles, time points]
     # At each time point, mu depends on particle energy and pitch angle
-    Mu_A = (energy_grid**2 + 2 * energy_grid * electron_mass_mev) * np.sin(alpha_grid)**2 / (2 * electron_mass_mev * blocal_grid)
+    Mu_A = (energy_grid**2 + 2 * energy_grid * electron_E0) * np.sin(alpha_grid)**2 / (2 * electron_E0 * blocal_grid)
     
     # Calculate the first adiabatic invariant for RBSP-B
     print("Calculating Mu (RBSP-B)")
@@ -147,48 +146,37 @@ if __name__ == '__main__':
     energy_grid, alpha_grid, blocal_grid = np.meshgrid(energy_channels_B, np.deg2rad(alpha_B_extend), Blocal_B*1e-5, indexing='ij')
     # Calculate first adiabatic invariant: [energy channels, pitch angles, time points]
     # At each time point, mu depends on particle energy and pitch angle
-    Mu_B = (energy_grid**2 + 2 * energy_grid * electron_mass_mev) * np.sin(alpha_grid)**2 / (2 * electron_mass_mev * blocal_grid)
+    Mu_B = (energy_grid**2 + 2 * energy_grid * electron_E0) * np.sin(alpha_grid)**2 / (2 * electron_E0 * blocal_grid)
 
 #%% Calculate L*
     # Calculate L* for RBSP-A    
     print("Calculating L* (RBSP-A)")
     # Use IRBEM get_Lstar function  ***COMPUTATIONALLY EXPENSIVE***
-    results_A = irbem.get_Lstar(time_A, position_A, alpha=alpha_A_extend, extMag=extMag, omnivals=omnivals_refined_A)
+    #results_A = irbem.get_Lstar(time_A, position_A, alpha=alpha_A_extend, extMag=extMag, omnivals=omnivals_refined_A)
     # Separate dictionary ino variables
     Bmin_A, Bmirr_A, Lm_A, Lstar_A, MLT_A, Xj_A = results_A["Bmin"], results_A["Bmirr"], results_A["Lm"], results_A["Lstar"], results_A["MLT"], results_A["Xj"]
-    
-    # Find when Lstar is NaN, typically indicating perigee
-    perigee_times_A = find_perigee_times(Lstar_A, Epoch_A)
-    # Find local maxima, indicating apogee
-    apogee_times_A = find_apogee_times(Lstar_A, Epoch_A)
-    
-    # Calculate K from X_j: K = X_j * \sqrt(B_mirr)
-    print("Calculating K (RBSP-A)")
-    K_A = Xj_A * np.sqrt(Bmirr_A*1e-5) # R_E*G^(1/2)
-    # Find alpha at each time point given a set K
-    alpha_set_A = find_alpha(K_set, K_A, alpha_A_extend)   
-    # Find alpha for a given K at each time point from IRBEM AlphaofK
-    alphaofK_A = irbem.AlphaOfK(time_A, position_A, K=K_set, extMag=extMag, omnivals=omnivals_refined_A)
+    Lstar_A[Lstar_A == -np.inf] = np.nan
     
     # Calculate L* for RBSP-B  
     print("Calculating L* (RBSP-B)")
     # Use IRBEM get_Lstar function  ***COMPUTATIONALLY EXPENSIVE***
-    results_B = irbem.get_Lstar(time_B, position_B, alpha=alpha_B_extend, extMag=extMag, omnivals=omnivals_refined_B)
+    #results_B = irbem.get_Lstar(time_B, position_B, alpha=alpha_B_extend, extMag=extMag, omnivals=omnivals_refined_B)
     # Separate dictionary ino variables
     Bmin_B, Bmirr_B, Lm_B, Lstar_B, MLT_B, Xj_B = results_B["Bmin"], results_B["Bmirr"], results_B["Lm"], results_B["Lstar"], results_B["MLT"], results_B["Xj"]
+    Lstar_B[Lstar_B == -np.inf] = np.nan
 
-    # Find when Lstar is NaN, typically indicating perigee
-    perigee_times_A = find_perigee_times(Lstar_B, Epoch_B)
-    # Find local maxima, indicating apogee
-    apogee_times_A = find_apogee_times(Lstar_B, Epoch_B)
+#%% Calculate K
+    # Calculate K from X_j: K = X_j * \sqrt(B_mirr)
+    print("Calculating K (RBSP-A)")
+    K_A = Xj_A * np.sqrt(Bmirr_A*1e-5) # R_E*G^(1/2)
+    # Find alpha for a given K at each time point from IRBEM AlphaofK
+    #alphaofK_A = irbem.AlphaOfK(time_A, position_A, K=K_set, extMag=extMag, omnivals=omnivals_refined_A)
 
     # Calculate K from X_j: K = X_j * \sqrt(B_mirr)
     print("Calculating K (RBSP-B)")
     K_B = Xj_B * np.sqrt(Bmirr_B*1e-5) # R_E*G^(1/2)
-    # Find alpha at each time point given a set K
-    alpha_set_B = find_alpha(K_set, K_B, alpha_B_extend) 
     # Find alpha for a given K at each time point from IRBEM AlphaofK
-    alphaofK_B = irbem.AlphaOfK(time_B, position_B, K=K_set, extMag=extMag, omnivals=omnivals_refined_B)
+    #alphaofK_B = irbem.AlphaOfK(time_B, position_B, K=K_set, extMag=extMag, omnivals=omnivals_refined_B)
 
 #%% Save chosen data
     '''
@@ -203,6 +191,11 @@ if __name__ == '__main__':
     # Save the dictionary to a .npz file (NumPy zip archive)
     np.savez('vital_data.npz', **data_to_save)
     '''
+
+#%% Find energy for a given mu at each time point
+
+        
+
 
 #%% Plots
     '''
@@ -288,11 +281,16 @@ if __name__ == '__main__':
     
     # Plot Mu vs time for each energy channel at each pitch angle for RBSP-A
     fig, axes = plt.subplots(9, 1, figsize=(12, 30), sharex=True)
-    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, 12, dtype=int)]
+    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, 10, dtype=int)]
+    handles = []  # List to store handles (scatter objects)
+    labels = []   # List to store labels (energy channel labels)
     for i in range(9):
         ax = axes[i]
-        for j in range(12):
+        for j in range(len(energy_channels_A)-2):
             scatter = ax.scatter(Epoch_A[:], Mu_A[j, i, :], s=4, color=colors[j])
+            if i == 0:  # Only add handles and labels for the first subplot
+                handles.append(scatter)
+                labels.append(f"{energy_channels_A[j]:.2f}") #create label from energy_channels_A
         ax.set_title(f"Pitch Angle {alpha_A[i]:.2f}",fontsize=textsize+2)
         ax.set_ylabel(r'$\mu$', fontsize=textsize)
         ax.set_yscale('log') # Set y-axis to logarithmic scale
@@ -406,6 +404,55 @@ if __name__ == '__main__':
     for handle in legend.legend_handles:
         handle.set_sizes([100.0]) # Adjust the size as needed
     fig.suptitle(f"Compare $\\alpha$ from interpolation to IRBEM for K=0.1", fontsize=textsize + 4) # Add figure title
+    plt.show()
+    
+    
+    
+    # Plot mu v alpha at given time points for each energy channel
+    time_index = 5000
+    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, 10, dtype=int)]
+    handles = []
+    labels = []
+    fig, (axA) = plt.subplots(figsize=(16, 4))
+    for energy_channel in range(len(energy_channels_A)-2):
+        scatter = axA.scatter(alpha_A_extend, Mu_A[energy_channel, :, time_index], s=50, color=colors[energy_channel], label=f"Energy Channel {energy_channel + 1}")
+        handles.append(scatter)
+        labels.append(f"{energy_channels_A[energy_channel]:.2f}") #create label from energy_channels_A
+    axA.set_title("RBSP-A", fontsize=textsize)
+    axA.set_ylabel(r"$\mu$ (MeV/G)", fontsize=textsize)
+    axA.tick_params(axis='both', labelsize=textsize)
+    axA.set_xlabel("Pitch Angle (degrees)", fontsize=textsize)
+    #axA.set_yscale('log')
+    
+    # Create a single legend
+    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1, 0.5), fontsize=textsize, markerscale=2, title="Energy\nChannels\n(MeV)\n", title_fontsize=textsize) # Adjust legend
+    fig.suptitle(f"Time = {Epoch_A[time_index]}", fontsize=textsize+2)
+    plt.subplots_adjust(top=0.85, right=0.9) #adjusted top and right.
+    plt.show()
+    
+    
+    # Plot mu v energy at given time points for each pitch angle
+    time_index = 20000
+    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(alpha_A_extend), dtype=int)]
+    handles = []
+    labels = []
+    fig, (axA) = plt.subplots(figsize=(16, 4))
+    
+    for alpha_index in range(len(alpha_A_extend)):  # Renamed loop variable
+        scatter = axA.scatter(energy_channels_A[:-2], Mu_A[:-2, alpha_index, time_index], s=50, color=colors[alpha_index],
+                            label=f"Pitch Angle {alpha_index + 1}")
+        handles.append(scatter)
+        labels.append(f"{alpha_A_extend[alpha_index]:.0f}")  # Create label from alpha_A_extend
+    
+    axA.set_title("RBSP-A", fontsize=textsize)
+    axA.set_ylabel(r"$\mu$ (MeV/G)", fontsize=textsize)
+    axA.tick_params(axis='both', labelsize=textsize)
+    axA.set_xlabel("Energy (MeV)", fontsize=textsize)
+    
+    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1, 0.5), fontsize=textsize, markerscale=2,
+            title="Pitch Angle\n(Degrees)\n", title_fontsize=textsize)  # Corrected legend title
+    fig.suptitle(f"Time = {Epoch_A[time_index]}", fontsize=textsize + 2)
+    plt.subplots_adjust(top=0.85, right=0.9)
     plt.show()
     '''
     
