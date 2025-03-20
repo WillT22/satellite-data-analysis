@@ -21,7 +21,6 @@ from analysis_functions import interpolate_Ephem
 from analysis_functions import get_Omni
 from analysis_functions import extend_alpha
 from analysis_functions import find_alpha
-from analysis_functions import omnival_time_slice
 from analysis_functions import energy_from_mu_alpha
 
 # Import the latest version of OMNI data
@@ -191,33 +190,14 @@ if __name__ == '__main__':
     
 #%% Find L* for calculated alpha values from set K
     print("Calculating L* for set K values (RBSP-A)")
-    Lstar_A_set2 = np.zeros(len(alpha_A_set))
-    for time_index in range(len(alpha_A_set)):    
-        Lstar_A_set2[time_index] = np.interp(alpha_A_set[time_index], alpha_A_extend, Lstar_A[time_index,:])
-    
-    ''' Computationally expensive and gives exact same values
-    results_A_set = []
     Lstar_A_set = np.zeros(len(alpha_A_set))
-    for time_index in range(len(alpha_A_set)):
-        results_A_set = irbem.get_Lstar(time_A[time_index], position_A[time_index,:], alpha=alpha_A_set[time_index], extMag=extMag, omnivals= omnival_time_slice(omnivals_refined_A, time_index))
-        Lstar_A_set[time_index] = results_A_set["Lstar"]
-    '''
+    for time_index in range(len(alpha_A_set)):    
+        Lstar_A_set[time_index] = np.interp(alpha_A_set[time_index], alpha_A_extend, Lstar_A[time_index,:])
     
     print("Calculating L* for set K values (RBSP-B)")
     Lstar_B_set = np.zeros(len(alpha_B_set))
     for time_index in range(len(alpha_B_set)):    
         Lstar_B_set[time_index] = np.interp(alpha_B_set[time_index], alpha_B_extend, Lstar_B[time_index,:])
-     
-    # Plot comparing interpolation vs get_Lstar
-    handles, labels = [], []
-    fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(20, 5))  
-    axA.scatter(Epoch_A, Lstar_A_set2, s=4)
-    axA.scatter(Epoch_A, Lstar_A_set, s=4)
-    
-    axB.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
-    axB.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-    plt.xticks(rotation=45, ha='right', fontsize=textsize)  # Rotate 45 degrees, align right
-    plt.show()
 
 #%% Find energy for a given mu at each time point
     # Find kinetic energy of particle population with a given Mu and alpha calculated from a given K 
@@ -457,15 +437,67 @@ if __name__ == '__main__':
     
     
     # Plot L* v time with electron kinetic energy as colorbar
-    
-    
     handles, labels = [], []
-    fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(10, 5))  
-    axA.scatter(Epoch_A, EnergyofMuAlpha_A, color = EnergyofMuAlpha_A)
+    fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(20, 5))
     
+    # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
+    Epoch_A_np = np.array(Epoch_A)
+    Epoch_B_np = np.array(Epoch_B)
+    
+    # Filter data for Lstar > 2
+    mask_A = Lstar_A_set > 2
+    Epoch_A_filtered = Epoch_A_np[mask_A]
+    Lstar_A_set_filtered = Lstar_A_set[mask_A]
+    EnergyofMuAlpha_A_filtered = EnergyofMuAlpha_A[mask_A]
+    
+    mask_B = Lstar_B_set > 2
+    Epoch_B_filtered = Epoch_B_np[mask_B]
+    Lstar_B_set_filtered = Lstar_B_set[mask_B]
+    EnergyofMuAlpha_B_filtered = EnergyofMuAlpha_B[mask_B]
+    
+    # Linear colorbar set up
+    min_val = min(np.nanmin(EnergyofMuAlpha_A_filtered), np.nanmin(EnergyofMuAlpha_B_filtered))
+    max_val = max(np.nanmax(EnergyofMuAlpha_A_filtered), np.nanmax(EnergyofMuAlpha_B_filtered))
+    
+    scatter_A = axA.scatter(Epoch_A_filtered, Lstar_A_set_filtered, c=EnergyofMuAlpha_A_filtered, vmin=min_val, vmax=max_val)
+    scatter_B = axB.scatter(Epoch_B_filtered, Lstar_B_set_filtered, c=EnergyofMuAlpha_B_filtered, vmin=min_val, vmax=max_val)
+    
+    axA.set_title("RBSP-A", fontsize=textsize)
+    axA.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
+    axA.tick_params(axis='both', labelsize=textsize)
+    axA.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    axA.grid(True)
+    
+    axB.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
+    axB.set_title("RBSP-B", fontsize=textsize)
+    axB.tick_params(axis='both', labelsize=textsize)
+    axB.grid(True)
+    axB.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
     axB.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
     axB.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-    plt.xticks(rotation=45, ha='right', fontsize=textsize)  # Rotate 45 degrees, align right
+    
+    cbar_A = fig.colorbar(scatter_A, ax=axA)
+    cbar_A.set_label(r"$E_K$ (MeV)", fontsize=textsize)
+    cbar_A.ax.tick_params(labelsize=textsize)
+    
+    cbar_B = fig.colorbar(scatter_B, ax=axB)
+    cbar_B.set_label(r"$E_K$ (MeV)", fontsize=textsize)
+    cbar_B.ax.tick_params(labelsize=textsize)
+    
+    cbar_min_A = cbar_A.get_ticks()[0]
+    cbar_max_A = cbar_A.get_ticks()[-1]
+    
+    cbar_min_B = cbar_B.get_ticks()[0]
+    cbar_max_B = cbar_B.get_ticks()[-1]
+    
+    # Set colorbar tick locations to every 2 units within current limits
+    ticks_A = np.arange(np.floor(cbar_min_A / 2.0) * 2.0, np.ceil(cbar_max_A / 2.0) * 2.0 + 1, 2)
+    cbar_A.set_ticks(ticks_A)
+    
+    ticks_B = np.arange(np.floor(cbar_min_B / 2.0) * 2.0, np.ceil(cbar_max_B / 2.0) * 2.0 + 1, 2)
+    cbar_B.set_ticks(ticks_B)
+    
+    plt.xticks(rotation=45, ha='right', fontsize=textsize)
     plt.show()
     '''
     

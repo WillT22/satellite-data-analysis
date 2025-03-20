@@ -247,29 +247,6 @@ def find_alpha(K_set, K, alpha):
  
      return alpha_set
 
-#%% Extract a slice of omnivalues dictionary
-def omnival_time_slice(omnivals, time_index):
-    """
-    Extracts a time slice from each array in a dictionary.
-
-    Args:
-        omnivals (dict): Dictionary where values are arrays or lists.
-        time_index (int): Index of the time slice to extract.
-
-    Returns:
-        dict: New dictionary with time slice values.
-    """
-
-    time_slice_dict = {}
-    for key, value in omnivals.items():
-        try:
-            time_slice_value = value[time_index]
-            time_slice_dict[key] = np.array([time_slice_value])
-        except IndexError:
-            print(f"IndexError: time_index {time_index} is out of range for key '{key}'.")
-            return None #Or some other error handling.
-    return time_slice_dict
-
 
 #%% Calculate energy from set mu and alpha:
 electron_E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6)
