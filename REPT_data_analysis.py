@@ -21,6 +21,7 @@ from analysis_functions import interpolate_Ephem
 from analysis_functions import get_Omni
 from analysis_functions import extend_alpha
 from analysis_functions import find_alpha
+from analysis_functions import omnival_time_slice
 from analysis_functions import energy_from_mu_alpha
 
 # Import the latest version of OMNI data
@@ -180,22 +181,49 @@ if __name__ == '__main__':
     print("Calculating K (RBSP-A)")
     K_A = Xj_A * np.sqrt(Bmirr_A*1e-5) # R_E*G^(1/2)
     # Find alpha at each time point given a set K
-    alpha_set_A = find_alpha(K_set, K_A, alpha_A_extend) 
+    alpha_A_set = find_alpha(K_set, K_A, alpha_A_extend) 
 
     # Calculate K from X_j: K = X_j * \sqrt(B_mirr)
     print("Calculating K (RBSP-B)")
     K_B = Xj_B * np.sqrt(Bmirr_B*1e-5) # R_E*G^(1/2)
     # Find alpha at each time point given a set K
-    alpha_set_B = find_alpha(K_set, K_B, alpha_B_extend) 
+    alpha_B_set = find_alpha(K_set, K_B, alpha_B_extend) 
     
+#%% Find L* for calculated alpha values from set K
+    print("Calculating L* for set K values (RBSP-A)")
+    Lstar_A_set2 = np.zeros(len(alpha_A_set))
+    for time_index in range(len(alpha_A_set)):    
+        Lstar_A_set2[time_index] = np.interp(alpha_A_set[time_index], alpha_A_extend, Lstar_A[time_index,:])
+    
+    ''' Computationally expensive and gives exact same values
+    results_A_set = []
+    Lstar_A_set = np.zeros(len(alpha_A_set))
+    for time_index in range(len(alpha_A_set)):
+        results_A_set = irbem.get_Lstar(time_A[time_index], position_A[time_index,:], alpha=alpha_A_set[time_index], extMag=extMag, omnivals= omnival_time_slice(omnivals_refined_A, time_index))
+        Lstar_A_set[time_index] = results_A_set["Lstar"]
+    '''
+    
+    print("Calculating L* for set K values (RBSP-B)")
+    Lstar_B_set = np.zeros(len(alpha_B_set))
+    for time_index in range(len(alpha_B_set)):    
+        Lstar_B_set[time_index] = np.interp(alpha_B_set[time_index], alpha_B_extend, Lstar_B[time_index,:])
+     
+    # Plot comparing interpolation vs get_Lstar
+    handles, labels = [], []
+    fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(20, 5))  
+    axA.scatter(Epoch_A, Lstar_A_set2, s=4)
+    axA.scatter(Epoch_A, Lstar_A_set, s=4)
+    
+    axB.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
+    axB.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+    plt.xticks(rotation=45, ha='right', fontsize=textsize)  # Rotate 45 degrees, align right
+    plt.show()
 
 #%% Find energy for a given mu at each time point
-    # Test to ensure derivation is correct    
-    Energy_kin = np.sqrt(2*electron_E0*Mu_A[:,:,0]*(Blocal_A[0]*1e-5)/np.sin(np.radians(alpha_A_extend))**2+electron_E0**2)-electron_E0    
     # Find kinetic energy of particle population with a given Mu and alpha calculated from a given K 
-    EnergyofMuAlpha_A = energy_from_mu_alpha(Mu_set, alpha_set_A, Blocal_A)
+    EnergyofMuAlpha_A = energy_from_mu_alpha(Mu_set, alpha_A_set, Blocal_A)
     # Find kinetic energy of particle population with a given Mu and alpha calculated from a given K 
-    EnergyofMuAlpha_B = energy_from_mu_alpha(Mu_set, alpha_set_B, Blocal_B)
+    EnergyofMuAlpha_B = energy_from_mu_alpha(Mu_set, alpha_B_set, Blocal_B)
 
 
 #%% Plots
@@ -376,37 +404,7 @@ if __name__ == '__main__':
     fig.suptitle(f"Time = {Epoch_A[time_index]}", fontsize=textsize)
     plt.show()
     
-    
-    
-    # Plot linear interpolated alpha for K=0.1, comparing to IRBEM calculations
-    fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(15, 7))  
-    scatter_alpha_set_A = axA.scatter(Epoch_A, alpha_set_A, s=10, label="Interpolated")
-    scatter_alphaofK_A = axA.scatter(Epoch_A, alphaofK_A, s=10, label="IRBEM (equitorial)")
-    scatter_alpha_set_B = axB.scatter(Epoch_B, alpha_set_B, s=10, label="Interpolated")
-    scatter_alphaofK_B = axB.scatter(Epoch_B, alphaofK_B, s=10, label="IRBEM (equitorial)")
-    axA.set_title("RBSP-A", fontsize=textsize)  # Top plot label
-    axB.set_title("RBSP-B", fontsize=textsize)          # Bottom plot label
-    axA.set_ylabel(r"$\alpha$", fontsize=textsize)
-    axB.set_ylabel(r"$\alpha$", fontsize=textsize)
-    axA.tick_params(axis='both', labelsize=textsize)  # Set tick label size
-    # Force labels for first and last x-axis tick marks 
-    min_epoch = datetime(1970, 1, 1) + timedelta(hours=math.floor((min_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
-    max_epoch = datetime(1970, 1, 1) + timedelta(hours=math.ceil((max_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
-    axB.set_xlim(min_epoch, max_epoch) 
-    axB.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12) )
-    axB.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-    axB.set_xlabel("Time", fontsize=textsize)
-    axB.tick_params(axis='both', labelsize=textsize)  # Set tick label size
-    plt.xticks(rotation=45, ha='right', fontsize=textsize)  # Rotate 45 degrees, align right
-    # Create a single legend
-    handles, labels = axA.get_legend_handles_labels()
-    legend = fig.legend(handles, labels, loc='upper right', bbox_to_anchor=(0.95, 0.95), fontsize=textsize)
-    for handle in legend.legend_handles:
-        handle.set_sizes([100.0]) # Adjust the size as needed
-    fig.suptitle(f"Compare $\\alpha$ from interpolation to IRBEM for K=0.1", fontsize=textsize + 4) # Add figure title
-    plt.show()
-    
-    
+
     
     # Plot mu v alpha at given time points for each energy channel
     time_index = 500
@@ -431,6 +429,7 @@ if __name__ == '__main__':
     plt.show()
     
     
+    
     # Plot mu v energy at given time points for each pitch angle
     time_index = 20000
     colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(alpha_A_extend), dtype=int)]
@@ -453,6 +452,20 @@ if __name__ == '__main__':
             title="Pitch Angle\n(Degrees)\n", title_fontsize=textsize)  # Corrected legend title
     fig.suptitle(f"Time = {Epoch_A[time_index]}", fontsize=textsize + 2)
     plt.subplots_adjust(top=0.85, right=0.9)
+    plt.show()
+    
+    
+    
+    # Plot L* v time with electron kinetic energy as colorbar
+    
+    
+    handles, labels = [], []
+    fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(10, 5))  
+    axA.scatter(Epoch_A, EnergyofMuAlpha_A, color = EnergyofMuAlpha_A)
+    
+    axB.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
+    axB.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+    plt.xticks(rotation=45, ha='right', fontsize=textsize)  # Rotate 45 degrees, align right
     plt.show()
     '''
     

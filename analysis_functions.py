@@ -240,17 +240,35 @@ def find_alpha(K_set, K, alpha):
              valid_k = row_k[combined_mask]
              valid_alpha = alpha[combined_mask]
  
-             # Sort the valid K values and corresponding alpha values in ascending order of K.
-             sort_indices = np.argsort(valid_k)
-             valid_k = valid_k[sort_indices]
-             valid_alpha = valid_alpha[sort_indices]
- 
              # Check if K_set is within the range of valid K values.
              if np.min(valid_k) <= K_set <= np.max(valid_k):
                  # Interpolate the alpha value for K_set using the valid K and alpha values.
                  alpha_set[time_index] = np.interp(K_set, valid_k, valid_alpha)
  
      return alpha_set
+
+#%% Extract a slice of omnivalues dictionary
+def omnival_time_slice(omnivals, time_index):
+    """
+    Extracts a time slice from each array in a dictionary.
+
+    Args:
+        omnivals (dict): Dictionary where values are arrays or lists.
+        time_index (int): Index of the time slice to extract.
+
+    Returns:
+        dict: New dictionary with time slice values.
+    """
+
+    time_slice_dict = {}
+    for key, value in omnivals.items():
+        try:
+            time_slice_value = value[time_index]
+            time_slice_dict[key] = np.array([time_slice_value])
+        except IndexError:
+            print(f"IndexError: time_index {time_index} is out of range for key '{key}'.")
+            return None #Or some other error handling.
+    return time_slice_dict
 
 
 #%% Calculate energy from set mu and alpha:
