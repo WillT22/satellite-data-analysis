@@ -20,6 +20,7 @@ from analysis_functions import process_ephem_data
 from analysis_functions import interpolate_Ephem
 from analysis_functions import get_Omni
 from analysis_functions import extend_alpha
+from analysis_functions import find_alpha
 from analysis_functions import energy_from_mu_alpha
 
 # Import the latest version of OMNI data
@@ -104,8 +105,6 @@ if __name__ == '__main__':
     # Access the loaded variables
     results_A = loaded_data['results_A'].item()
     results_B = loaded_data['results_B'].item()
-    alphaofK_A = loaded_data['alphaofK_A']
-    alphaofK_B = loaded_data['alphaofK_B']
     
 
 #%% Obtain Omni Information & prepare for calculating K and L*
@@ -164,64 +163,62 @@ if __name__ == '__main__':
     # Separate dictionary ino variables
     Bmin_B, Bmirr_B, Lm_B, Lstar_B, MLT_B, Xj_B = results_B["Bmin"], results_B["Bmirr"], results_B["Lm"], results_B["Lstar"], results_B["MLT"], results_B["Xj"]
     Lstar_B[Lstar_B == -np.inf] = np.nan
+    
+#%% Save chosen data
+    
+    print("Saving Data")
+    # Create a dictionary to store the variables
+    data_to_save = {
+        'results_A': results_A,
+        'results_B': results_B,
+    }
+    # Save the dictionary to a .npz file (NumPy zip archive)
+    np.savez('vital_data.npz', **data_to_save)
 
 #%% Calculate K
     # Calculate K from X_j: K = X_j * \sqrt(B_mirr)
     print("Calculating K (RBSP-A)")
     K_A = Xj_A * np.sqrt(Bmirr_A*1e-5) # R_E*G^(1/2)
-    # Find alpha for a given K at each time point from IRBEM AlphaofK
-    #alphaofK_A = irbem.AlphaOfK(time_A, position_A, K=K_set, extMag=extMag, omnivals=omnivals_refined_A)
+    # Find alpha at each time point given a set K
+    alpha_set_A = find_alpha(K_set, K_A, alpha_A_extend) 
 
     # Calculate K from X_j: K = X_j * \sqrt(B_mirr)
     print("Calculating K (RBSP-B)")
     K_B = Xj_B * np.sqrt(Bmirr_B*1e-5) # R_E*G^(1/2)
-    # Find alpha for a given K at each time point from IRBEM AlphaofK
-    #alphaofK_B = irbem.AlphaOfK(time_B, position_B, K=K_set, extMag=extMag, omnivals=omnivals_refined_B)
-
-#%% Save chosen data
-    '''
-    # Create a dictionary to store the variables
-    data_to_save = {
-        'results_A': results_A,
-        'results_B': results_B,
-        'alphaofK_A': alphaofK_A,
-        'alphaofK_B': alphaofK_B
-    }
+    # Find alpha at each time point given a set K
+    alpha_set_B = find_alpha(K_set, K_B, alpha_B_extend) 
     
-    # Save the dictionary to a .npz file (NumPy zip archive)
-    np.savez('vital_data.npz', **data_to_save)
-    '''
 
 #%% Find energy for a given mu at each time point
     # Test to ensure derivation is correct    
     Energy_kin = np.sqrt(2*electron_E0*Mu_A[:,:,0]*(Blocal_A[0]*1e-5)/np.sin(np.radians(alpha_A_extend))**2+electron_E0**2)-electron_E0    
     # Find kinetic energy of particle population with a given Mu and alpha calculated from a given K 
-    EnergyofMuAlpha_A = energy_from_mu_alpha(Mu_set, alphaofK_A, Blocal_A)
+    EnergyofMuAlpha_A = energy_from_mu_alpha(Mu_set, alpha_set_A, Blocal_A)
     # Find kinetic energy of particle population with a given Mu and alpha calculated from a given K 
-    EnergyofMuAlpha_B = energy_from_mu_alpha(Mu_set, alphaofK_B, Blocal_B)
+    EnergyofMuAlpha_B = energy_from_mu_alpha(Mu_set, alpha_set_B, Blocal_B)
 
 
 #%% Plots
     '''
     # Plot ephemeris file data and calculated L* data for RBSP A&B
-    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(10, 5))  
-    ax1.scatter(Epoch_A, Lstar_interp_A[:,9], s=5)
-    ax1.scatter(Epoch_B, Lstar_interp_B[:,9], s=5)
-    ax2.scatter(Epoch_A, Lstar_A[:,4], s=5)
-    ax2.scatter(Epoch_B, Lstar_B[:,4], s=5)
-    ax1.set_title("Ephemeris L*")  # Top plot label
-    ax2.set_title("L*")           # Bottom plot label
+    handles, labels = [], []
+    fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(10, 5))  
+    ephemplot_A = axA.scatter(Epoch_A, Lstar_interp_A[:,9], s=5, label="Ephemeris")
+    calcplot_A = axA.scatter(Epoch_A, Lstar_A[:,4], s=5, label="IRBEM")
+    ephemplot_B = axB.scatter(Epoch_B, Lstar_interp_B[:,9], s=5, label="Ephemeris")
+    calcplot_B = axB.scatter(Epoch_B, Lstar_B[:,4], s=5, label="IRBEM")
+    axA.set_title("RBSP-A")  # Top plot label
+    axB.set_title("RBSP-B")           # Bottom plot label
     # Force labels for first and last x-axis tick marks 
     min_epoch = datetime(1970, 1, 1) + timedelta(hours=math.floor((min_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
     max_epoch = datetime(1970, 1, 1) + timedelta(hours=math.ceil((max_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
-    ax2.set_xlim(min_epoch, max_epoch) 
-    ax2.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12) )
-    ax2.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-    ax1.set_yticks(np.arange(2, 8, 1))
-    ax1.set_ylim(2, 7)
-    ax2.set_yticks(np.arange(2, 8, 1))
-    ax2.set_ylim(2, 7)
+    axB.set_xlim(min_epoch, max_epoch) 
+    axB.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12) )
+    axB.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+    axB.set_yticks(np.arange(2, 8, 1))
+    axB.set_ylim(2, 7)
     fig.autofmt_xdate()
+    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1.1, 0.5), fontsize=textsize, markerscale=5)
     plt.show()
     
     
@@ -286,8 +283,7 @@ if __name__ == '__main__':
     # Plot Mu vs time for each energy channel at each pitch angle for RBSP-A
     fig, axes = plt.subplots(9, 1, figsize=(12, 30), sharex=True)
     colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, 10, dtype=int)]
-    handles = []  # List to store handles (scatter objects)
-    labels = []   # List to store labels (energy channel labels)
+    handles, labels = [], []
     for i in range(9):
         ax = axes[i]
         for j in range(len(energy_channels_A)-2):
@@ -385,9 +381,9 @@ if __name__ == '__main__':
     # Plot linear interpolated alpha for K=0.1, comparing to IRBEM calculations
     fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(15, 7))  
     scatter_alpha_set_A = axA.scatter(Epoch_A, alpha_set_A, s=10, label="Interpolated")
-    scatter_alphaofK_A = axA.scatter(Epoch_A, alphaofK_A, s=10, label="IRBEM")
+    scatter_alphaofK_A = axA.scatter(Epoch_A, alphaofK_A, s=10, label="IRBEM (equitorial)")
     scatter_alpha_set_B = axB.scatter(Epoch_B, alpha_set_B, s=10, label="Interpolated")
-    scatter_alphaofK_B = axB.scatter(Epoch_B, alphaofK_B, s=10, label="IRBEM")
+    scatter_alphaofK_B = axB.scatter(Epoch_B, alphaofK_B, s=10, label="IRBEM (equitorial)")
     axA.set_title("RBSP-A", fontsize=textsize)  # Top plot label
     axB.set_title("RBSP-B", fontsize=textsize)          # Bottom plot label
     axA.set_ylabel(r"$\alpha$", fontsize=textsize)
@@ -413,7 +409,7 @@ if __name__ == '__main__':
     
     
     # Plot mu v alpha at given time points for each energy channel
-    time_index = 5000
+    time_index = 500
     colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, 10, dtype=int)]
     handles = []
     labels = []

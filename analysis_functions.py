@@ -198,7 +198,61 @@ def extend_alpha(alpha):
     
     return alpha_extend
         
-    
+#%% Find alpha given K
+def find_alpha(K_set, K, alpha):
+     """
+     Finds the alpha value corresponding to a given K_set by interpolating within a matrix of K values.
+ 
+     Args:
+         K_set (float): The target K value for which to find alpha.
+         K (numpy.ndarray): A 2D NumPy array of K values. Each row represents a time point, and each column corresponds to an alpha value.
+         alpha (numpy.ndarray): A 1D NumPy array of alpha values corresponding to the columns of K.
+ 
+     Returns:
+         numpy.ndarray: A 1D NumPy array of alpha values, one for each time point in K, corresponding to K_set.
+                        NaN is returned for time points where K_set cannot be interpolated.
+     """
+ 
+     # Check if the number of columns in K matches the length of alpha.
+     if K.shape[1] != len(alpha):
+         raise ValueError("Number of columns in K must match length of alpha.")
+ 
+     # Initialize an array to store the resulting alpha values, filled with NaN.
+     alpha_set = np.full(K.shape[0], np.nan)
+ 
+     # Iterate through each time point (row) in the K matrix.
+     for time_index in range(K.shape[0]):
+         # Extract the K values for the current time point.
+         row_k = K[time_index, :]
+ 
+         # Create a mask to identify NaN values in the K row.
+         nan_mask = np.isnan(row_k)
+ 
+         # Create a mask to identify K values that are less than or equal to 1.
+         valid_mask = row_k <= 1
+ 
+         # Combine the masks to exclude NaN values and values greater than 1.
+         combined_mask = ~nan_mask & valid_mask
+ 
+         # Check if there are any valid K values for the current time point.
+         if np.any(combined_mask):
+             # Extract the valid K values and corresponding alpha values.
+             valid_k = row_k[combined_mask]
+             valid_alpha = alpha[combined_mask]
+ 
+             # Sort the valid K values and corresponding alpha values in ascending order of K.
+             sort_indices = np.argsort(valid_k)
+             valid_k = valid_k[sort_indices]
+             valid_alpha = valid_alpha[sort_indices]
+ 
+             # Check if K_set is within the range of valid K values.
+             if np.min(valid_k) <= K_set <= np.max(valid_k):
+                 # Interpolate the alpha value for K_set using the valid K and alpha values.
+                 alpha_set[time_index] = np.interp(K_set, valid_k, valid_alpha)
+ 
+     return alpha_set
+
+
 #%% Calculate energy from set mu and alpha:
 electron_E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6)
 def energy_from_mu_alpha(Mu_set, Alpha_set, B_local):
