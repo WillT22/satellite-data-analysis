@@ -5,7 +5,7 @@ import spacepy.omni as omni
 import scipy.constants as sc
 
 #%% Proccess REPT CDF
-def process_flux_data(file_paths):
+def process_l3_data(file_paths):
     # Initialize varaibles to be read in
     Epoch = []
     L = []
@@ -273,3 +273,43 @@ def energy_from_mu_alpha(Mu_set, Alpha_set, B_local):
     kinetic_energy = np.sqrt(2 * electron_E0 * Mu_set * (B_local * 1e-5) / sin_squared_alpha + electron_E0**2) - electron_E0
 
     return kinetic_energy
+
+#%% Find the averages of fluzes with the same pitch angle
+def average_fluxes_by_pitch_angle(FEDU, alpha, energy_channels):
+    """
+    Averages fluxes for matching pitch angles in FEDU.
+
+    Args:
+        FEDU (numpy.ndarray): 3D array of fluxes (time, pitch angle, energy).
+        alpha (list or numpy.ndarray): List or array of pitch angle values.
+        energy_channels (list or numpy.ndarray): List or array of energy channel values.
+
+    Returns:
+        numpy.ndarray: Averaged fluxes array (time, unique pitch angle, energy).
+    """
+
+    rounded_alphas = np.round(alpha, 4)
+    unique_alphas = sorted(list(set(rounded_alphas)))
+    FEDU_averaged = np.zeros((FEDU.shape[0], len(unique_alphas), len(energy_channels) - 4))
+
+    for time_index in range(FEDU.shape[0]):
+        for energy_index in range(len(energy_channels) - 4):
+            for pitch_angle_index in range(len(unique_alphas)):
+                mirrored_pitch_angle_index = 16 - pitch_angle_index
+
+                if (FEDU[time_index, pitch_angle_index, energy_index] != 0 and
+                        FEDU[time_index, mirrored_pitch_angle_index, energy_index] != 0):
+                    FEDU_averaged[time_index, pitch_angle_index, energy_index] = np.mean([
+                        FEDU[time_index, pitch_angle_index, energy_index],
+                        FEDU[time_index, mirrored_pitch_angle_index, energy_index]
+                    ])
+                elif (FEDU[time_index, pitch_angle_index, energy_index] != 0 and
+                      FEDU[time_index, mirrored_pitch_angle_index, energy_index] == 0):
+                    FEDU_averaged[time_index, pitch_angle_index, energy_index] = FEDU[time_index, pitch_angle_index, energy_index]
+                elif (FEDU[time_index, pitch_angle_index, energy_index] == 0 and
+                      FEDU[time_index, mirrored_pitch_angle_index, energy_index] != 0):
+                    FEDU_averaged[time_index, pitch_angle_index, energy_index] = FEDU[time_index, mirrored_pitch_angle_index, energy_index]
+                else:
+                    FEDU_averaged[time_index, pitch_angle_index, energy_index] = 0
+
+    return FEDU_averaged

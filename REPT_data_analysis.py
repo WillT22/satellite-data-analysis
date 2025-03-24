@@ -15,13 +15,14 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 
 # Import functions
-from analysis_functions import process_flux_data
+from analysis_functions import process_l3_data
 from analysis_functions import process_ephem_data
 from analysis_functions import interpolate_Ephem
 from analysis_functions import get_Omni
 from analysis_functions import extend_alpha
 from analysis_functions import find_alpha
 from analysis_functions import energy_from_mu_alpha
+from analysis_functions import average_fluxes_by_pitch_angle
 
 # Import the latest version of OMNI data
 #from spacepy import toolbox as tb
@@ -64,8 +65,8 @@ if __name__ == '__main__':
 #%% Function for reading in RBSP flux data
     # Read in data from RBSP CDF files
     print("Processing Flux Data:")
-    Epoch_A, L_A, Position_A, FEDU_A, energy_channels_A, alpha_A = process_flux_data(file_paths_l3_A)
-    Epoch_B, L_B, Position_B, FEDU_B, energy_channels_B, alpha_B = process_flux_data(file_paths_l3_B)
+    Epoch_A, L_A, Position_A, FEDU_A, energy_channels_A, alpha_A = process_l3_data(file_paths_l3_A)
+    Epoch_B, L_B, Position_B, FEDU_B, energy_channels_B, alpha_B = process_l3_data(file_paths_l3_B)
     
     # Handle cases where only A or B data is present (check which lists are not empty)
     if not Epoch_A and not L_A and not FEDU_A:
@@ -204,8 +205,15 @@ if __name__ == '__main__':
     EnergyofMuAlpha_A = energy_from_mu_alpha(Mu_set, alpha_A_set, Blocal_A)
     # Find kinetic energy of particle population with a given Mu and alpha calculated from a given K 
     EnergyofMuAlpha_B = energy_from_mu_alpha(Mu_set, alpha_B_set, Blocal_B)
-
-
+    
+#%% Interpolate flux for each energy given a mu and K
+    print("Averaging fluxes with the same pitch angle (RBSP-A)")
+    FEDU_A_averaged = average_fluxes_by_pitch_angle(FEDU_A, alpha_A, energy_channels_A)
+    print("Averaging fluxes with the same pitch angle (RBSP-B)")
+    FEDU_B_averaged = average_fluxes_by_pitch_angle(FEDU_B, alpha_B, energy_channels_B)
+    
+    
+    
 #%% Plots
     '''
     # Plot ephemeris file data and calculated L* data for RBSP A&B
@@ -387,12 +395,12 @@ if __name__ == '__main__':
 
     
     # Plot mu v alpha at given time points for each energy channel
-    time_index = 500
-    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, 10, dtype=int)]
+    time_index = 20000
+    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(energy_channels_A)-4, dtype=int)]
     handles = []
     labels = []
     fig, (axA) = plt.subplots(figsize=(16, 4))
-    for energy_channel in range(len(energy_channels_A)-2):
+    for energy_channel in range(len(energy_channels_A)-4):
         scatter = axA.scatter(alpha_A_extend, Mu_A[energy_channel, :, time_index], s=50, color=colors[energy_channel], label=f"Energy Channel {energy_channel + 1}")
         handles.append(scatter)
         labels.append(f"{energy_channels_A[energy_channel]:.2f}") #create label from energy_channels_A
@@ -401,6 +409,7 @@ if __name__ == '__main__':
     axA.tick_params(axis='both', labelsize=textsize)
     axA.set_xlabel("Pitch Angle (degrees)", fontsize=textsize)
     #axA.set_yscale('log')
+    axA.grid(True)
     
     # Create a single legend
     fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1, 0.5), fontsize=textsize, markerscale=2, title="Energy\nChannels\n(MeV)\n", title_fontsize=textsize) # Adjust legend
@@ -418,7 +427,7 @@ if __name__ == '__main__':
     fig, (axA) = plt.subplots(figsize=(16, 4))
     
     for alpha_index in range(len(alpha_A_extend)):  # Renamed loop variable
-        scatter = axA.scatter(energy_channels_A[:-2], Mu_A[:-2, alpha_index, time_index], s=50, color=colors[alpha_index],
+        scatter = axA.scatter(energy_channels_A[:-4], Mu_A[:-4, alpha_index, time_index], s=50, color=colors[alpha_index],
                             label=f"Pitch Angle {alpha_index + 1}")
         handles.append(scatter)
         labels.append(f"{alpha_A_extend[alpha_index]:.0f}")  # Create label from alpha_A_extend
@@ -427,6 +436,7 @@ if __name__ == '__main__':
     axA.set_ylabel(r"$\mu$ (MeV/G)", fontsize=textsize)
     axA.tick_params(axis='both', labelsize=textsize)
     axA.set_xlabel("Energy (MeV)", fontsize=textsize)
+    axA.grid(True)
     
     fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1, 0.5), fontsize=textsize, markerscale=2,
             title="Pitch Angle\n(Degrees)\n", title_fontsize=textsize)  # Corrected legend title
@@ -436,9 +446,58 @@ if __name__ == '__main__':
     
     
     
-    # Plot L* v time with electron kinetic energy as colorbar
+    # Plot L* v time and add specific time points
     handles, labels = [], []
-    fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(20, 5))
+    fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(16, 6))
+    
+    # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
+    Epoch_A_np = np.array(Epoch_A)
+    Epoch_B_np = np.array(Epoch_B)
+    
+    # Filter data for Lstar > 2
+    mask_A = Lstar_A_set > 2
+    Epoch_A_filtered = Epoch_A_np[mask_A]
+    Lstar_A_set_filtered = Lstar_A_set[mask_A]
+    
+    mask_B = Lstar_B_set > 2
+    Epoch_B_filtered = Epoch_B_np[mask_B]
+    Lstar_B_set_filtered = Lstar_B_set[mask_B]
+    
+    scatter_A = axA.scatter(Epoch_A_filtered, Lstar_A_set_filtered)
+    scatter_B = axB.scatter(Epoch_B_filtered, Lstar_B_set_filtered)
+    
+    axA.set_title("RBSP-A", fontsize=textsize)
+    axA.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
+    axA.tick_params(axis='both', labelsize=textsize)
+    axA.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    axA.grid(True)
+    
+    axB.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
+    axB.set_title("RBSP-B", fontsize=textsize)
+    axB.tick_params(axis='both', labelsize=textsize)
+    axB.grid(True)
+    axB.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    axB.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
+    axB.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+    
+    # Define time stamps for star markers
+    star_time_stamps_A = [500, 5000, 20000]  # Example time stamps
+    # Plot star markers
+    for time_stamp in star_time_stamps_A:
+        axA.scatter(Epoch_A[time_stamp], Lstar_A_set[time_stamp], marker='*', s=500, color='black')
+        axB.scatter(Epoch_B[time_stamp], Lstar_B_set[time_stamp], marker='*', s=500, color='black')  # Adjust size and color as needed
+    
+    fig.suptitle(f"Kinetic Energy of Electrons with K={K_set:.1f}", fontsize=textsize + 2)
+    plt.xticks(rotation=45, ha='right', fontsize=textsize)
+    plt.subplots_adjust(top=0.88, right=0.95)
+    plt.show()
+    '''
+    
+    
+    #%% Plot L* v time with electron kinetic energy as colorbar
+    '''
+    handles, labels = [], []
+    fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(16, 6))
     
     # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
     Epoch_A_np = np.array(Epoch_A)
@@ -476,32 +535,62 @@ if __name__ == '__main__':
     axB.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
     axB.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
     
-    cbar_A = fig.colorbar(scatter_A, ax=axA)
+    cbar_A = fig.colorbar(scatter_A, ax=axA, fraction=0.03, pad=0.01)
     cbar_A.set_label(r"$E_K$ (MeV)", fontsize=textsize)
     cbar_A.ax.tick_params(labelsize=textsize)
-    
-    cbar_B = fig.colorbar(scatter_B, ax=axB)
+    cbar_B = fig.colorbar(scatter_B, ax=axB, fraction=0.03, pad=0.01)
     cbar_B.set_label(r"$E_K$ (MeV)", fontsize=textsize)
     cbar_B.ax.tick_params(labelsize=textsize)
-    
-    cbar_min_A = cbar_A.get_ticks()[0]
-    cbar_max_A = cbar_A.get_ticks()[-1]
-    
-    cbar_min_B = cbar_B.get_ticks()[0]
-    cbar_max_B = cbar_B.get_ticks()[-1]
-    
     # Set colorbar tick locations to every 2 units within current limits
-    ticks_A = np.arange(np.floor(cbar_min_A / 2.0) * 2.0, np.ceil(cbar_max_A / 2.0) * 2.0 + 1, 2)
-    cbar_A.set_ticks(ticks_A)
+    ticks = np.arange(2, 14, 2)
+    cbar_A.set_ticks(ticks)
+    cbar_B.set_ticks(ticks)
     
-    ticks_B = np.arange(np.floor(cbar_min_B / 2.0) * 2.0, np.ceil(cbar_max_B / 2.0) * 2.0 + 1, 2)
-    cbar_B.set_ticks(ticks_B)
+    # Define time stamps for star markers
+    star_time_stamps_A = [500, 5000, 20000]  # Example time stamps
+    # Plot star markers
+    for time_stamp in star_time_stamps_A:
+        axA.scatter(Epoch_A[time_stamp], Lstar_A_set[time_stamp], marker='*', s=500, color='magenta')
+        axB.scatter(Epoch_B[time_stamp], Lstar_B_set[time_stamp], marker='*', s=500, color='magenta')  # Adjust size and color as needed
     
+    fig.suptitle(f"Kinetic Energy of Electrons with K={K_set:.1f}", fontsize=textsize + 2)
     plt.xticks(rotation=45, ha='right', fontsize=textsize)
+    plt.subplots_adjust(top=0.88, right=0.95)
     plt.show()
     '''
     
-    #%% GEO to GSM
+    
+#%% How flux and E_K relate for set Mu at given times
+    
+    time_index = 20000
+    # Create a set of unique alpha values
+    rounded_alphas = np.round(alpha_A, 4)
+    unique_alphas = sorted(list(set(rounded_alphas)))
+
+    handles, labels = [], []
+    fig, (axA) = plt.subplots(figsize=(16, 4))
+    
+    for unique_alpha_index, unique_alpha in enumerate(unique_alphas):
+        scatter = axA.scatter(energy_channels_A[:-4], FEDU_A_averaged[time_index, unique_alpha_index, :], s=50,
+                              color=colors[unique_alpha_index],label=f"Pitch Angle {unique_alpha:.0f}")
+        handles.append(scatter)
+        labels.append(f"{unique_alpha:.0f}")
+    
+    axA.set_title("RBSP-A", fontsize=textsize)
+    axA.set_ylabel("Electron Flux (#/cm²/s/sr/MeV)", fontsize=textsize)
+    axA.tick_params(axis='both', labelsize=textsize)
+    axA.set_xlabel("Energy (MeV)", fontsize=textsize)
+    axA.set_yscale('log')
+    
+    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1, 0.5), fontsize=textsize, markerscale=2,
+                title="Pitch Angle\n(Degrees)\n", title_fontsize=textsize)
+    fig.suptitle(f"Time = {Epoch_A[time_index]}", fontsize=textsize + 2)
+    plt.subplots_adjust(top=0.85, right=0.9)
+    plt.show()
+    
+    
+    
+#%% GEO to GSM
     '''
     def geo_to_gsm(epoch, position):
         # assumes UTC time
