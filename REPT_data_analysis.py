@@ -23,6 +23,8 @@ from analysis_functions import extend_alpha
 from analysis_functions import find_alpha
 from analysis_functions import energy_from_mu_alpha
 from analysis_functions import average_fluxes_by_pitch_angle
+from analysis_functions import interpolate_flux_by_energy
+from analysis_functions import fit_fluxvalpha_quad
 
 # Import the latest version of OMNI data
 #from spacepy import toolbox as tb
@@ -66,7 +68,9 @@ if __name__ == '__main__':
     # Read in data from RBSP CDF files
     print("Processing Flux Data:")
     Epoch_A, L_A, Position_A, FEDU_A, energy_channels_A, alpha_A = process_l3_data(file_paths_l3_A)
+    FEDU_A = np.where(FEDU_A == -1e+31, 0, FEDU_A)
     Epoch_B, L_B, Position_B, FEDU_B, energy_channels_B, alpha_B = process_l3_data(file_paths_l3_B)
+    FEDU_B = np.where(FEDU_B == -1e+31, 0, FEDU_B)
     
     # Handle cases where only A or B data is present (check which lists are not empty)
     if not Epoch_A and not L_A and not FEDU_A:
@@ -166,7 +170,7 @@ if __name__ == '__main__':
     Lstar_B[Lstar_B == -np.inf] = np.nan
     
 #%% Save chosen data
-    
+    '''
     print("Saving Data")
     # Create a dictionary to store the variables
     data_to_save = {
@@ -175,7 +179,7 @@ if __name__ == '__main__':
     }
     # Save the dictionary to a .npz file (NumPy zip archive)
     np.savez('vital_data.npz', **data_to_save)
-
+    '''
 #%% Calculate K
     # Calculate K from X_j: K = X_j * \sqrt(B_mirr)
     print("Calculating K (RBSP-A)")
@@ -212,240 +216,17 @@ if __name__ == '__main__':
     print("Averaging fluxes with the same pitch angle (RBSP-B)")
     FEDU_B_averaged = average_fluxes_by_pitch_angle(FEDU_B, alpha_B, energy_channels_B)
     
+    print("Interpolating Flux over Energy (RBSP-A)")
+    FEDU_A_interpE = interpolate_flux_by_energy(FEDU_A_averaged, alpha_A, energy_channels_A, alpha_A_set)
+    print("Interpolating Flux over Energy (RBSP-B)")
+    FEDU_B_interpE = interpolate_flux_by_energy(FEDU_B_averaged, alpha_B, energy_channels_B, alpha_B_set)
+    
+    #print("Interpolating Flux over Pitch Angle (RBSP-A)")
+    #print("Interpolating Flux over Pitch Angle (RBSP-B)")
     
     
 #%% Plots
     '''
-    # Plot ephemeris file data and calculated L* data for RBSP A&B
-    handles, labels = [], []
-    fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(10, 5))  
-    ephemplot_A = axA.scatter(Epoch_A, Lstar_interp_A[:,9], s=5, label="Ephemeris")
-    calcplot_A = axA.scatter(Epoch_A, Lstar_A[:,4], s=5, label="IRBEM")
-    ephemplot_B = axB.scatter(Epoch_B, Lstar_interp_B[:,9], s=5, label="Ephemeris")
-    calcplot_B = axB.scatter(Epoch_B, Lstar_B[:,4], s=5, label="IRBEM")
-    axA.set_title("RBSP-A")  # Top plot label
-    axB.set_title("RBSP-B")           # Bottom plot label
-    # Force labels for first and last x-axis tick marks 
-    min_epoch = datetime(1970, 1, 1) + timedelta(hours=math.floor((min_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
-    max_epoch = datetime(1970, 1, 1) + timedelta(hours=math.ceil((max_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
-    axB.set_xlim(min_epoch, max_epoch) 
-    axB.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12) )
-    axB.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-    axB.set_yticks(np.arange(2, 8, 1))
-    axB.set_ylim(2, 7)
-    fig.autofmt_xdate()
-    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1.1, 0.5), fontsize=textsize, markerscale=5)
-    plt.show()
-    
-    
-    
-    # Plot ephemeris file data against calculated L* data for RBSP A
-    fig, ax = plt.subplots()  
-    ax.scatter(Lstar_interp_A[:,10], Lstar_A, s=2, color = 'blue')
-    ax.plot([0, 6], [0, 6], color='black', linestyle='--')
-    ax.set_xlim(0, 6)
-    ax.set_ylim(0, 6)
-    ax.set_xlabel('Ephemeris L*')
-    ax.set_ylabel('L*')
-    ax.set_title('Comparison of Ephemeris L* and L* for RBSP-A')
-    ax.grid(True)
-    ax.set_aspect('equal')
-    plt.show()
-    
-    
-    
-    # Plot ephemeris file data against calculated L* data for RBSP B
-    fig, ax = plt.subplots()  
-    ax.scatter(Lstar_interp_B[:,10], Lstar_B, s=2, color = 'orange')
-    ax.plot([0, 6], [0, 6], color='black', linestyle='--')
-    ax.set_xlim(0, 6)
-    ax.set_ylim(0, 6)
-    ax.set_xlabel('Ephemeris L*')
-    ax.set_ylabel('L*')
-    ax.set_title('Comparison of Ephemeris L* and L* for RBSP-B')
-    ax.grid(True)
-    ax.set_aspect('equal')
-    plt.show()
-    '''
-    
-    
-    '''
-    # Plot calculated Mu data against L* for RBSP A for each pitch angle
-    fig, axes = plt.subplots(9, 1, figsize=(12, 30), sharex=True)
-    handles, labels = [], []
-    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, 12, dtype=int)]
-    for i in range(9):
-        ax = axes[i]
-        for j in range(12):
-            scatter = ax.scatter(Lstar_A[4138:5655, i], Mu_A[j, i, 4138:5655], s=4, color=colors[j])
-            if i == 0:
-                handles.append(scatter)
-                labels.append(energy_channels_A[j])
-        ax.set_title(f"Pitch Angle {alpha_A[i]:.2f}",fontsize=textsize+2)
-        ax.set_ylabel(r'$\mu$', fontsize=textsize)
-        ax.set_yscale('log') # Set y-axis to logarithmic scale
-        ax.set_xlim(2, np.nanmax(Lstar_A[4138:5655, :]))
-        ax.tick_params(axis='x', labelsize=textsize)
-        ax.tick_params(axis='y', labelsize=textsize)
-        ax.grid(True)
-    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1.1, 0.5), fontsize=textsize, markerscale=5, title="Energy\nChannels\n(MeV)\n", title_fontsize=textsize) # Adjust legend
-    ax.set_xlabel("L* from T89d", fontsize=textsize)
-    plt.subplots_adjust(right=0.95, top=0.95)
-    fig.suptitle(f"RBSP-A: {Epoch_A[4138]} to {Epoch_A[5655]}", fontsize=textsize + 4) # Add figure title
-    plt.show()
-    
-    
-    
-    # Plot Mu vs time for each energy channel at each pitch angle for RBSP-A
-    fig, axes = plt.subplots(9, 1, figsize=(12, 30), sharex=True)
-    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, 10, dtype=int)]
-    handles, labels = [], []
-    for i in range(9):
-        ax = axes[i]
-        for j in range(len(energy_channels_A)-2):
-            scatter = ax.scatter(Epoch_A[:], Mu_A[j, i, :], s=4, color=colors[j])
-            if i == 0:  # Only add handles and labels for the first subplot
-                handles.append(scatter)
-                labels.append(f"{energy_channels_A[j]:.2f}") #create label from energy_channels_A
-        ax.set_title(f"Pitch Angle {alpha_A[i]:.2f}",fontsize=textsize+2)
-        ax.set_ylabel(r'$\mu$', fontsize=textsize)
-        ax.set_yscale('log') # Set y-axis to logarithmic scale
-        ax.tick_params(axis='x', labelsize=textsize)
-        ax.tick_params(axis='y', labelsize=textsize)
-        ax.grid(True)
-        ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
-        ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-    # Force labels for first and last x-axis tick marks 
-    min_epoch = datetime(1970, 1, 1) + timedelta(hours=math.floor((min_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
-    max_epoch = datetime(1970, 1, 1) + timedelta(hours=math.ceil((max_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
-    ax.set_xlim(min_epoch, max_epoch)
-    plt.xticks(rotation=45, ha='right', fontsize=textsize)  # Rotate 45 degrees, align right
-    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1.1, 0.5), fontsize=textsize, markerscale=5, title="Energy\nChannels\n(MeV)\n", title_fontsize=textsize) # Adjust legend
-    ax.set_xlabel("Time", fontsize=textsize)
-    plt.subplots_adjust(right=0.95, top=0.95)
-    fig.suptitle(f"RBSP-A: Mu V Time", fontsize=textsize + 4) # Add figure title
-    plt.show()
-    
-    
-    
-    # Plot ephemeris file data and calculated K data for RBSP A&B
-    # setting pitch angle, for all time
-    # 25: interp = 13, calc = 2, 14
-    # 45: interp = 9, calc = 4, 12
-    # 80: interp = 2, calc = 7, 9
-    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(20, 5))
-    ax1.scatter(Epoch_A, K_interp_A[:, 9], s=5)
-    ax1.scatter(Epoch_B, K_interp_B[:, 9], s=5)
-    ax1.set_title("Ephemeris K", fontsize=textsize)
-    ax1.set_ylim(-0.1, 3)
-    ax1.set_yticks(np.arange(0, 4, 1))
-    ax1.set_ylabel("K", fontsize=textsize)
-    ax1.tick_params(axis='both', labelsize=textsize)  # Set tick label size
-    ax2.scatter(Epoch_A, K_A[:, 4], s=5, color='tab:blue')
-    ax2.scatter(Epoch_A, K_A[:, 12], s=5, color='tab:blue')
-    ax2.scatter(Epoch_B, K_B[:, 4], s=5, color='tab:orange')
-    ax2.scatter(Epoch_B, K_B[:, 12], s=5, color='tab:orange')
-    ax2.set_title("Calculated K", fontsize=textsize)
-    ax2.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
-    ax2.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-    plt.xticks(rotation=45, ha='right', fontsize=textsize)  # Rotate 45 degrees, align right
-    #ax2.set_ylim(-0.1, 3)
-    ax2.set_yticks(np.arange(0, 4, 1))
-    ax2.set_xlabel("Time", fontsize=textsize)
-    ax2.set_ylabel("K", fontsize=textsize)
-    ax2.tick_params(axis='both', labelsize=textsize)  # Set tick label size
-    fig.suptitle("Pitch Angle = 45 degrees", fontsize=textsize)
-    plt.show()
-    
-    
-    
-    # Plot ephemeris file data and calculated K data for RBSP A&B
-    # setting time point, for all pitch angles
-    smooth_alpha = np.linspace(0, 90, 100)
-    time_index = 500
-    fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(20, 5))
-    scatter_calc_A = axA.scatter(alpha_A_extend, K_A[time_index, :], s=100, label="Calculated")  # Blue circles
-    exponential_fit_A = axA.plot(smooth_alpha, exponential_fit(smooth_alpha, **K_alpha_fit_A[time_index]), ls='--', linewidth=2, label="Eponential Fit")[0]
-    power_fit_A = axA.plot(smooth_alpha, power_law_fit(smooth_alpha, **K_alpha_fit_power_A[time_index]), ls=':', linewidth=3, color=exponential_fit_A.get_color(), label="Power Law Fit")[0]
-    scatter_ephem_A = axA.scatter(alpha_ephem_A, K_interp_A[time_index, :], s=100, label="Ephemeris", marker='^')
-    axA.set_title("RBSP-A", fontsize=textsize)
-    axA.set_ylabel("K", fontsize=textsize)
-    axA.tick_params(axis='both', labelsize=textsize)
-    axA.set_ylim([-0.1, 1])
-    
-    axB.scatter(alpha_B_extend, K_B[time_index, :], s=100, label="Calculated")
-    axB.plot(smooth_alpha, exponential_fit(smooth_alpha, **K_alpha_fit_B[time_index]), ls='--', linewidth=2, label="Eponential Fit")[0]
-    axB.plot(smooth_alpha, power_law_fit(smooth_alpha, **K_alpha_fit_power_B[time_index]), ls=':', linewidth=3,  color=exponential_fit_A.get_color(), label="Power Law Fit")[0]
-    axB.scatter(alpha_ephem_B, K_interp_B[time_index, :], s=100, label="Ephemeris", marker='^')
-    axB.set_title("RBSP-B", fontsize=textsize)
-    axB.set_xlabel("Pitch Angle (degrees)", fontsize=textsize)
-    axB.set_ylabel("K", fontsize=textsize)
-    axB.tick_params(axis='both', labelsize=textsize)
-    axB.set_ylim([-0.1, 1])
-    
-    # Create a single legend
-    handles = [scatter_calc_A, exponential_fit_A, power_fit_A, scatter_ephem_A] #handles from A
-    labels = [h.get_label() for h in handles]
-    
-    fig.legend(handles, labels, loc='upper right', bbox_to_anchor=(0.95, 0.95), fontsize=textsize) #create legend in figure space.
-
-    fig.suptitle(f"Time = {Epoch_A[time_index]}", fontsize=textsize)
-    plt.show()
-    
-
-    
-    # Plot mu v alpha at given time points for each energy channel
-    time_index = 20000
-    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(energy_channels_A)-4, dtype=int)]
-    handles = []
-    labels = []
-    fig, (axA) = plt.subplots(figsize=(16, 4))
-    for energy_channel in range(len(energy_channels_A)-4):
-        scatter = axA.scatter(alpha_A_extend, Mu_A[energy_channel, :, time_index], s=50, color=colors[energy_channel], label=f"Energy Channel {energy_channel + 1}")
-        handles.append(scatter)
-        labels.append(f"{energy_channels_A[energy_channel]:.2f}") #create label from energy_channels_A
-    axA.set_title("RBSP-A", fontsize=textsize)
-    axA.set_ylabel(r"$\mu$ (MeV/G)", fontsize=textsize)
-    axA.tick_params(axis='both', labelsize=textsize)
-    axA.set_xlabel("Pitch Angle (degrees)", fontsize=textsize)
-    #axA.set_yscale('log')
-    axA.grid(True)
-    
-    # Create a single legend
-    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1, 0.5), fontsize=textsize, markerscale=2, title="Energy\nChannels\n(MeV)\n", title_fontsize=textsize) # Adjust legend
-    fig.suptitle(f"Time = {Epoch_A[time_index]}", fontsize=textsize+2)
-    plt.subplots_adjust(top=0.85, right=0.9) #adjusted top and right.
-    plt.show()
-    
-    
-    
-    # Plot mu v energy at given time points for each pitch angle
-    time_index = 20000
-    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(alpha_A_extend), dtype=int)]
-    handles = []
-    labels = []
-    fig, (axA) = plt.subplots(figsize=(16, 4))
-    
-    for alpha_index in range(len(alpha_A_extend)):  # Renamed loop variable
-        scatter = axA.scatter(energy_channels_A[:-4], Mu_A[:-4, alpha_index, time_index], s=50, color=colors[alpha_index],
-                            label=f"Pitch Angle {alpha_index + 1}")
-        handles.append(scatter)
-        labels.append(f"{alpha_A_extend[alpha_index]:.0f}")  # Create label from alpha_A_extend
-    
-    axA.set_title("RBSP-A", fontsize=textsize)
-    axA.set_ylabel(r"$\mu$ (MeV/G)", fontsize=textsize)
-    axA.tick_params(axis='both', labelsize=textsize)
-    axA.set_xlabel("Energy (MeV)", fontsize=textsize)
-    axA.grid(True)
-    
-    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1, 0.5), fontsize=textsize, markerscale=2,
-            title="Pitch Angle\n(Degrees)\n", title_fontsize=textsize)  # Corrected legend title
-    fig.suptitle(f"Time = {Epoch_A[time_index]}", fontsize=textsize + 2)
-    plt.subplots_adjust(top=0.85, right=0.9)
-    plt.show()
-    
-    
-    
     # Plot L* v time and add specific time points
     handles, labels = [], []
     fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(16, 6))
@@ -486,6 +267,71 @@ if __name__ == '__main__':
     for time_stamp in star_time_stamps_A:
         axA.scatter(Epoch_A[time_stamp], Lstar_A_set[time_stamp], marker='*', s=500, color='black')
         axB.scatter(Epoch_B[time_stamp], Lstar_B_set[time_stamp], marker='*', s=500, color='black')  # Adjust size and color as needed
+    
+    fig.suptitle(f"Kinetic Energy of Electrons with K={K_set:.1f}", fontsize=textsize + 2)
+    plt.xticks(rotation=45, ha='right', fontsize=textsize)
+    plt.subplots_adjust(top=0.88, right=0.95)
+    plt.show()
+    '''
+    
+    #%% Plot L* v time with interpolated flux as colorbar
+    '''
+    handles, labels = [], []
+    fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(16, 6))
+    
+    # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
+    Epoch_A_np = np.array(Epoch_A)
+    Epoch_B_np = np.array(Epoch_B)
+    
+    # Filter data for Lstar > 2
+    mask_A = Lstar_A_set > 2
+    Epoch_A_filtered = Epoch_A_np[mask_A]
+    Lstar_A_set_filtered = Lstar_A_set[mask_A]
+    FEDU_A_interpaE_filtered = FEDU_A_interpaE[mask_A]
+    
+    mask_B = Lstar_B_set > 2
+    Epoch_B_filtered = Epoch_B_np[mask_B]
+    Lstar_B_set_filtered = Lstar_B_set[mask_B]
+    EnergyofMuAlpha_B_filtered = EnergyofMuAlpha_B[mask_B]
+    
+    # Linear colorbar set up
+    min_val = min(np.nanmin(FEDU_A_interpaE_filtered), np.nanmin(FEDU_A_interpaE_filtered))
+    max_val = max(np.nanmax(FEDU_A_interpaE_filtered), np.nanmax(FEDU_A_interpaE_filtered))
+    
+    scatter_A = axA.scatter(Epoch_A_filtered, Lstar_A_set_filtered, c=FEDU_A_interpaE_filtered, vmin=min_val, vmax=max_val)
+    scatter_B = axB.scatter(Epoch_B_filtered, Lstar_B_set_filtered, c=FEDU_A_interpaE_filtered, vmin=min_val, vmax=max_val)
+    
+    axA.set_title("RBSP-A", fontsize=textsize)
+    axA.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
+    axA.tick_params(axis='both', labelsize=textsize)
+    axA.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    axA.grid(True)
+    
+    axB.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
+    axB.set_title("RBSP-B", fontsize=textsize)
+    axB.tick_params(axis='both', labelsize=textsize)
+    axB.grid(True)
+    axB.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    axB.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
+    axB.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+    
+    cbar_A = fig.colorbar(scatter_A, ax=axA, fraction=0.03, pad=0.01)
+    cbar_A.set_label(r"$E_K$ (MeV)", fontsize=textsize)
+    cbar_A.ax.tick_params(labelsize=textsize)
+    cbar_B = fig.colorbar(scatter_B, ax=axB, fraction=0.03, pad=0.01)
+    cbar_B.set_label(r"$E_K$ (MeV)", fontsize=textsize)
+    cbar_B.ax.tick_params(labelsize=textsize)
+    # Set colorbar tick locations to every 2 units within current limits
+    ticks = np.arange(2, 14, 2)
+    cbar_A.set_ticks(ticks)
+    cbar_B.set_ticks(ticks)
+    
+    # Define time stamps for star markers
+    star_time_stamps_A = [500, 5000, 20000]  # Example time stamps
+    # Plot star markers
+    for time_stamp in star_time_stamps_A:
+        axA.scatter(Epoch_A[time_stamp], Lstar_A_set[time_stamp], marker='*', s=500, color='magenta')
+        axB.scatter(Epoch_B[time_stamp], Lstar_B_set[time_stamp], marker='*', s=500, color='magenta')  # Adjust size and color as needed
     
     fig.suptitle(f"Kinetic Energy of Electrons with K={K_set:.1f}", fontsize=textsize + 2)
     plt.xticks(rotation=45, ha='right', fontsize=textsize)
@@ -557,55 +403,4 @@ if __name__ == '__main__':
     plt.xticks(rotation=45, ha='right', fontsize=textsize)
     plt.subplots_adjust(top=0.88, right=0.95)
     plt.show()
-    '''
-    
-    
-#%% How flux and E_K relate for set Mu at given times
-    
-    time_index = 20000
-    # Create a set of unique alpha values
-    rounded_alphas = np.round(alpha_A, 4)
-    unique_alphas = sorted(list(set(rounded_alphas)))
-
-    handles, labels = [], []
-    fig, (axA) = plt.subplots(figsize=(16, 4))
-    
-    for unique_alpha_index, unique_alpha in enumerate(unique_alphas):
-        scatter = axA.scatter(energy_channels_A[:-4], FEDU_A_averaged[time_index, unique_alpha_index, :], s=50,
-                              color=colors[unique_alpha_index],label=f"Pitch Angle {unique_alpha:.0f}")
-        handles.append(scatter)
-        labels.append(f"{unique_alpha:.0f}")
-    
-    axA.set_title("RBSP-A", fontsize=textsize)
-    axA.set_ylabel("Electron Flux (#/cm²/s/sr/MeV)", fontsize=textsize)
-    axA.tick_params(axis='both', labelsize=textsize)
-    axA.set_xlabel("Energy (MeV)", fontsize=textsize)
-    axA.set_yscale('log')
-    
-    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1, 0.5), fontsize=textsize, markerscale=2,
-                title="Pitch Angle\n(Degrees)\n", title_fontsize=textsize)
-    fig.suptitle(f"Time = {Epoch_A[time_index]}", fontsize=textsize + 2)
-    plt.subplots_adjust(top=0.85, right=0.9)
-    plt.show()
-    
-    
-    
-#%% GEO to GSM
-    '''
-    def geo_to_gsm(epoch, position):
-        # assumes UTC time
-        epoch_ticks = Ticktock(epoch, 'UTC') 
-        geo_coords = coords.Coords(position, 'GEO', 'car', ticks=epoch_ticks)
-        
-        # Convert to GSM coordinates
-        gsm_coords = geo_coords.convert('GSM','car') 
-        
-        # Extract GSM coordinates as a NumPy array
-        gsm_position = gsm_coords.data
-        return gsm_position
-    print("Converting from GEO to GSM:")
-    print("Processing RBPS-A")
-    gsm_A = geo_to_gsm(Epoch_A, Position_A)
-    print("Processing RBPS-B")
-    gsm_B = geo_to_gsm(Epoch_B, Position_B)
     '''

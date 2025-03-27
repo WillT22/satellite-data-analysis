@@ -240,6 +240,11 @@ def find_alpha(K_set, K, alpha):
              valid_k = row_k[combined_mask]
              valid_alpha = alpha[combined_mask]
  
+             # Sort the valid K values and corresponding alpha values in ascending order of K.
+             sort_indices = np.argsort(valid_k)
+             valid_k = valid_k[sort_indices]
+             valid_alpha = valid_alpha[sort_indices]   
+ 
              # Check if K_set is within the range of valid K values.
              if np.min(valid_k) <= K_set <= np.max(valid_k):
                  # Interpolate the alpha value for K_set using the valid K and alpha values.
@@ -313,3 +318,47 @@ def average_fluxes_by_pitch_angle(FEDU, alpha, energy_channels):
                     FEDU_averaged[time_index, pitch_angle_index, energy_index] = 0
 
     return FEDU_averaged
+
+#%% Interpolated Flux v Kinetic Energy using exponential between points
+def interpolate_flux_by_energy(FEDU_averaged, alpha, energy_channels, alpha_set):
+
+    rounded_alphas = np.round(alpha, 4)
+    unique_alphas = np.array(sorted(list(set(rounded_alphas))))
+    FEDU_interp_energy = np.zeros((FEDU_averaged.shape[0], len(energy_channels) - 4))
+
+    for time_index in range(FEDU_averaged.shape[0]):
+        for energy_index in range(len(energy_channels) - 4):
+            FEDU_interp_energy[time_index, energy_index] = np.interp(alpha_set[time_index], unique_alphas, FEDU_averaged[time_index,:,energy_index])
+
+    return FEDU_interp_energy
+
+#%% Fit FEDU v alpha to a quadratic
+def fit_fluxvalpha_quad(FEDU_averaged, alpha, energy_channels):
+    """
+    Fits quadratic curves to FEDU_averaged data and returns the coefficients.
+
+    Args:
+        FEDU_averaged (numpy.ndarray): 3D array of averaged fluxes (time, pitch angle, energy).
+        alpha (list or numpy.ndarray): List or array of pitch angle values.
+        energy_channels (list or numpy.ndarray): List or array of energy channel values.
+
+    Returns:
+        numpy.ndarray: Array of quadratic coefficients (time, energy, 3).
+    """
+
+    rounded_alphas = np.round(alpha, 4)
+    unique_alphas = sorted(list(set(rounded_alphas)))
+    quad_coeffs_array = np.zeros((FEDU_averaged.shape[0], len(energy_channels) - 4, 3))  # Array to store coefficients
+
+    for time_index in range(FEDU_averaged.shape[0]):
+        for energy_index in range(len(energy_channels) - 4):
+            # Quadratic fit
+            quad_coeffs = np.polyfit(unique_alphas, FEDU_averaged[time_index, :, energy_index], 2)
+            quad_coeffs_array[time_index, energy_index, :] = quad_coeffs
+
+    return quad_coeffs_array
+
+
+#%% Log Function
+def log_func(x, a, b, c):
+    return a * np.log(x + b) + c
