@@ -3,6 +3,7 @@ import os
 from spacepy import pycdf
 import spacepy.omni as omni
 import scipy.constants as sc
+from scipy.optimize import curve_fit
 
 #%% Proccess REPT CDF
 def process_l3_data(file_paths):
@@ -320,22 +321,49 @@ def average_fluxes_by_pitch_angle(FEDU, alpha, energy_channels):
     return FEDU_averaged
 
 #%% Interpolated Flux v Kinetic Energy using exponential between points
-def interpolate_flux_by_energy(FEDU_averaged, alpha, energy_channels, alpha_set):
+def interpolate_flux_by_energy(FEDU_averaged, alpha, energy_channels, energy_set):
+    """
+    Interpolates flux values for each time point and energy channel to a given alpha value.
 
-    rounded_alphas = np.round(alpha, 4)
-    unique_alphas = np.array(sorted(list(set(rounded_alphas))))
-    FEDU_interp_energy = np.zeros((FEDU_averaged.shape[0], len(energy_channels) - 4))
+    Args:
+        FEDU_averaged (numpy.ndarray): 3D array of averaged flux values (time, pitch angle, energy).
+        alpha (list or numpy.ndarray): Array of pitch angle values corresponding to the second dimension of FEDU_averaged.
+        energy_channels (list or numpy.ndarray): Array of energy channel values.
+        alpha_set (list or numpy.ndarray): Array of alpha values to interpolate to, one for each time point.
 
+    Returns:
+        numpy.ndarray: 2D array of interpolated flux values (time, energy).
+    """
+    
+    # Initialize an array to store the interpolated flux values.
+    # Dimensions: (number of time points, number of energy channels - 4)
+    FEDU_interp_energy = np.zeros((FEDU_averaged.shape[0], FEDU_averaged.shape[1]))
+
+    # Iterate through each time point.
     for time_index in range(FEDU_averaged.shape[0]):
-        for energy_index in range(len(energy_channels) - 4):
-            FEDU_interp_energy[time_index, energy_index] = np.interp(alpha_set[time_index], unique_alphas, FEDU_averaged[time_index,:,energy_index])
-
+        # Iterate through each energy channel (excluding the last 4).
+        for alpha_index in range(FEDU_averaged.shape[1]):
+            # Filter out zeros from FEDU_averaged
+            non_zero_indices = np.where(FEDU_averaged[time_index, alpha_index, :] != 0)[0]
+            if len(non_zero_indices) > 1:
+                # Perform linear interpolation
+                FEDU_interp_energy[time_index, alpha_index] = np.interp(
+                    energy_set[time_index], 
+                    energy_channels[:-4],
+                    FEDU_averaged[time_index, alpha_index, :])
+            else:
+                FEDU_interp_energy[time_index, alpha_index] = np.nan #store nan if interpolation fails.
+                
     return FEDU_interp_energy
 
+
 #%% Fit FEDU v alpha to a quadratic
-def fit_fluxvalpha_quad(FEDU_averaged, alpha, energy_channels):
+def log_func(x, a, b, c):
+    return a * np.log(x + b) + c
+
+def fit_fluxvalpha_log(FEDU_averaged, alpha, energy_channels):
     """
-    Fits quadratic curves to FEDU_averaged data and returns the coefficients.
+    Fits logarithmic curves to FEDU_averaged data and returns the coefficients.
 
     Args:
         FEDU_averaged (numpy.ndarray): 3D array of averaged fluxes (time, pitch angle, energy).
@@ -343,22 +371,32 @@ def fit_fluxvalpha_quad(FEDU_averaged, alpha, energy_channels):
         energy_channels (list or numpy.ndarray): List or array of energy channel values.
 
     Returns:
-        numpy.ndarray: Array of quadratic coefficients (time, energy, 3).
+        numpy.ndarray: Array of logarithmic coefficients (time, energy, 3).
     """
 
     rounded_alphas = np.round(alpha, 4)
-    unique_alphas = sorted(list(set(rounded_alphas)))
-    quad_coeffs_array = np.zeros((FEDU_averaged.shape[0], len(energy_channels) - 4, 3))  # Array to store coefficients
+    unique_alphas = np.array(sorted(list(set(rounded_alphas))))
+    log_coeffs_array = np.zeros((FEDU_averaged.shape[0], FEDU_averaged.shape[2], 3))  # Array to store coefficients
 
     for time_index in range(FEDU_averaged.shape[0]):
-        for energy_index in range(len(energy_channels) - 4):
-            # Quadratic fit
-            quad_coeffs = np.polyfit(unique_alphas, FEDU_averaged[time_index, :, energy_index], 2)
-            quad_coeffs_array[time_index, energy_index, :] = quad_coeffs
+        for energy_index in range(FEDU_averaged.shape[2]):
+            # Filter out zero values and NaNs for the current energy channel
+            valid_indices = np.where(np.logical_and(FEDU_averaged[time_index, :, energy_index] != 0, 
+                                                    ~np.isnan(FEDU_averaged[time_index, :, energy_index])))[0]
+            
+            if len(valid_indices) > 2:  # Only fit if there are enough valid values
+                try:
+                    # Logarithmic fit using only valid values
+                    log_coeffs, _ = curve_fit(
+                        log_func,
+                        unique_alphas[valid_indices],
+                        FEDU_averaged[time_index, valid_indices, energy_index],
+                        p0=[1, 1, 1]
+                    )
+                    log_coeffs_array[time_index, energy_index, :] = log_coeffs
+                except RuntimeError:
+                    log_coeffs_array[time_index, energy_index, :] = np.nan  # Store NaN if fit fails.
+            else:
+                log_coeffs_array[time_index, energy_index, :] = np.nan  # If not enough valid values, store NaN
 
-    return quad_coeffs_array
-
-
-#%% Log Function
-def log_func(x, a, b, c):
-    return a * np.log(x + b) + c
+    return log_coeffs_array

@@ -24,7 +24,8 @@ from analysis_functions import find_alpha
 from analysis_functions import energy_from_mu_alpha
 from analysis_functions import average_fluxes_by_pitch_angle
 from analysis_functions import interpolate_flux_by_energy
-from analysis_functions import fit_fluxvalpha_quad
+from analysis_functions import log_func
+from analysis_functions import fit_fluxvalpha_log
 
 # Import the latest version of OMNI data
 #from spacepy import toolbox as tb
@@ -206,9 +207,9 @@ if __name__ == '__main__':
 
 #%% Find energy for a given mu at each time point
     # Find kinetic energy of particle population with a given Mu and alpha calculated from a given K 
-    EnergyofMuAlpha_A = energy_from_mu_alpha(Mu_set, alpha_A_set, Blocal_A)
+    energy_A_set = energy_from_mu_alpha(Mu_set, alpha_A_set, Blocal_A)
     # Find kinetic energy of particle population with a given Mu and alpha calculated from a given K 
-    EnergyofMuAlpha_B = energy_from_mu_alpha(Mu_set, alpha_B_set, Blocal_B)
+    energy_B_set = energy_from_mu_alpha(Mu_set, alpha_B_set, Blocal_B)
     
 #%% Interpolate flux for each energy given a mu and K
     print("Averaging fluxes with the same pitch angle (RBSP-A)")
@@ -217,9 +218,36 @@ if __name__ == '__main__':
     FEDU_B_averaged = average_fluxes_by_pitch_angle(FEDU_B, alpha_B, energy_channels_B)
     
     print("Interpolating Flux over Energy (RBSP-A)")
-    FEDU_A_interpE = interpolate_flux_by_energy(FEDU_A_averaged, alpha_A, energy_channels_A, alpha_A_set)
+    FEDU_A_interpE = interpolate_flux_by_energy(FEDU_A_averaged, alpha_A, energy_channels_A, energy_A_set)
     print("Interpolating Flux over Energy (RBSP-B)")
-    FEDU_B_interpE = interpolate_flux_by_energy(FEDU_B_averaged, alpha_B, energy_channels_B, alpha_B_set)
+    FEDU_B_interpE = interpolate_flux_by_energy(FEDU_B_averaged, alpha_B, energy_channels_B, energy_B_set)
+    
+    
+    ## COMPUTATIIONALLY EXPENSIVE ##
+    '''
+    print("Finding Log Fit of Flux over Pitch Angle (RBSP-A)")
+    FEDU_A_interpE_logfit = fit_fluxvalpha_log(FEDU_A_averaged, alpha_A, energy_channels_A)
+    print("Finding Log Fit of Flux over Pitch Angle (RBSP-B)")
+    FEDU_B_interpE_logfit = fit_fluxvalpha_log(FEDU_A_averaged, alpha_B, energy_channels_B)
+    '''
+    
+    '''
+    print("Saving Log Fit")
+    # Create a dictionary to store the variables
+    data_to_save = {
+        'FEDU_A_interpE_logfit': FEDU_A_interpE_logfit,
+        'FEDU_B_interpE_logfit': FEDU_B_interpE_logfit,
+    }
+    # Save the dictionary to a .npz file (NumPy zip archive)
+    np.savez('log_fit.npz', **data_to_save)
+    '''
+    
+    print("Loading Saved Data")
+    loaded_data = np.load('log_fit.npz', allow_pickle=True)
+    
+    # Access the loaded variables
+    FEDU_A_interpE_logfit = loaded_data['FEDU_A_interpE_logfit']
+    FEDU_A_interpE_logfit = loaded_data['FEDU_A_interpE_logfit']
     
     #print("Interpolating Flux over Pitch Angle (RBSP-A)")
     #print("Interpolating Flux over Pitch Angle (RBSP-B)")
@@ -227,6 +255,105 @@ if __name__ == '__main__':
     
 #%% Plots
     '''
+    #%% How flux and E_K relate for set Mu at given times
+    time_index = 20000
+    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(energy_channels_A[:-4]), dtype=int)]
+    rounded_alphas = np.round(alpha_A, 4)
+    unique_alphas = sorted(list(set(rounded_alphas)))
+    handles, labels = [], []
+    fig, (axA) = plt.subplots(figsize=(16, 4))
+    
+    for energy_index in range(len(energy_channels_A[:-4])):
+        scatter = axA.scatter(unique_alphas, FEDU_A_averaged[time_index, :, energy_index], s=50,
+                            color=colors[energy_index], label=f"Energy Channel {energy_index}")
+        handles.append(scatter)
+        labels.append(f"{energy_channels_A[energy_index]:.1f}") # Changed label here
+    
+    axA.set_title("RBSP-A", fontsize=textsize)
+    axA.set_ylabel("Electron Flux (#/cm²/s/sr/MeV)", fontsize=textsize)
+    axA.tick_params(axis='both', labelsize=textsize)
+    axA.set_xlabel("Pitch Angle", fontsize=textsize)
+    #axA.set_yscale('log')
+    
+    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1, 0.5), fontsize=textsize, markerscale=2,
+                title="Energy (MeV)", title_fontsize=textsize)
+    fig.suptitle(f"Time = {Epoch_A[time_index]}", fontsize=textsize + 2)
+    plt.subplots_adjust(top=0.85, right=0.9)
+    plt.show()
+    
+    
+
+    time_index = 20000
+    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(energy_channels_A[:-4]), dtype=int)]
+    rounded_alphas = np.round(alpha_A, 4)
+    unique_alphas = np.array(sorted(list(set(rounded_alphas))))
+    handles, labels = [], []
+    fig, (axA) = plt.subplots(figsize=(16, 4))
+    positive_y_indices = np.where(FEDU_A_interpE[time_index, :] > 0)[0]
+    for energy_index in range(len(energy_channels_A[:-4])):
+        scatter = axA.scatter(unique_alphas[positive_y_indices], FEDU_A_averaged[time_index, positive_y_indices, energy_index], 
+                              color=colors[energy_index], label=f"Energy Channel {energy_index}")
+        handles.append(scatter)
+        labels.append(f"{energy_channels_A[energy_index]:.1f}") # Changed label here
+        try:
+            alpha_smooth = np.linspace(0, 90, 500)  # Adjust 500 for more/less smoothness
+            log_fit = log_func(alpha_smooth, *FEDU_A_interpE_logfit[time_index, energy_index, :])
+            # Filter out y-values <= 0 for log fit plot
+            positive_log_fit_indices = np.where(log_fit > 0)[0]
+            axA.plot(alpha_smooth[positive_log_fit_indices], log_fit[positive_log_fit_indices],
+                 color=colors[energy_index], linestyle='--')
+        except (TypeError, ValueError) as e:
+                print(f"Logarithmic fit failed for time index {time_index}: {e}")
+    axA.set_title("RBSP-A", fontsize=textsize)
+    axA.set_ylabel("Electron Flux (#/cm²/s/sr/MeV)", fontsize=textsize)
+    axA.tick_params(axis='both', labelsize=textsize)
+    axA.set_xlabel("Pitch Angle", fontsize=textsize)
+    axA.set_yscale('log')
+    axA.grid(True)
+      
+    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1, 0.5), fontsize=textsize, markerscale=2,
+                title="Energy (MeV)", title_fontsize=textsize)
+    fig.suptitle(f"Time = {Epoch_A[time_index]}", fontsize=textsize + 2)
+    plt.subplots_adjust(top=0.85, right=0.85)
+    plt.show()
+    
+    
+    
+    
+    time_index = 20000
+    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(energy_channels_A[:-4]), dtype=int)]
+    rounded_alphas = np.round(alpha_A, 4)
+    unique_alphas = np.array(sorted(list(set(rounded_alphas))))
+    fig, (axA) = plt.subplots(figsize=(16, 4))
+    
+    positive_y_indices = np.where(FEDU_A_interpE[time_index, :] > 0)[0]
+    
+    scatter = axA.scatter(unique_alphas[positive_y_indices], FEDU_A_interpE[time_index, positive_y_indices], s=50)
+    try:
+        alpha_smooth = np.linspace(0, 90, 500)  # Adjust 500 for more/less smoothness
+        log_fit = log_func(alpha_smooth, *FEDU_A_interpE_logfit[time_index, :])
+        # Filter out y-values <= 0 for log fit plot
+        positive_log_fit_indices = np.where(log_fit > 0)[0]
+        axA.plot(alpha_smooth[positive_log_fit_indices], log_fit[positive_log_fit_indices], color='red', linestyle='--', label='Log Fit')
+    except (TypeError, ValueError) as e:
+            print(f"Logarithmic fit failed for time index {time_index}: {e}")
+    axA.set_title("RBSP-A", fontsize=textsize)
+    axA.set_ylabel("Electron Flux (#/cm²/s/sr/MeV)", fontsize=textsize)
+    axA.tick_params(axis='both', labelsize=textsize)
+    axA.set_xlabel("Pitch Angle", fontsize=textsize)
+    axA.set_ylim(max(min(FEDU_A_interpE[time_index, positive_y_indices])-min(FEDU_A_interpE[time_index, positive_y_indices])/2,0), 
+                 max(FEDU_A_interpE[time_index, positive_y_indices])+max(FEDU_A_interpE[time_index, positive_y_indices])/4)
+    axA.set_yscale('log')
+    axA.grid(True)
+    
+    axA.text(0.05, 0.95, f"Energy: {EnergyofMuAlpha_A[time_index]:.2f} MeV", transform=axA.transAxes, fontsize=textsize, verticalalignment='top')
+    
+    fig.suptitle(f"Time = {Epoch_A[time_index]}", fontsize=textsize + 2)
+    plt.subplots_adjust(top=0.85, right=0.9)
+    plt.show()
+     
+    
+    
     # Plot L* v time and add specific time points
     handles, labels = [], []
     fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(16, 6))
@@ -292,7 +419,7 @@ if __name__ == '__main__':
     mask_B = Lstar_B_set > 2
     Epoch_B_filtered = Epoch_B_np[mask_B]
     Lstar_B_set_filtered = Lstar_B_set[mask_B]
-    EnergyofMuAlpha_B_filtered = EnergyofMuAlpha_B[mask_B]
+    energy_B_set_filtered = energy_B_set[mask_B]
     
     # Linear colorbar set up
     min_val = min(np.nanmin(FEDU_A_interpaE_filtered), np.nanmin(FEDU_A_interpaE_filtered))
@@ -353,19 +480,19 @@ if __name__ == '__main__':
     mask_A = Lstar_A_set > 2
     Epoch_A_filtered = Epoch_A_np[mask_A]
     Lstar_A_set_filtered = Lstar_A_set[mask_A]
-    EnergyofMuAlpha_A_filtered = EnergyofMuAlpha_A[mask_A]
+    energy_A_set_filtered = energy_A_set[mask_A]
     
     mask_B = Lstar_B_set > 2
     Epoch_B_filtered = Epoch_B_np[mask_B]
     Lstar_B_set_filtered = Lstar_B_set[mask_B]
-    EnergyofMuAlpha_B_filtered = EnergyofMuAlpha_B[mask_B]
+    energy_B_set_filtered = energy_B_set[mask_B]
     
     # Linear colorbar set up
-    min_val = min(np.nanmin(EnergyofMuAlpha_A_filtered), np.nanmin(EnergyofMuAlpha_B_filtered))
-    max_val = max(np.nanmax(EnergyofMuAlpha_A_filtered), np.nanmax(EnergyofMuAlpha_B_filtered))
+    min_val = min(np.nanmin(energy_A_set_filtered), np.nanmin(energy_B_set_filtered))
+    max_val = max(np.nanmax(energy_A_set_filtered), np.nanmax(energy_B_set_filtered))
     
-    scatter_A = axA.scatter(Epoch_A_filtered, Lstar_A_set_filtered, c=EnergyofMuAlpha_A_filtered, vmin=min_val, vmax=max_val)
-    scatter_B = axB.scatter(Epoch_B_filtered, Lstar_B_set_filtered, c=EnergyofMuAlpha_B_filtered, vmin=min_val, vmax=max_val)
+    scatter_A = axA.scatter(Epoch_A_filtered, Lstar_A_set_filtered, c=energy_A_set_filtered, vmin=min_val, vmax=max_val)
+    scatter_B = axB.scatter(Epoch_B_filtered, Lstar_B_set_filtered, c=energy_B_set_filtered, vmin=min_val, vmax=max_val)
     
     axA.set_title("RBSP-A", fontsize=textsize)
     axA.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
