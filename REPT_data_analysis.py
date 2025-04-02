@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import math
 import matplotlib
 import matplotlib.pyplot as plt
-from matplotlib import colors
+import matplotlib.colors as colors
 
 # Import functions
 from analysis_functions import process_l3_data
@@ -24,8 +24,8 @@ from analysis_functions import find_alpha
 from analysis_functions import energy_from_mu_alpha
 from analysis_functions import average_fluxes_by_pitch_angle
 from analysis_functions import interpolate_flux_by_energy
-from analysis_functions import log_func
-from analysis_functions import fit_fluxvalpha_log
+from analysis_functions import interpolate_flux_by_alpha
+from analysis_functions import find_psd
 
 # Import the latest version of OMNI data
 #from spacepy import toolbox as tb
@@ -34,7 +34,7 @@ from analysis_functions import fit_fluxvalpha_log
 # Initialize global variables
 textsize = 16
 Re = 6378.137 #Earth's Radius
-Mu_set = 4000 # MeV/G
+Mu_set = 16000 # MeV/G
 K_set = 0.10 # R_E*G^(1/2)
 
 # Conversions
@@ -222,138 +222,20 @@ if __name__ == '__main__':
     print("Interpolating Flux over Energy (RBSP-B)")
     FEDU_B_interpE = interpolate_flux_by_energy(FEDU_B_averaged, alpha_B, energy_channels_B, energy_B_set)
     
+#%% Interpolate flux for each pitch angle given a mu and K
+    print("Interpolating Flux over Pitch Angle (RBSP-A)")
+    FEDU_A_interpaE = interpolate_flux_by_alpha(FEDU_A_interpE, alpha_A, alpha_A_set)
+    print("Interpolating Flux over Pitch Angle (RBSP-B)")
+    FEDU_B_interpaE = interpolate_flux_by_alpha(FEDU_B_interpE, alpha_B, alpha_B_set)
     
-    ## COMPUTATIIONALLY EXPENSIVE ##
-    '''
-    print("Finding Log Fit of Flux over Pitch Angle (RBSP-A)")
-    FEDU_A_interpE_logfit = fit_fluxvalpha_log(FEDU_A_averaged, alpha_A, energy_channels_A)
-    print("Finding Log Fit of Flux over Pitch Angle (RBSP-B)")
-    FEDU_B_interpE_logfit = fit_fluxvalpha_log(FEDU_A_averaged, alpha_B, energy_channels_B)
-    '''
-    
-    '''
-    print("Saving Log Fit")
-    # Create a dictionary to store the variables
-    data_to_save = {
-        'FEDU_A_interpE_logfit': FEDU_A_interpE_logfit,
-        'FEDU_B_interpE_logfit': FEDU_B_interpE_logfit,
-    }
-    # Save the dictionary to a .npz file (NumPy zip archive)
-    np.savez('log_fit.npz', **data_to_save)
-    '''
-    
-    print("Loading Saved Data")
-    loaded_data = np.load('log_fit.npz', allow_pickle=True)
-    
-    # Access the loaded variables
-    FEDU_A_interpE_logfit = loaded_data['FEDU_A_interpE_logfit']
-    FEDU_A_interpE_logfit = loaded_data['FEDU_A_interpE_logfit']
-    
-    #print("Interpolating Flux over Pitch Angle (RBSP-A)")
-    #print("Interpolating Flux over Pitch Angle (RBSP-B)")
-    
-    
+#%% Calculate PSD from flux and energy for a given mu and K
+    print("Calculating PSD (RBSP-A)")    
+    psd_A = find_psd(FEDU_A_interpaE, energy_A_set)
+    print("Calculating PSD (RBSP-B)") 
+    psd_B = find_psd(FEDU_B_interpaE, energy_B_set)
+
 #%% Plots
     '''
-    #%% How flux and E_K relate for set Mu at given times
-    time_index = 20000
-    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(energy_channels_A[:-4]), dtype=int)]
-    rounded_alphas = np.round(alpha_A, 4)
-    unique_alphas = sorted(list(set(rounded_alphas)))
-    handles, labels = [], []
-    fig, (axA) = plt.subplots(figsize=(16, 4))
-    
-    for energy_index in range(len(energy_channels_A[:-4])):
-        scatter = axA.scatter(unique_alphas, FEDU_A_averaged[time_index, :, energy_index], s=50,
-                            color=colors[energy_index], label=f"Energy Channel {energy_index}")
-        handles.append(scatter)
-        labels.append(f"{energy_channels_A[energy_index]:.1f}") # Changed label here
-    
-    axA.set_title("RBSP-A", fontsize=textsize)
-    axA.set_ylabel("Electron Flux (#/cm²/s/sr/MeV)", fontsize=textsize)
-    axA.tick_params(axis='both', labelsize=textsize)
-    axA.set_xlabel("Pitch Angle", fontsize=textsize)
-    #axA.set_yscale('log')
-    
-    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1, 0.5), fontsize=textsize, markerscale=2,
-                title="Energy (MeV)", title_fontsize=textsize)
-    fig.suptitle(f"Time = {Epoch_A[time_index]}", fontsize=textsize + 2)
-    plt.subplots_adjust(top=0.85, right=0.9)
-    plt.show()
-    
-    
-
-    time_index = 20000
-    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(energy_channels_A[:-4]), dtype=int)]
-    rounded_alphas = np.round(alpha_A, 4)
-    unique_alphas = np.array(sorted(list(set(rounded_alphas))))
-    handles, labels = [], []
-    fig, (axA) = plt.subplots(figsize=(16, 4))
-    positive_y_indices = np.where(FEDU_A_interpE[time_index, :] > 0)[0]
-    for energy_index in range(len(energy_channels_A[:-4])):
-        scatter = axA.scatter(unique_alphas[positive_y_indices], FEDU_A_averaged[time_index, positive_y_indices, energy_index], 
-                              color=colors[energy_index], label=f"Energy Channel {energy_index}")
-        handles.append(scatter)
-        labels.append(f"{energy_channels_A[energy_index]:.1f}") # Changed label here
-        try:
-            alpha_smooth = np.linspace(0, 90, 500)  # Adjust 500 for more/less smoothness
-            log_fit = log_func(alpha_smooth, *FEDU_A_interpE_logfit[time_index, energy_index, :])
-            # Filter out y-values <= 0 for log fit plot
-            positive_log_fit_indices = np.where(log_fit > 0)[0]
-            axA.plot(alpha_smooth[positive_log_fit_indices], log_fit[positive_log_fit_indices],
-                 color=colors[energy_index], linestyle='--')
-        except (TypeError, ValueError) as e:
-                print(f"Logarithmic fit failed for time index {time_index}: {e}")
-    axA.set_title("RBSP-A", fontsize=textsize)
-    axA.set_ylabel("Electron Flux (#/cm²/s/sr/MeV)", fontsize=textsize)
-    axA.tick_params(axis='both', labelsize=textsize)
-    axA.set_xlabel("Pitch Angle", fontsize=textsize)
-    axA.set_yscale('log')
-    axA.grid(True)
-      
-    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1, 0.5), fontsize=textsize, markerscale=2,
-                title="Energy (MeV)", title_fontsize=textsize)
-    fig.suptitle(f"Time = {Epoch_A[time_index]}", fontsize=textsize + 2)
-    plt.subplots_adjust(top=0.85, right=0.85)
-    plt.show()
-    
-    
-    
-    
-    time_index = 20000
-    colors = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(energy_channels_A[:-4]), dtype=int)]
-    rounded_alphas = np.round(alpha_A, 4)
-    unique_alphas = np.array(sorted(list(set(rounded_alphas))))
-    fig, (axA) = plt.subplots(figsize=(16, 4))
-    
-    positive_y_indices = np.where(FEDU_A_interpE[time_index, :] > 0)[0]
-    
-    scatter = axA.scatter(unique_alphas[positive_y_indices], FEDU_A_interpE[time_index, positive_y_indices], s=50)
-    try:
-        alpha_smooth = np.linspace(0, 90, 500)  # Adjust 500 for more/less smoothness
-        log_fit = log_func(alpha_smooth, *FEDU_A_interpE_logfit[time_index, :])
-        # Filter out y-values <= 0 for log fit plot
-        positive_log_fit_indices = np.where(log_fit > 0)[0]
-        axA.plot(alpha_smooth[positive_log_fit_indices], log_fit[positive_log_fit_indices], color='red', linestyle='--', label='Log Fit')
-    except (TypeError, ValueError) as e:
-            print(f"Logarithmic fit failed for time index {time_index}: {e}")
-    axA.set_title("RBSP-A", fontsize=textsize)
-    axA.set_ylabel("Electron Flux (#/cm²/s/sr/MeV)", fontsize=textsize)
-    axA.tick_params(axis='both', labelsize=textsize)
-    axA.set_xlabel("Pitch Angle", fontsize=textsize)
-    axA.set_ylim(max(min(FEDU_A_interpE[time_index, positive_y_indices])-min(FEDU_A_interpE[time_index, positive_y_indices])/2,0), 
-                 max(FEDU_A_interpE[time_index, positive_y_indices])+max(FEDU_A_interpE[time_index, positive_y_indices])/4)
-    axA.set_yscale('log')
-    axA.grid(True)
-    
-    axA.text(0.05, 0.95, f"Energy: {EnergyofMuAlpha_A[time_index]:.2f} MeV", transform=axA.transAxes, fontsize=textsize, verticalalignment='top')
-    
-    fig.suptitle(f"Time = {Epoch_A[time_index]}", fontsize=textsize + 2)
-    plt.subplots_adjust(top=0.85, right=0.9)
-    plt.show()
-     
-    
-    
     # Plot L* v time and add specific time points
     handles, labels = [], []
     fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(16, 6))
@@ -400,72 +282,6 @@ if __name__ == '__main__':
     plt.subplots_adjust(top=0.88, right=0.95)
     plt.show()
     '''
-    
-    #%% Plot L* v time with interpolated flux as colorbar
-    '''
-    handles, labels = [], []
-    fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(16, 6))
-    
-    # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
-    Epoch_A_np = np.array(Epoch_A)
-    Epoch_B_np = np.array(Epoch_B)
-    
-    # Filter data for Lstar > 2
-    mask_A = Lstar_A_set > 2
-    Epoch_A_filtered = Epoch_A_np[mask_A]
-    Lstar_A_set_filtered = Lstar_A_set[mask_A]
-    FEDU_A_interpaE_filtered = FEDU_A_interpaE[mask_A]
-    
-    mask_B = Lstar_B_set > 2
-    Epoch_B_filtered = Epoch_B_np[mask_B]
-    Lstar_B_set_filtered = Lstar_B_set[mask_B]
-    energy_B_set_filtered = energy_B_set[mask_B]
-    
-    # Linear colorbar set up
-    min_val = min(np.nanmin(FEDU_A_interpaE_filtered), np.nanmin(FEDU_A_interpaE_filtered))
-    max_val = max(np.nanmax(FEDU_A_interpaE_filtered), np.nanmax(FEDU_A_interpaE_filtered))
-    
-    scatter_A = axA.scatter(Epoch_A_filtered, Lstar_A_set_filtered, c=FEDU_A_interpaE_filtered, vmin=min_val, vmax=max_val)
-    scatter_B = axB.scatter(Epoch_B_filtered, Lstar_B_set_filtered, c=FEDU_A_interpaE_filtered, vmin=min_val, vmax=max_val)
-    
-    axA.set_title("RBSP-A", fontsize=textsize)
-    axA.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
-    axA.tick_params(axis='both', labelsize=textsize)
-    axA.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
-    axA.grid(True)
-    
-    axB.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
-    axB.set_title("RBSP-B", fontsize=textsize)
-    axB.tick_params(axis='both', labelsize=textsize)
-    axB.grid(True)
-    axB.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
-    axB.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
-    axB.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-    
-    cbar_A = fig.colorbar(scatter_A, ax=axA, fraction=0.03, pad=0.01)
-    cbar_A.set_label(r"$E_K$ (MeV)", fontsize=textsize)
-    cbar_A.ax.tick_params(labelsize=textsize)
-    cbar_B = fig.colorbar(scatter_B, ax=axB, fraction=0.03, pad=0.01)
-    cbar_B.set_label(r"$E_K$ (MeV)", fontsize=textsize)
-    cbar_B.ax.tick_params(labelsize=textsize)
-    # Set colorbar tick locations to every 2 units within current limits
-    ticks = np.arange(2, 14, 2)
-    cbar_A.set_ticks(ticks)
-    cbar_B.set_ticks(ticks)
-    
-    # Define time stamps for star markers
-    star_time_stamps_A = [500, 5000, 20000]  # Example time stamps
-    # Plot star markers
-    for time_stamp in star_time_stamps_A:
-        axA.scatter(Epoch_A[time_stamp], Lstar_A_set[time_stamp], marker='*', s=500, color='magenta')
-        axB.scatter(Epoch_B[time_stamp], Lstar_B_set[time_stamp], marker='*', s=500, color='magenta')  # Adjust size and color as needed
-    
-    fig.suptitle(f"Kinetic Energy of Electrons with K={K_set:.1f}", fontsize=textsize + 2)
-    plt.xticks(rotation=45, ha='right', fontsize=textsize)
-    plt.subplots_adjust(top=0.88, right=0.95)
-    plt.show()
-    '''
-    
     
     #%% Plot L* v time with electron kinetic energy as colorbar
     '''
@@ -531,3 +347,146 @@ if __name__ == '__main__':
     plt.subplots_adjust(top=0.88, right=0.95)
     plt.show()
     '''
+    
+    #%% Plot L* v time with interpolated flux from set mu, K as colorbar
+    '''
+    handles, labels = [], []
+    fig, (axA, axB) = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(16, 6))
+    
+    # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
+    Epoch_A_np = np.array(Epoch_A)
+    Epoch_B_np = np.array(Epoch_B)
+    
+    # Filter data for Lstar > 2
+    mask_A = Lstar_A_set > 2
+    Epoch_A_filtered = Epoch_A_np[mask_A]
+    Lstar_A_set_filtered = Lstar_A_set[mask_A]
+    FEDU_A_interpaE_filtered = FEDU_A_interpaE[mask_A]
+    
+    mask_B = Lstar_B_set > 2
+    Epoch_B_filtered = Epoch_B_np[mask_B]
+    Lstar_B_set_filtered = Lstar_B_set[mask_B]
+    FEDU_B_interpaE_filtered = FEDU_B_interpaE[mask_B]
+    
+    #Logarithmic colorbar setup
+    min_val = np.nanmin(np.log10(1))
+    max_val = np.nanmax(np.log10(10**6))
+
+    scatter_A = axA.scatter(Epoch_A_filtered, Lstar_A_set_filtered, c=np.log10(FEDU_A_interpaE_filtered), vmin=min_val, vmax=max_val)
+    scatter_B = axB.scatter(Epoch_B_filtered, Lstar_B_set_filtered, c=np.log10(FEDU_B_interpaE_filtered), vmin=min_val, vmax=max_val)
+
+    axA.set_title("RBSP-A", fontsize=textsize)
+    axA.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
+    axA.tick_params(axis='both', labelsize=textsize)
+    axA.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    axA.grid(True)
+    
+    axB.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
+    axB.set_title("RBSP-B", fontsize=textsize)
+    axB.tick_params(axis='both', labelsize=textsize)
+    axB.grid(True)
+    axB.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    axB.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
+    axB.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+    
+    cbar_A = fig.colorbar(scatter_A, ax=axA, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
+    cbar_A.set_label(r"Flux ($cm^{-2} s^{-1} sr^{-1} MeV^{-1}$)", fontsize=textsize)
+    cbar_A.ax.tick_params(labelsize=textsize)
+    cbar_B = fig.colorbar(scatter_B, ax=axB, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
+    cbar_B.set_label(r"Flux ($cm^{-2} s^{-1} sr^{-1} MeV^{-1}$)", fontsize=textsize)
+    cbar_B.ax.tick_params(labelsize=textsize)
+    
+    fig.suptitle(f"Flux of Electrons with K={K_set:.1f}, $\\mu$={Mu_set:.0f}", fontsize=textsize + 2)
+    plt.xticks(rotation=45, ha='right', fontsize=textsize)
+    plt.subplots_adjust(top=0.88, right=0.95)
+    plt.show()
+    '''
+    
+    
+    fig, ax = plt.subplots(figsize=(16, 4))
+    
+    # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
+    Epoch_A_np = np.array(Epoch_A)
+    Epoch_B_np = np.array(Epoch_B)
+    
+    # Filter data for Lstar > 2
+    mask_A = Lstar_A_set > 2
+    Epoch_A_filtered = Epoch_A_np[mask_A]
+    Lstar_A_set_filtered = Lstar_A_set[mask_A]
+    FEDU_A_interpaE_filtered = FEDU_A_interpaE[mask_A]
+    
+    mask_B = Lstar_B_set > 2
+    Epoch_B_filtered = Epoch_B_np[mask_B]
+    Lstar_B_set_filtered = Lstar_B_set[mask_B]
+    FEDU_B_interpaE_filtered = FEDU_B_interpaE[mask_B]
+    
+    # Logarithmic colorbar setup
+    min_val = np.nanmin(np.log10(1))
+    max_val = np.nanmax(np.log10(10**6))
+    
+    scatter_A = ax.scatter(Epoch_A_filtered, Lstar_A_set_filtered, c=np.log10(FEDU_A_interpaE_filtered), vmin=min_val, vmax=max_val)
+    scatter_B = ax.scatter(Epoch_B_filtered, Lstar_B_set_filtered, c=np.log10(FEDU_B_interpaE_filtered), vmin=min_val, vmax=max_val)
+    
+    ax.set_title("RBSP-A & RBSP-B", fontsize=textsize)
+    ax.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
+    ax.tick_params(axis='both', labelsize=textsize)
+    ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    # Force labels for first and last x-axis tick marks 
+    min_epoch = datetime(1970, 1, 1) + timedelta(hours=math.floor((min_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+    max_epoch = datetime(1970, 1, 1) + timedelta(hours=math.ceil((max_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+    ax.set_xlim(min_epoch, max_epoch)
+    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
+    ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+    ax.grid(True)
+    
+    cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
+    cbar.set_label(r"Flux ($cm^{-2} s^{-1} sr^{-1} MeV^{-1}$)", fontsize=textsize)
+    cbar.ax.tick_params(labelsize=textsize)
+    
+    fig.suptitle(f"Flux of Electrons with K={K_set:.1f}, $\\mu$={Mu_set:.0f}", fontsize=textsize + 2)
+    plt.xticks(rotation=45, ha='right', fontsize=textsize)
+    plt.subplots_adjust(top=0.82, right=0.95)
+    
+    plt.show()
+    
+    #%% Plot PSD
+    fig, ax = plt.subplots(figsize=(16, 4))
+    
+    # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
+    Epoch_A_np = np.array(Epoch_A)
+    Epoch_B_np = np.array(Epoch_B)
+    
+    colorscheme = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))
+    cmap = colors.ListedColormap(colorscheme)
+    
+    # Logarithmic colorbar setup
+    min_val = np.nanmin(np.log10(1e-12))
+    max_val = np.nanmax(np.log10(1e-9))
+    
+    scatter_A = ax.scatter(Epoch_A, Lstar_A_set, c=np.log10(psd_A), cmap=cmap, vmin=min_val, vmax=max_val)
+    scatter_B = ax.scatter(Epoch_B, Lstar_B_set, c=np.log10(psd_B), cmap=cmap, vmin=min_val, vmax=max_val)
+    
+    ax.set_title("RBSP-A & RBSP-B", fontsize=textsize)
+    ax.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
+    ax.tick_params(axis='both', labelsize=textsize)
+    ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    # Force labels for first and last x-axis tick marks 
+    min_epoch = datetime(1970, 1, 1) + timedelta(hours=math.floor((min_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+    max_epoch = datetime(1970, 1, 1) + timedelta(hours=math.ceil((max_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+    ax.set_xlim(min_epoch, max_epoch)
+    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
+    ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+    ax.set_ylim(3, 5.5)
+    ax.grid(True)
+    
+    cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
+    tick_locations = np.arange(min_val, max_val + 1)
+    cbar.set_ticks(tick_locations)
+    cbar.set_label(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize)
+    cbar.ax.tick_params(labelsize=textsize)
+    
+    fig.suptitle(f"Flux of Electrons with K={K_set:.1f} $G^{{1/2}}R_E$, $\\mu$={Mu_set:.0f} $MeV/G$", fontsize=textsize + 2)
+    plt.xticks(rotation=45, ha='right', fontsize=textsize)
+    plt.subplots_adjust(top=0.82, right=0.95)
+    
+    plt.show()

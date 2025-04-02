@@ -255,7 +255,7 @@ def find_alpha(K_set, K, alpha):
 
 
 #%% Calculate energy from set mu and alpha:
-electron_E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6)
+electron_E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6) # this is m_0*c^2
 def energy_from_mu_alpha(Mu_set, Alpha_set, B_local):
     """
     Calculates energy from Mu_set, Alpha_set, and B_local.
@@ -295,7 +295,7 @@ def average_fluxes_by_pitch_angle(FEDU, alpha, energy_channels):
     """
 
     rounded_alphas = np.round(alpha, 4)
-    unique_alphas = sorted(list(set(rounded_alphas)))
+    unique_alphas = np.array(sorted(list(set(rounded_alphas))))
     FEDU_averaged = np.zeros((FEDU.shape[0], len(unique_alphas), len(energy_channels) - 4))
 
     for time_index in range(FEDU.shape[0]):
@@ -336,12 +336,12 @@ def interpolate_flux_by_energy(FEDU_averaged, alpha, energy_channels, energy_set
     """
     
     # Initialize an array to store the interpolated flux values.
-    # Dimensions: (number of time points, number of energy channels - 4)
+    # Dimensions: (number of time points, symmetric pitch angle bins)
     FEDU_interp_energy = np.zeros((FEDU_averaged.shape[0], FEDU_averaged.shape[1]))
 
     # Iterate through each time point.
     for time_index in range(FEDU_averaged.shape[0]):
-        # Iterate through each energy channel (excluding the last 4).
+        # Iterate through each pitch angle bin
         for alpha_index in range(FEDU_averaged.shape[1]):
             # Filter out zeros from FEDU_averaged
             non_zero_indices = np.where(FEDU_averaged[time_index, alpha_index, :] != 0)[0]
@@ -356,47 +356,64 @@ def interpolate_flux_by_energy(FEDU_averaged, alpha, energy_channels, energy_set
                 
     return FEDU_interp_energy
 
-
-#%% Fit FEDU v alpha to a quadratic
-def log_func(x, a, b, c):
-    return a * np.log(x + b) + c
-
-def fit_fluxvalpha_log(FEDU_averaged, alpha, energy_channels):
+#%% Interpolate Flux v Pitch Angle using linear between points of log(flux) ~ pitch angle
+def interpolate_flux_by_alpha(FEDU_interp_energy, alpha, alpha_set):
     """
-    Fits logarithmic curves to FEDU_averaged data and returns the coefficients.
+    Interpolates flux values for each time point to a given alpha value.
 
     Args:
-        FEDU_averaged (numpy.ndarray): 3D array of averaged fluxes (time, pitch angle, energy).
-        alpha (list or numpy.ndarray): List or array of pitch angle values.
-        energy_channels (list or numpy.ndarray): List or array of energy channel values.
+        FEDU_interp_energy (numpy.ndarray): 2D array of flux values (time, pitch angle).
+        alpha (list or numpy.ndarray): Array of pitch angle values corresponding to the second dimension of FEDU_interp_energy.
+        alpha_set (list or numpy.ndarray): Array of alpha values to interpolate to, one for each time point.
 
     Returns:
-        numpy.ndarray: Array of logarithmic coefficients (time, energy, 3).
+        numpy.ndarray: 1D array of interpolated flux values (time).
     """
 
+    # Round alpha values to avoid precision issues when comparing.
     rounded_alphas = np.round(alpha, 4)
     unique_alphas = np.array(sorted(list(set(rounded_alphas))))
-    log_coeffs_array = np.zeros((FEDU_averaged.shape[0], FEDU_averaged.shape[2], 3))  # Array to store coefficients
 
-    for time_index in range(FEDU_averaged.shape[0]):
-        for energy_index in range(FEDU_averaged.shape[2]):
-            # Filter out zero values and NaNs for the current energy channel
-            valid_indices = np.where(np.logical_and(FEDU_averaged[time_index, :, energy_index] != 0, 
-                                                    ~np.isnan(FEDU_averaged[time_index, :, energy_index])))[0]
-            
-            if len(valid_indices) > 2:  # Only fit if there are enough valid values
-                try:
-                    # Logarithmic fit using only valid values
-                    log_coeffs, _ = curve_fit(
-                        log_func,
-                        unique_alphas[valid_indices],
-                        FEDU_averaged[time_index, valid_indices, energy_index],
-                        p0=[1, 1, 1]
-                    )
-                    log_coeffs_array[time_index, energy_index, :] = log_coeffs
-                except RuntimeError:
-                    log_coeffs_array[time_index, energy_index, :] = np.nan  # Store NaN if fit fails.
-            else:
-                log_coeffs_array[time_index, energy_index, :] = np.nan  # If not enough valid values, store NaN
+    # Initialize an array to store the interpolated flux values.
+    # Dimensions: (number of time points)
+    FEDU_interp_alpha = np.zeros((FEDU_interp_energy.shape[0]))
 
-    return log_coeffs_array
+    # Iterate through each time point.
+    for time_index in range(FEDU_interp_energy.shape[0]):
+        # Filter out zero values from FEDU_interp_energy for the current time point.
+        non_zero_indices = np.where(FEDU_interp_energy[time_index, :] != 0)[0]
+
+        # Check if there are enough non-zero data points for interpolation.
+        if len(non_zero_indices) > 1:
+            # Take the log of the flux values
+            log_flux = np.log10(FEDU_interp_energy[time_index, non_zero_indices])
+
+            # Perform linear interpolation on the log(flux) values.
+            interpolated_log_flux = np.interp(
+                alpha_set[time_index],  # Target alpha value for the current time point.
+                unique_alphas[non_zero_indices],           # Unique pitch angle values.
+                log_flux # log(flux) data for the current time point.
+            )
+            # Exponentiate the interpolated log(flux) values to get the flux.
+            FEDU_interp_alpha[time_index] = 10**interpolated_log_flux
+        else:
+            # Store NaN if there are not enough valid data points for interpolation.
+            FEDU_interp_alpha[time_index] = np.nan
+
+    return FEDU_interp_alpha
+
+#%% Calculate PSD from Flux and Energy
+electron_E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6) # this is m_0*c^2
+def find_psd(FEDU_interp_aE, energy_set):
+    psd = np.zeros((FEDU_interp_aE.shape[0]))
+    
+    # Iterate through each time point.
+    for time_index in range(FEDU_interp_aE.shape[0]):
+        if not (np.isnan(energy_set[time_index]) or energy_set[time_index] == 0):
+            E_rel = energy_set[time_index]**2 + 2*energy_set[time_index] * electron_E0
+            psd[time_index] = FEDU_interp_aE[time_index]/E_rel * 1.66e-10 * 1e-3 * 200.3
+        else:
+            # Store NaN if calculation is invalid.
+            FEDU_interp_aE[time_index] = np.nan
+    
+    return psd
