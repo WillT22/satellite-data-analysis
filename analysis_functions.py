@@ -353,11 +353,12 @@ def interpolate_flux_by_energy(FEDU_averaged, alpha, energy_channels, energy_set
                 # Filter out zeros from FEDU_averaged
                 non_zero_indices = np.where(FEDU_averaged[time_index, alpha_index, :] != 0)[0]
                 if len(non_zero_indices) > 1:
-                    # Perform linear interpolation
-                    FEDU_interp_energy[time_index, alpha_index, mu_set_index] = np.interp(
+                    # Perform exponential interpolation
+                    log_flux_interp = np.interp(
                         energy_set[time_index, mu_set_index], 
                         energy_channels[:-4],
-                        FEDU_averaged[time_index, alpha_index, :])
+                        np.log(FEDU_averaged[time_index, alpha_index, :]))
+                    FEDU_interp_energy[time_index, alpha_index, mu_set_index] = np.exp(log_flux_interp)
                 else:
                     FEDU_interp_energy[time_index, alpha_index, mu_set_index] = np.nan #store nan if interpolation fails.
                 
@@ -394,17 +395,14 @@ def interpolate_flux_by_alpha(FEDU_interp_energy, alpha, alpha_set):
     
             # Check if there are enough non-zero data points for interpolation.
             if len(non_zero_indices) > 1:
-                # Take the log of the flux values
-                log_flux = np.log10(FEDU_interp_energy[time_index, non_zero_indices, mu_set_index])
-    
-                # Perform linear interpolation on the log(flux) values.
-                interpolated_log_flux = np.interp(
+                # Perform exponential interpolation
+                log_flux_interp = np.interp(
                     alpha_set[time_index],  # Target alpha value for the current time point.
                     unique_alphas[non_zero_indices],           # Unique pitch angle values.
-                    log_flux # log(flux) data for the current time point.
+                    np.log(FEDU_interp_energy[time_index, non_zero_indices, mu_set_index]) # log(flux) data for the current time point.
                 )
                 # Exponentiate the interpolated log(flux) values to get the flux.
-                FEDU_interp_alpha[time_index, mu_set_index] = 10**interpolated_log_flux
+                FEDU_interp_alpha[time_index, mu_set_index] = np.exp(log_flux_interp)
             else:
                 # Store NaN if there are not enough valid data points for interpolation.
                 FEDU_interp_alpha[time_index, mu_set_index] = np.nan
