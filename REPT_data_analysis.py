@@ -211,28 +211,158 @@ if __name__ == '__main__':
     # Find kinetic energy of particle population with a given Mu and alpha calculated from a given K 
     energy_B_set = energy_from_mu_alpha(Mu_set, alpha_B_set, Blocal_B)
     
-#%% Interpolate flux for each energy given a mu and K
+#%% Average fluxed with the same pitch angle
     print("Averaging fluxes with the same pitch angle (RBSP-A)")
     FEDU_A_averaged = average_fluxes_by_pitch_angle(FEDU_A, alpha_A, energy_channels_A)
     print("Averaging fluxes with the same pitch angle (RBSP-B)")
     FEDU_B_averaged = average_fluxes_by_pitch_angle(FEDU_B, alpha_B, energy_channels_B)
-    
-    print("Interpolating Flux over Energy (RBSP-A)")
-    FEDU_A_interpE = interpolate_flux_by_energy(FEDU_A_averaged, alpha_A, energy_channels_A, energy_A_set)
-    print("Interpolating Flux over Energy (RBSP-B)")
-    FEDU_B_interpE = interpolate_flux_by_energy(FEDU_B_averaged, alpha_B, energy_channels_B, energy_B_set)
-    
-#%% Interpolate flux for each pitch angle given a mu and K
+
+#%% Interpolate flux for each pitch angle given a mu and K  
     print("Interpolating Flux over Pitch Angle (RBSP-A)")
-    FEDU_A_interpaE = interpolate_flux_by_alpha(FEDU_A_interpE, alpha_A, alpha_A_set)
+    FEDU_A_interpa = interpolate_flux_by_alpha(FEDU_A_averaged, alpha_A, alpha_A_set)
     print("Interpolating Flux over Pitch Angle (RBSP-B)")
-    FEDU_B_interpaE = interpolate_flux_by_alpha(FEDU_B_interpE, alpha_B, alpha_B_set)
+    FEDU_B_interpa = interpolate_flux_by_alpha(FEDU_B_averaged, alpha_B, alpha_B_set)
+    
+#%% Interpolate flux for each energy given a mu and K
+    print("Interpolating Flux over Energy (RBSP-A)")
+    FEDU_A_interpaE = interpolate_flux_by_energy(FEDU_A_interpa, energy_channels_A, energy_A_set)
+    print("Interpolating Flux over Energy (RBSP-B)")
+    FEDU_B_interpaE = interpolate_flux_by_energy(FEDU_B_interpa, energy_channels_B, energy_B_set)
     
 #%% Calculate PSD from flux and energy for a given mu and K
     print("Calculating PSD (RBSP-A)")    
     psd_A = find_psd(FEDU_A_interpaE, energy_A_set)
     print("Calculating PSD (RBSP-B)") 
     psd_B = find_psd(FEDU_B_interpaE, energy_B_set)
+
+#%% Plot PSD
+    fig, ax = plt.subplots(figsize=(16, 4))
+    
+    mu_select = 6
+    
+    # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
+    Epoch_A_np = np.array(Epoch_A)
+    Epoch_B_np = np.array(Epoch_B)
+    
+    colorscheme = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))
+    cmap = colors.ListedColormap(colorscheme)
+    
+    # Logarithmic colorbar setup
+    min_val = np.nanmin(np.log10(1e-12))
+    max_val = np.nanmax(np.log10(1e-9))
+    
+    scatter_A = ax.scatter(Epoch_A, Lstar_A_set, c=np.log10(psd_A[:,mu_select]), cmap=cmap, vmin=min_val, vmax=max_val)
+    scatter_B = ax.scatter(Epoch_B, Lstar_B_set, c=np.log10(psd_B[:,mu_select]), cmap=cmap, vmin=min_val, vmax=max_val)
+    
+    ax.set_title("RBSP-A & RBSP-B", fontsize=textsize)
+    ax.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
+    ax.tick_params(axis='both', labelsize=textsize)
+    ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    # Force labels for first and last x-axis tick marks 
+    min_epoch = datetime(1970, 1, 1) + timedelta(hours=math.floor((min_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+    max_epoch = datetime(1970, 1, 1) + timedelta(hours=math.ceil((max_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+    ax.set_xlim(min_epoch, max_epoch)
+    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
+    ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+    ax.set_ylim(3, 5.5)
+    ax.grid(True)
+    
+    cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
+    tick_locations = np.arange(min_val, max_val + 1)
+    cbar.set_ticks(tick_locations)
+    cbar.set_label(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize)
+    cbar.ax.tick_params(labelsize=textsize)
+    
+    fig.suptitle(f"Flux of Electrons with K={K_set:.1f} $G^{{1/2}}R_E$, $\\mu$={Mu_set[mu_select]:.0f} $MeV/G$", fontsize=textsize + 2)
+    plt.xticks(rotation=45, ha='right', fontsize=textsize)
+    plt.subplots_adjust(top=0.82, right=0.95)
+    
+    plt.show()
+    
+    
+#%% Plot PSD lineplots
+    fig, ax = plt.subplots(figsize=(6, 4.5))
+    color_set = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(Mu_set), dtype=int)]
+    color_set[3] = [0, 1, 1, 1]  # Teal
+    
+    time_start  = datetime(2017, 4, 25, 15, 30, 0)
+    time_stop   = datetime(2017, 4, 25, 19, 57, 0)
+    
+    # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
+    Epoch_A_np = np.array(Epoch_A)
+    Epoch_B_np = np.array(Epoch_B)
+    
+    # Define Lstar delta
+    lstar_delta = 0.1
+    
+    # Generate Lstar interval boundaries within the time range.
+    time_range = Epoch_B_np[(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
+    lstar_range = Lstar_B_set[(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
+    psd_range = psd_B[(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
+    lstar_min = np.min(lstar_range[~np.isnan(lstar_range)])
+    lstar_max = np.max(lstar_range[~np.isnan(lstar_range)])
+    lstar_intervals = np.arange(np.floor(lstar_min / lstar_delta) * lstar_delta, np.ceil(lstar_max / lstar_delta) * lstar_delta + lstar_delta, lstar_delta)
+    
+    # Initialize arrays to store averaged values.
+    averaged_lstar = np.zeros(len(lstar_intervals))
+    averaged_psd = np.zeros((len(lstar_intervals), psd_B.shape[1]))
+    
+    # Iterate through each Lstar interval.
+    for i, lstar_val in enumerate(lstar_intervals):
+        # Find indices within the current Lstar interval and time range.
+        lstar_start = lstar_val - 1/2 * lstar_delta
+        lstar_end = lstar_val + 1/2 * lstar_delta
+        interval_indices = np.where((Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop) & (Lstar_B_set >= lstar_start) & (Lstar_B_set < lstar_end))[0]
+    
+        # Calculate averages for the current Lstar interval
+        if len(interval_indices) > 0:
+            averaged_psd[i] = np.nanmean(psd_B[interval_indices], axis=0)  # average along the first axis, ignoring NaNs.
+        else:
+            averaged_psd[i] = np.nan
+    
+    for mu_index in range(len(Mu_set)):
+        # Create a mask to filter out NaN values
+        nan_mask = ~np.isnan(averaged_psd[:, mu_index])
+    
+        # Apply the mask to both averaged_lstar and averaged_psd
+        ax.plot(
+            lstar_intervals[nan_mask],
+            averaged_psd[nan_mask, mu_index],
+            color=color_set[mu_index],
+            linewidth=2,
+            marker='o',
+            markersize=4,
+            label=f"{Mu_set[mu_index]:.0f}"
+        )
+    
+    ax.set_xlim(3, 5.5)
+    ax.set_xlabel(r"L*", fontsize=textsize - 2)
+    ax.set_ylim(1e-13, 1e-5)
+    ax.set_ylabel(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize - 2)
+    plt.yscale('log')
+    ax.grid(True)
+    
+    # Add legend
+    ax.legend(
+        title=r"$\mu$ (MeV/G)",
+        loc='center right',
+        bbox_to_anchor=(1.25, 0.5),
+        fontsize='small', #adjust legend fontsize
+        title_fontsize='medium', #adjust legend title fontsize
+        markerscale=0.7,
+        handlelength=1
+    )
+
+    # Add K text to the plot
+    ax.text(0.02, 0.98, r"K = " + f"{K_set:.1f} $G^{{1/2}}R_E$", transform=ax.transAxes, fontsize=textsize-4, verticalalignment='top') #add the text
+    
+    # Set the plot title to the time interval
+    title_str = f"Time Interval: {time_start.strftime('%Y-%m-%d %H:%M')} to {time_stop.strftime('%Y-%m-%d %H:%M')}"
+    ax.set_title(title_str)
+    
+    plt.tight_layout()
+    plt.show()
+
 
 #%% Plots
     '''
@@ -452,130 +582,3 @@ if __name__ == '__main__':
     plt.show()
     '''
     
-#%% Plot PSD
-    fig, ax = plt.subplots(figsize=(16, 4))
-    
-    mu_select = 6
-    
-    # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
-    Epoch_A_np = np.array(Epoch_A)
-    Epoch_B_np = np.array(Epoch_B)
-    
-    colorscheme = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))
-    cmap = colors.ListedColormap(colorscheme)
-    
-    # Logarithmic colorbar setup
-    min_val = np.nanmin(np.log10(1e-12))
-    max_val = np.nanmax(np.log10(1e-9))
-    
-    scatter_A = ax.scatter(Epoch_A, Lstar_A_set, c=np.log10(psd_A[:,mu_select]), cmap=cmap, vmin=min_val, vmax=max_val)
-    scatter_B = ax.scatter(Epoch_B, Lstar_B_set, c=np.log10(psd_B[:,mu_select]), cmap=cmap, vmin=min_val, vmax=max_val)
-    
-    ax.set_title("RBSP-A & RBSP-B", fontsize=textsize)
-    ax.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
-    ax.tick_params(axis='both', labelsize=textsize)
-    ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
-    # Force labels for first and last x-axis tick marks 
-    min_epoch = datetime(1970, 1, 1) + timedelta(hours=math.floor((min_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
-    max_epoch = datetime(1970, 1, 1) + timedelta(hours=math.ceil((max_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
-    ax.set_xlim(min_epoch, max_epoch)
-    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
-    ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-    ax.set_ylim(3, 5.5)
-    ax.grid(True)
-    
-    cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
-    tick_locations = np.arange(min_val, max_val + 1)
-    cbar.set_ticks(tick_locations)
-    cbar.set_label(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize)
-    cbar.ax.tick_params(labelsize=textsize)
-    
-    fig.suptitle(f"Flux of Electrons with K={K_set:.1f} $G^{{1/2}}R_E$, $\\mu$={Mu_set[mu_select]:.0f} $MeV/G$", fontsize=textsize + 2)
-    plt.xticks(rotation=45, ha='right', fontsize=textsize)
-    plt.subplots_adjust(top=0.82, right=0.95)
-    
-    plt.show()
-    
-    
-#%% Plot PSD lineplots
-    fig, ax = plt.subplots(figsize=(6, 4.5))
-    color_set = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(Mu_set), dtype=int)]
-    color_set[3] = [0, 1, 1, 1]  # Teal
-    
-    time_start  = datetime(2017, 4, 23, 18, 45, 0)
-    time_stop   = datetime(2017, 4, 23, 22, 58, 0)
-    
-    # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
-    Epoch_A_np = np.array(Epoch_A)
-    Epoch_B_np = np.array(Epoch_B)
-    
-    # Define Lstar delta
-    lstar_delta = 0.1
-    
-    # Generate Lstar interval boundaries within the time range.
-    time_range = Epoch_B_np[(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
-    lstar_range = Lstar_B_set[(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
-    psd_range = psd_B[(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
-    lstar_min = np.min(lstar_range[~np.isnan(lstar_range)])
-    lstar_max = np.max(lstar_range[~np.isnan(lstar_range)])
-    lstar_intervals = np.arange(np.floor(lstar_min / lstar_delta) * lstar_delta, np.ceil(lstar_max / lstar_delta) * lstar_delta + lstar_delta, lstar_delta)
-    
-    # Initialize arrays to store averaged values.
-    averaged_lstar = np.zeros(len(lstar_intervals))
-    averaged_psd = np.zeros((len(lstar_intervals), psd_B.shape[1]))
-    
-    # Iterate through each Lstar interval.
-    for i, lstar_val in enumerate(lstar_intervals):
-        # Find indices within the current Lstar interval and time range.
-        lstar_start = lstar_val - 1/2 * lstar_delta
-        lstar_end = lstar_val + 1/2 * lstar_delta
-        interval_indices = np.where((Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop) & (Lstar_B_set >= lstar_start) & (Lstar_B_set < lstar_end))[0]
-    
-        # Calculate averages for the current Lstar interval
-        if len(interval_indices) > 0:
-            averaged_psd[i] = np.nanmean(psd_B[interval_indices], axis=0)  # average along the first axis, ignoring NaNs.
-        else:
-            averaged_psd[i] = np.nan
-    
-    for mu_index in range(len(Mu_set)):
-        # Create a mask to filter out NaN values
-        nan_mask = ~np.isnan(averaged_psd[:, mu_index])
-    
-        # Apply the mask to both averaged_lstar and averaged_psd
-        ax.plot(
-            lstar_intervals[nan_mask],
-            averaged_psd[nan_mask, mu_index],
-            color=color_set[mu_index],
-            linewidth=2,
-            marker='o',
-            markersize=4,
-            label=f"{Mu_set[mu_index]:.0f}"
-        )
-    
-    ax.set_xlim(3, 5.5)
-    ax.set_xlabel(r"L*", fontsize=textsize - 2)
-    ax.set_ylim(1e-13, 1e-5)
-    ax.set_ylabel(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize - 2)
-    plt.yscale('log')
-    ax.grid(True)
-    
-    # Add legend
-    ax.legend(
-        title=r"$\mu$ (MeV/G)",
-        loc='center right',
-        bbox_to_anchor=(1.25, 0.5),
-        fontsize='small', #adjust legend fontsize
-        title_fontsize='medium', #adjust legend title fontsize
-        markerscale=0.7,
-        handlelength=1
-    )
-
-    # Add K text to the plot
-    ax.text(0.02, 0.98, r"K = " + f"{K_set:.1f} $G^{{1/2}}R_E$", transform=ax.transAxes, fontsize=textsize-4, verticalalignment='top') #add the text
-    
-    # Set the plot title to the time interval
-    title_str = f"Time Interval: {time_start.strftime('%Y-%m-%d %H:%M')} to {time_stop.strftime('%Y-%m-%d %H:%M')}"
-    ax.set_title(title_str)
-    
-    plt.tight_layout()
-    plt.show()

@@ -301,10 +301,10 @@ def average_fluxes_by_pitch_angle(FEDU, alpha, energy_channels):
 
     rounded_alphas = np.round(alpha, 4)
     unique_alphas = np.array(sorted(list(set(rounded_alphas))))
-    FEDU_averaged = np.zeros((FEDU.shape[0], len(unique_alphas), len(energy_channels) - 4))
+    FEDU_averaged = np.zeros((FEDU.shape[0], len(unique_alphas), len(energy_channels) - 2))
 
     for time_index in range(FEDU.shape[0]):
-        for energy_index in range(len(energy_channels) - 4):
+        for energy_index in range(len(energy_channels) - 2):
             for pitch_angle_index in range(len(unique_alphas)):
                 mirrored_pitch_angle_index = 16 - pitch_angle_index
 
@@ -325,89 +325,65 @@ def average_fluxes_by_pitch_angle(FEDU, alpha, energy_channels):
 
     return FEDU_averaged
 
-#%% Interpolated Flux v Kinetic Energy using exponential between points
-def interpolate_flux_by_energy(FEDU_averaged, alpha, energy_channels, energy_set):
-    """
-    Interpolates flux values for each time point and energy channel to a given alpha value.
-
-    Args:
-        FEDU_averaged (numpy.ndarray): 3D array of averaged flux values (time, pitch angle, energy).
-        alpha (list or numpy.ndarray): Array of pitch angle values corresponding to the second dimension of FEDU_averaged.
-        energy_channels (list or numpy.ndarray): Array of energy channel values.
-        energy_set (list or numpy.ndarray): Array of energy values to interpolate to, one for each time point for each set mu value.
-
-    Returns:
-        numpy.ndarray: 2D array of interpolated flux values (time, alpha, mu_set).
-    """
-    
-    # Initialize an array to store the interpolated flux values.
-    # Dimensions: (number of time points, symmetric pitch angle bins, set mu values)
-    FEDU_interp_energy = np.zeros((FEDU_averaged.shape[0], FEDU_averaged.shape[1], energy_set.shape[1]))
-
-    # Iterate thorugh each set mu value
-    for mu_set_index in range(energy_set.shape[1]):
-        # Iterate through each time point.
-        for time_index in range(FEDU_averaged.shape[0]):
-            # Iterate through each pitch angle bin
-            for alpha_index in range(FEDU_averaged.shape[1]):
-                # Filter out zeros from FEDU_averaged
-                non_zero_indices = np.where(FEDU_averaged[time_index, alpha_index, :] != 0)[0]
-                if len(non_zero_indices) > 1:
-                    # Perform exponential interpolation
-                    log_flux_interp = np.interp(
-                        energy_set[time_index, mu_set_index], 
-                        energy_channels[:-4],
-                        np.log(FEDU_averaged[time_index, alpha_index, :]))
-                    FEDU_interp_energy[time_index, alpha_index, mu_set_index] = np.exp(log_flux_interp)
-                else:
-                    FEDU_interp_energy[time_index, alpha_index, mu_set_index] = np.nan #store nan if interpolation fails.
-                
-    return FEDU_interp_energy
-
-#%% Interpolate Flux v Pitch Angle using linear between points of log(flux) ~ pitch angle
-def interpolate_flux_by_alpha(FEDU_interp_energy, alpha, alpha_set):
-    """
-    Interpolates flux values for each time point to a given alpha value.
-
-    Args:
-        FEDU_interp_energy (numpy.ndarray): 3D array of flux values (time, pitch angle, set mu values).
-        alpha (list or numpy.ndarray): Array of pitch angle values corresponding to the second dimension of FEDU_interp_energy.
-        alpha_set (list or numpy.ndarray): Array of alpha values to interpolate to, one for each time point.
-
-    Returns:
-        numpy.ndarray: 1D array of interpolated flux values (time).
-    """
+#%% Interpolated Flux v Pitch Angle using exponential between points
+def interpolate_flux_by_alpha(FEDU_averaged, alpha, alpha_set):
 
     # Round alpha values to avoid precision issues when comparing.
     rounded_alphas = np.round(alpha, 4)
     unique_alphas = np.array(sorted(list(set(rounded_alphas))))
+    
+    # Initialize an array to store the interpolated flux values.
+    # Dimensions: (number of time points, symmetric pitch angle bins, set mu values)
+    FEDU_interp_alpha = np.zeros((FEDU_averaged.shape[0], FEDU_averaged.shape[2]))
+
+    # Iterate through each time point.
+    for time_index in range(FEDU_averaged.shape[0]):
+        # Iterate through each pitch angle bin
+        for energy_index in range(FEDU_averaged.shape[2]):
+            # Filter out zeros from FEDU_averaged
+            zero_indices = np.where(FEDU_averaged[time_index, :, energy_index] == 0)[0]
+            FEDU_averaged[time_index, zero_indices, energy_index] = 1e-31
+            
+            # Perform exponential interpolation
+            log_flux_interp = np.interp(
+                alpha_set[time_index], 
+                unique_alphas,
+                np.log(FEDU_averaged[time_index, :, energy_index]))
+            FEDU_interp_alpha[time_index, energy_index] = np.exp(log_flux_interp)
+                
+    return FEDU_interp_alpha
+
+#%% Interpolate Flux v Kinetic Energy using exponential between points
+def interpolate_flux_by_energy(FEDU_interp_alpha, energy_channels, energy_set):
 
     # Initialize an array to store the interpolated flux values.
     # Dimensions: (number of time points, number of set mu values)
-    FEDU_interp_alpha = np.zeros((FEDU_interp_energy.shape[0],FEDU_interp_energy.shape[2]))
+    FEDU_interp_energy = np.zeros((FEDU_interp_alpha.shape[0],energy_set.shape[1]))
 
     # Iterate thorugh each set mu value
-    for mu_set_index in range(FEDU_interp_energy.shape[2]):
+    for mu_set_index in range(energy_set.shape[1]):
         # Iterate through each time point.
-        for time_index in range(FEDU_interp_energy.shape[0]):
-            # Filter out zero values from FEDU_interp_energy for the current time point.
-            non_zero_indices = np.where(FEDU_interp_energy[time_index, :, mu_set_index] != 0)[0]
+        for time_index in range(FEDU_interp_alpha.shape[0]):
+            # Filter out zeros from FEDU_averaged
+            non_zero_indices = np.where(FEDU_interp_alpha[time_index, :] > 0)[0]
+            non_nan_indices = np.where(~np.isnan(FEDU_interp_alpha[time_index, :]))[0]
+            valid_indices = np.intersect1d(non_zero_indices, non_nan_indices)
     
             # Check if there are enough non-zero data points for interpolation.
-            if len(non_zero_indices) > 1:
+            if len(non_nan_indices) > 1:
                 # Perform exponential interpolation
                 log_flux_interp = np.interp(
-                    alpha_set[time_index],  # Target alpha value for the current time point.
-                    unique_alphas[non_zero_indices],           # Unique pitch angle values.
-                    np.log(FEDU_interp_energy[time_index, non_zero_indices, mu_set_index]) # log(flux) data for the current time point.
+                    energy_set[time_index, mu_set_index],
+                    energy_channels[:-2][valid_indices],
+                    np.log(FEDU_interp_alpha[time_index, valid_indices])
                 )
                 # Exponentiate the interpolated log(flux) values to get the flux.
-                FEDU_interp_alpha[time_index, mu_set_index] = np.exp(log_flux_interp)
+                FEDU_interp_energy[time_index, mu_set_index] = np.exp(log_flux_interp)
             else:
                 # Store NaN if there are not enough valid data points for interpolation.
-                FEDU_interp_alpha[time_index, mu_set_index] = np.nan
+                FEDU_interp_energy[time_index, mu_set_index] = np.nan
 
-    return FEDU_interp_alpha
+    return FEDU_interp_energy
 
 #%% Calculate PSD from Flux and Energy
 electron_E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6) # this is m_0*c^2
