@@ -251,9 +251,20 @@ if __name__ == '__main__':
     min_val = np.nanmin(np.log10(1e-12))
     max_val = np.nanmax(np.log10(1e-9))
     
-    scatter_A = ax.scatter(Epoch_A, Lstar_A_set, c=np.log10(psd_A[:,mu_select]), cmap=cmap, vmin=min_val, vmax=max_val)
-    scatter_B = ax.scatter(Epoch_B, Lstar_B_set, c=np.log10(psd_B[:,mu_select]), cmap=cmap, vmin=min_val, vmax=max_val)
+    psd_A_plot = psd_A.copy()
+    psd_A_plot[np.where(psd_A_plot == 0)] = 1e-12
+    psd_A_plot[np.isnan(psd_A_plot)] = 1e-12
+    psd_B_plot = psd_B.copy()
+    psd_B_plot[np.where(psd_B_plot == 0)] = 1e-12
+    psd_B_plot[np.isnan(psd_B_plot)] = 1e-12
     
+    # Plotting, ignoring NaN values in the color
+    scatter_A = ax.scatter(Epoch_A_np, Lstar_A_set,
+                     c=np.log10(psd_A_plot[:, mu_select]), cmap=cmap, vmin=min_val, vmax=max_val)
+    scatter_B = ax.scatter(Epoch_B_np, Lstar_B_set,
+                     c=np.log10(psd_B_plot[:, mu_select]), cmap=cmap, vmin=min_val, vmax=max_val)
+
+ 
     ax.set_title("RBSP-A & RBSP-B", fontsize=textsize)
     ax.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
     ax.tick_params(axis='both', labelsize=textsize)
@@ -285,8 +296,8 @@ if __name__ == '__main__':
     color_set = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(Mu_set), dtype=int)]
     color_set[3] = [0, 1, 1, 1]  # Teal
     
-    time_start  = datetime(2017, 4, 25, 15, 30, 0)
-    time_stop   = datetime(2017, 4, 25, 19, 57, 0)
+    time_start  = datetime(2017, 4, 23, 18, 45, 0)
+    time_stop   = datetime(2017, 4, 23, 22, 58, 0)
     
     # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
     Epoch_A_np = np.array(Epoch_A)
@@ -303,6 +314,10 @@ if __name__ == '__main__':
     lstar_max = np.max(lstar_range[~np.isnan(lstar_range)])
     lstar_intervals = np.arange(np.floor(lstar_min / lstar_delta) * lstar_delta, np.ceil(lstar_max / lstar_delta) * lstar_delta + lstar_delta, lstar_delta)
     
+    energy_range = energy_B_set[(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
+    interpa_range = FEDU_B_interpa[(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
+    interpaE_range = FEDU_B_interpaE[(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
+    
     # Initialize arrays to store averaged values.
     averaged_lstar = np.zeros(len(lstar_intervals))
     averaged_psd = np.zeros((len(lstar_intervals), psd_B.shape[1]))
@@ -310,12 +325,12 @@ if __name__ == '__main__':
     # Iterate through each Lstar interval.
     for i, lstar_val in enumerate(lstar_intervals):
         # Find indices within the current Lstar interval and time range.
-        lstar_start = lstar_val - 1/2 * lstar_delta
-        lstar_end = lstar_val + 1/2 * lstar_delta
+        lstar_start = lstar_val - 3/4 * lstar_delta
+        lstar_end = lstar_val + 3/4 * lstar_delta
         interval_indices = np.where((Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop) & (Lstar_B_set >= lstar_start) & (Lstar_B_set < lstar_end))[0]
     
         # Calculate averages for the current Lstar interval
-        if len(interval_indices) > 0:
+        if len(interval_indices) > 2:
             averaged_psd[i] = np.nanmean(psd_B[interval_indices], axis=0)  # average along the first axis, ignoring NaNs.
         else:
             averaged_psd[i] = np.nan

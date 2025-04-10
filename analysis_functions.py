@@ -332,6 +332,9 @@ def interpolate_flux_by_alpha(FEDU_averaged, alpha, alpha_set):
     rounded_alphas = np.round(alpha, 4)
     unique_alphas = np.array(sorted(list(set(rounded_alphas))))
     
+    modified_array = FEDU_averaged.copy()
+    modified_array[np.where(modified_array ==0)] = 1
+    
     # Initialize an array to store the interpolated flux values.
     # Dimensions: (number of time points, symmetric pitch angle bins, set mu values)
     FEDU_interp_alpha = np.zeros((FEDU_averaged.shape[0], FEDU_averaged.shape[2]))
@@ -339,23 +342,41 @@ def interpolate_flux_by_alpha(FEDU_averaged, alpha, alpha_set):
     # Iterate through each time point.
     for time_index in range(FEDU_averaged.shape[0]):
         # Iterate through each pitch angle bin
-        for energy_index in range(FEDU_averaged.shape[2]):
-            # Filter out zeros from FEDU_averaged
-            zero_indices = np.where(FEDU_averaged[time_index, :, energy_index] == 0)[0]
-            FEDU_averaged[time_index, zero_indices, energy_index] = 1e-31
+        for energy_index in range(FEDU_averaged.shape[2]):          
+            # Filter non-positive and NaN values
+            valid_indices = np.where((modified_array[time_index, :, energy_index] > 0) &
+                                     (~np.isnan(modified_array[time_index, :, energy_index])))[0]
             
-            # Perform exponential interpolation
-            log_flux_interp = np.interp(
-                alpha_set[time_index], 
-                unique_alphas,
-                np.log(FEDU_averaged[time_index, :, energy_index]))
-            FEDU_interp_alpha[time_index, energy_index] = np.exp(log_flux_interp)
-                
+            # Check if there are enough non-zero data points for interpolation.
+            if len(valid_indices) > 1:            
+                valid_alphas = unique_alphas[valid_indices]
+                insertion_point = np.searchsorted(valid_alphas, alpha_set[time_index])
+                if insertion_point < len(valid_alphas):
+                    lower_alpha_val = valid_alphas[insertion_point - 1]
+                    upper_alpha_val = valid_alphas[insertion_point]
+    
+                    if upper_alpha_val - lower_alpha_val > 25:
+                        FEDU_interp_alpha[time_index, energy_index] = np.nan
+                    else:
+                        # Perform exponential interpolation
+                        log_flux_interp = np.interp(
+                            alpha_set[time_index], 
+                            valid_alphas,
+                            np.log(modified_array[time_index, valid_indices, energy_index]))
+                        FEDU_interp_alpha[time_index, energy_index] = np.exp(log_flux_interp)
+                else:
+                    FEDU_interp_alpha[time_index, energy_index] = np.nan  
+            else:
+                # Store NaN if there are not enough valid data points for interpolation.
+                FEDU_interp_alpha[time_index, energy_index] = np.nan
+    
     return FEDU_interp_alpha
 
 #%% Interpolate Flux v Kinetic Energy using exponential between points
 def interpolate_flux_by_energy(FEDU_interp_alpha, energy_channels, energy_set):
-
+    
+    modified_array = FEDU_interp_alpha.copy()
+    
     # Initialize an array to store the interpolated flux values.
     # Dimensions: (number of time points, number of set mu values)
     FEDU_interp_energy = np.zeros((FEDU_interp_alpha.shape[0],energy_set.shape[1]))
@@ -364,21 +385,29 @@ def interpolate_flux_by_energy(FEDU_interp_alpha, energy_channels, energy_set):
     for mu_set_index in range(energy_set.shape[1]):
         # Iterate through each time point.
         for time_index in range(FEDU_interp_alpha.shape[0]):
-            # Filter out zeros from FEDU_averaged
-            non_zero_indices = np.where(FEDU_interp_alpha[time_index, :] > 0)[0]
-            non_nan_indices = np.where(~np.isnan(FEDU_interp_alpha[time_index, :]))[0]
-            valid_indices = np.intersect1d(non_zero_indices, non_nan_indices)
+            # Filter non-positive and NaN values
+            valid_indices = np.where((modified_array[time_index, :] > 0) &
+                                     (~np.isnan(modified_array[time_index, :])))[0]
     
             # Check if there are enough non-zero data points for interpolation.
-            if len(non_nan_indices) > 1:
-                # Perform exponential interpolation
-                log_flux_interp = np.interp(
-                    energy_set[time_index, mu_set_index],
-                    energy_channels[:-2][valid_indices],
-                    np.log(FEDU_interp_alpha[time_index, valid_indices])
-                )
-                # Exponentiate the interpolated log(flux) values to get the flux.
-                FEDU_interp_energy[time_index, mu_set_index] = np.exp(log_flux_interp)
+            if len(valid_indices) > 1:            
+                valid_energies = energy_channels[valid_indices]
+                insertion_point = np.searchsorted(valid_energies, energy_set[time_index, mu_set_index])
+                if insertion_point < len(valid_energies):
+                    lower_E_val = valid_energies[insertion_point - 1]
+                    upper_E_val = valid_energies[insertion_point]
+    
+                    if upper_E_val - lower_E_val > 5:
+                        FEDU_interp_energy[time_index, mu_set_index] = np.nan
+                    else:
+                        # Perform exponential interpolation
+                        log_flux_interp = np.interp(
+                            energy_set[time_index, mu_set_index],
+                            energy_channels[:-2][valid_indices],
+                            np.log(modified_array[time_index, valid_indices]))
+                        FEDU_interp_energy[time_index, mu_set_index] = np.exp(log_flux_interp)
+                else:
+                    FEDU_interp_energy[time_index, mu_set_index] = np.nan
             else:
                 # Store NaN if there are not enough valid data points for interpolation.
                 FEDU_interp_energy[time_index, mu_set_index] = np.nan
@@ -394,11 +423,11 @@ def find_psd(FEDU_interp_aE, energy_set):
     for mu_set_index in range(FEDU_interp_aE.shape[1]):
         # Iterate through each time point.
         for time_index in range(FEDU_interp_aE.shape[0]):
-            if not (np.isnan(energy_set[time_index, mu_set_index]) or energy_set[time_index, mu_set_index] == 0):
+            if not (np.isnan(FEDU_interp_aE[time_index, mu_set_index]) or FEDU_interp_aE[time_index, mu_set_index] == 0):
                 E_rel = energy_set[time_index, mu_set_index]**2 + 2*energy_set[time_index, mu_set_index] * electron_E0
                 psd[time_index, mu_set_index] = FEDU_interp_aE[time_index, mu_set_index]/E_rel * 1.66e-10 * 1e-3 * 200.3
             else:
                 # Store NaN if calculation is invalid.
-                FEDU_interp_aE[time_index, mu_set_index] = np.nan
+                psd[time_index, mu_set_index] = np.nan
     
     return psd
