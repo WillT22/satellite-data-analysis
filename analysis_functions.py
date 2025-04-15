@@ -3,7 +3,6 @@ import os
 from spacepy import pycdf
 import spacepy.omni as omni
 import scipy.constants as sc
-from scipy.optimize import curve_fit
 
 #%% Proccess REPT CDF
 def process_l3_data(file_paths):
@@ -327,107 +326,195 @@ def average_fluxes_by_pitch_angle(FEDU, alpha, energy_channels):
 
 #%% Interpolated Flux v Pitch Angle using exponential between points
 def interpolate_flux_by_alpha(FEDU_averaged, alpha, alpha_set):
+    """
+    Interpolates flux as a function of pitch angle using an exponential
+    interpolation between valid data points.
 
+    Args:
+        FEDU_averaged (numpy.ndarray): 3D array of averaged flux values
+            (time, pitch angle, energy).
+        alpha (numpy.ndarray): 1D array of measured pitch angle values (in degrees).
+        alpha_set (numpy.ndarray): 1D array of target pitch angle values (in degrees)
+            at which to interpolate for each time point.
+
+    Returns:
+        numpy.ndarray: 2D array of interpolated flux values (time, energy)
+            at the target pitch angles. Returns NaN if interpolation is not
+            possible due to insufficient data or large gaps.
+    """
     # Round alpha values to avoid precision issues when comparing.
     rounded_alphas = np.round(alpha, 4)
     unique_alphas = np.array(sorted(list(set(rounded_alphas))))
-    
+
+    # Copy array for manipulation
     modified_array = FEDU_averaged.copy()
-    modified_array[np.where(modified_array ==0)] = 1
-    
+    # Replace zero flux with 1 so it becomes 0 in log scale.
+    modified_array[np.where(modified_array == 0)] = 1
+
     # Initialize an array to store the interpolated flux values.
-    # Dimensions: (number of time points, symmetric pitch angle bins, set mu values)
+    # Dimensions: (number of time points, energy)
     FEDU_interp_alpha = np.zeros((FEDU_averaged.shape[0], FEDU_averaged.shape[2]))
 
     # Iterate through each time point.
     for time_index in range(FEDU_averaged.shape[0]):
-        # Iterate through each pitch angle bin
-        for energy_index in range(FEDU_averaged.shape[2]):          
-            # Filter non-positive and NaN values
-            valid_indices = np.where((modified_array[time_index, :, energy_index] > 0) &
-                                     (~np.isnan(modified_array[time_index, :, energy_index])))[0]
-            
-            # Check if there are enough non-zero data points for interpolation.
-            if len(valid_indices) > 1:            
+        # Iterate through each energy bin
+        for energy_index in range(FEDU_averaged.shape[2]):
+            # Filter NaN values
+            valid_indices = np.where(~np.isnan(modified_array[time_index, :, energy_index]))[0]
+
+            # Check if there are enough valid data points for interpolation.
+            if len(valid_indices) > 1:
                 valid_alphas = unique_alphas[valid_indices]
+                # Find where the target alpha would be inserted in the sorted valid alphas
                 insertion_point = np.searchsorted(valid_alphas, alpha_set[time_index])
-                if insertion_point < len(valid_alphas):
-                    lower_alpha_val = valid_alphas[insertion_point - 1]
-                    upper_alpha_val = valid_alphas[insertion_point]
-    
-                    if upper_alpha_val - lower_alpha_val > 25:
+                # If the target alpha would be interpolated (within the range of valid alphas)
+                if 0 < insertion_point < len(valid_alphas):
+                    # Determine the alpha values between which the target alpha lies
+                    lower_alpha_val = valid_indices[insertion_point - 1]
+                    upper_alpha_val = valid_indices[insertion_point]
+                    # If the gap between the valid alpha points is too large, set result as NaN
+                    if upper_alpha_val - lower_alpha_val > 1:
                         FEDU_interp_alpha[time_index, energy_index] = np.nan
+                    # If the points are close enough, perform interpolation
                     else:
                         # Perform exponential interpolation
                         log_flux_interp = np.interp(
-                            alpha_set[time_index], 
+                            alpha_set[time_index],
                             valid_alphas,
-                            np.log(modified_array[time_index, valid_indices, energy_index]))
+                            np.log(modified_array[time_index, valid_indices, energy_index])
+                        )
                         FEDU_interp_alpha[time_index, energy_index] = np.exp(log_flux_interp)
+                # If the target alpha would be extrapolated (outside the range of valid alphas), replace with NaN
                 else:
-                    FEDU_interp_alpha[time_index, energy_index] = np.nan  
+                    FEDU_interp_alpha[time_index, energy_index] = np.nan
+            # If there are not enough points for interpolation, set results as NaN
             else:
                 # Store NaN if there are not enough valid data points for interpolation.
                 FEDU_interp_alpha[time_index, energy_index] = np.nan
-    
+
+    FEDU_interp_alpha[FEDU_interp_alpha <= 1] = 0
+
     return FEDU_interp_alpha
 
 #%% Interpolate Flux v Kinetic Energy using exponential between points
 def interpolate_flux_by_energy(FEDU_interp_alpha, energy_channels, energy_set):
-    
-    modified_array = FEDU_interp_alpha.copy()
-    
-    # Initialize an array to store the interpolated flux values.
-    # Dimensions: (number of time points, number of set mu values)
-    FEDU_interp_energy = np.zeros((FEDU_interp_alpha.shape[0],energy_set.shape[1]))
+    """
+    Interpolates flux as a function of kinetic energy using an exponential
+    interpolation between valid data points.
 
-    # Iterate thorugh each set mu value
+    Args:
+        FEDU_interp_alpha (numpy.ndarray): 2D array of flux values
+            (time, pitch angle).
+        energy_channels (numpy.ndarray): 1D array of measured kinetic energy
+            channel values (in MeV).
+        energy_set (numpy.ndarray): 2D array of target kinetic energy values
+            (time, mu_set) at which to interpolate.
+
+    Returns:
+        numpy.ndarray: 2D array of interpolated flux values (time, mu_set)
+            at the target kinetic energies. Returns NaN if interpolation is not
+            possible due to insufficient data or large energy gaps.
+    """
+    # Create a copy of the input array to avoid modifying the original.
+    modified_array = FEDU_interp_alpha.copy()
+    # Replace zero flux with 1 so it becomes 0 in log scale.
+    modified_array[np.where(modified_array == 0)] = 1
+
+    # Initialize an array to store the interpolated flux values.
+    # Dimensions: (number of time points, number of target mu values)
+    FEDU_interp_energy = np.zeros((FEDU_interp_alpha.shape[0], energy_set.shape[1]))
+
+    # Iterate through each target mu value.
     for mu_set_index in range(energy_set.shape[1]):
         # Iterate through each time point.
         for time_index in range(FEDU_interp_alpha.shape[0]):
-            # Filter non-positive and NaN values
-            valid_indices = np.where((modified_array[time_index, :] > 0) &
-                                     (~np.isnan(modified_array[time_index, :])))[0]
-    
-            # Check if there are enough non-zero data points for interpolation.
-            if len(valid_indices) > 1:            
+            # Filter out non-positive and NaN flux values for the current pitch angle.
+            valid_indices = np.where(~np.isnan(modified_array[time_index, :]))[0]
+
+            # Check if there are at least two valid data points for interpolation.
+            if len(valid_indices) > 1:
+                # Extract the valid energy channel values corresponding to the valid flux points.
                 valid_energies = energy_channels[valid_indices]
+                # Find the index where the target energy would be inserted
+                # to maintain the sorted order of valid energies.
                 insertion_point = np.searchsorted(valid_energies, energy_set[time_index, mu_set_index])
-                if insertion_point < len(valid_energies):
-                    lower_E_val = valid_energies[insertion_point - 1]
-                    upper_E_val = valid_energies[insertion_point]
-    
-                    if upper_E_val - lower_E_val > 5:
+
+                # Check if the target energy falls within the range of valid energies (not extrapolation).
+                if 0 < insertion_point < len(valid_energies):
+                    # Get the energy values immediately below and above the target energy.
+                    lower_E_val = valid_indices[insertion_point - 1]
+                    upper_E_val = valid_indices[insertion_point]
+
+                    # Check if the energy gap between the bracketing points is too large.
+                    if upper_E_val - lower_E_val > 1:
+                        # If the gap is too large, set the interpolated flux to NaN.
                         FEDU_interp_energy[time_index, mu_set_index] = np.nan
                     else:
-                        # Perform exponential interpolation
+                        # Perform exponential interpolation:
+                        # Interpolate the logarithm of the flux.
                         log_flux_interp = np.interp(
                             energy_set[time_index, mu_set_index],
                             energy_channels[:-2][valid_indices],
-                            np.log(modified_array[time_index, valid_indices]))
+                            np.log(modified_array[time_index, valid_indices])
+                        )
+                        # Exponentiate the result to get the interpolated flux.
                         FEDU_interp_energy[time_index, mu_set_index] = np.exp(log_flux_interp)
+                # If the target energy is outside the range of valid energies, set to NaN.
                 else:
                     FEDU_interp_energy[time_index, mu_set_index] = np.nan
+            # If there are not enough valid data points, set the result to NaN.
             else:
-                # Store NaN if there are not enough valid data points for interpolation.
+                # Store NaN if there are fewer than two valid data points.
                 FEDU_interp_energy[time_index, mu_set_index] = np.nan
 
-    return FEDU_interp_energy
+    FEDU_interp_energy[FEDU_interp_energy <= 1] = 0
 
+    return FEDU_interp_energy
 #%% Calculate PSD from Flux and Energy
-electron_E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6) # this is m_0*c^2
+# Define the relativistic energy conversion factor for an electron.
+# This converts the rest mass energy of an electron (m_0*c^2) from Joules to MeV.
+electron_E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6)
+
 def find_psd(FEDU_interp_aE, energy_set):
+    """
+    Calculates the phase space density (PSD) from the interpolated flux
+    and corresponding energy values.
+
+    Args:
+        FEDU_interp_aE (numpy.ndarray): 2D array of interpolated flux values
+            (time, mu_set).
+        energy_set (numpy.ndarray): 2D array of energy values (in MeV)
+            corresponding to the flux values in FEDU_interp_aE (time, mu_set).
+
+    Returns:
+        numpy.ndarray: 2D array of phase space density (PSD) values
+            (time, mu_set). Returns NaN for invalid input flux or energy.
+    """
+   
+    # Initialize an array to store the calculated PSD values with the same
+    # shape as the input flux array.
     psd = np.zeros((FEDU_interp_aE.shape[0], FEDU_interp_aE.shape[1]))
-    
-    # Iterate thorugh each set mu value
+
+    # Iterate through each value of the adiabatic invariant mu (magnetic moment).
     for mu_set_index in range(FEDU_interp_aE.shape[1]):
         # Iterate through each time point.
         for time_index in range(FEDU_interp_aE.shape[0]):
-            if not (np.isnan(FEDU_interp_aE[time_index, mu_set_index]) or FEDU_interp_aE[time_index, mu_set_index] == 0):
-                E_rel = energy_set[time_index, mu_set_index]**2 + 2*energy_set[time_index, mu_set_index] * electron_E0
-                psd[time_index, mu_set_index] = FEDU_interp_aE[time_index, mu_set_index]/E_rel * 1.66e-10 * 1e-3 * 200.3
+            # Check if the interpolated flux and corresponding energy are valid
+            # (not NaN and not zero). PSD calculation is not meaningful for these values.
+            if not (np.isnan(FEDU_interp_aE[time_index, mu_set_index]) or
+                    FEDU_interp_aE[time_index, mu_set_index] < 1):
+                # Calculate the relativistic kinetic energy term (E^2 + 2*E*E0),
+                # where E is the kinetic energy and E0 is the rest mass energy.
+                E_rel = energy_set[time_index, mu_set_index]**2 + \
+                        2 * energy_set[time_index, mu_set_index] * electron_E0
+                # Calculate the phase space density (PSD) using the formula:
+                # PSD = Flux / (E^2 + 2*E*E0) * conversion_factor
+                # The conversion factor includes units adjustments.
+                psd[time_index, mu_set_index] = \
+                    FEDU_interp_aE[time_index, mu_set_index] / E_rel * 1.66e-10 * 1e-3 * 200.3
             else:
-                # Store NaN if calculation is invalid.
+                # If the flux or energy is invalid, store NaN in the PSD array
+                # for that specific time and mu value.
                 psd[time_index, mu_set_index] = np.nan
-    
+
     return psd

@@ -103,16 +103,6 @@ if __name__ == '__main__':
     Lm_interp_A, Lstar_interp_A, K_interp_A = interpolate_Ephem(Epoch_A, Epoch_ephem_A, Lm_ephem_A, Lstar_ephem_A, K_ephem_A)
     Lm_interp_B, Lstar_interp_B, K_interp_B = interpolate_Ephem(Epoch_B, Epoch_ephem_B, Lm_ephem_B, Lstar_ephem_B, K_ephem_B)
     
-#%% Load Computationally Intensive Saved Data
-    
-    print("Loading Saved Data")
-    loaded_data = np.load('vital_data.npz', allow_pickle=True)
-    
-    # Access the loaded variables
-    results_A = loaded_data['results_A'].item()
-    results_B = loaded_data['results_B'].item()
-    
-
 #%% Obtain Omni Information & prepare for calculating K and L*
     # Set up for IRBEM Calculations
     time_A = Ticktock(Epoch_A, 'UTC')
@@ -152,6 +142,15 @@ if __name__ == '__main__':
     # Calculate first adiabatic invariant: [energy channels, pitch angles, time points]
     # At each time point, mu depends on particle energy and pitch angle
     Mu_B = (energy_grid**2 + 2 * energy_grid * electron_E0) * np.sin(alpha_grid)**2 / (2 * electron_E0 * blocal_grid)
+
+#%% Load Computationally Intensive Saved Data
+    
+    print("Loading Saved Data")
+    loaded_data = np.load('vital_data.npz', allow_pickle=True)
+    
+    # Access the loaded variables
+    results_A = loaded_data['results_A'].item()
+    results_B = loaded_data['results_B'].item()
 
 #%% Calculate L*
     # Calculate L* for RBSP-A    
@@ -296,8 +295,14 @@ if __name__ == '__main__':
     color_set = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(Mu_set), dtype=int)]
     color_set[3] = [0, 1, 1, 1]  # Teal
     
-    time_start  = datetime(2017, 4, 23, 18, 45, 0)
-    time_stop   = datetime(2017, 4, 23, 22, 58, 0)
+    #time_start  = datetime(2017, 4, 23, 18, 45, 0)
+    #time_stop   = datetime(2017, 4, 23, 22, 58, 0)
+    
+    #time_start  = datetime(2017, 4, 24, 17, 7, 0)
+    #time_stop   = datetime(2017, 4, 24, 21, 35, 0)
+    
+    time_start  = datetime(2017, 4, 25, 15, 30, 0)
+    time_stop   = datetime(2017, 4, 25, 19, 57, 0)
     
     # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
     Epoch_A_np = np.array(Epoch_A)
@@ -321,24 +326,26 @@ if __name__ == '__main__':
     # Initialize arrays to store averaged values.
     averaged_lstar = np.zeros(len(lstar_intervals))
     averaged_psd = np.zeros((len(lstar_intervals), psd_B.shape[1]))
-    
-    # Iterate through each Lstar interval.
-    for i, lstar_val in enumerate(lstar_intervals):
-        # Find indices within the current Lstar interval and time range.
-        lstar_start = lstar_val - 3/4 * lstar_delta
-        lstar_end = lstar_val + 3/4 * lstar_delta
-        interval_indices = np.where((Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop) & (Lstar_B_set >= lstar_start) & (Lstar_B_set < lstar_end))[0]
-    
-        # Calculate averages for the current Lstar interval
-        if len(interval_indices) > 2:
-            averaged_psd[i] = np.nanmean(psd_B[interval_indices], axis=0)  # average along the first axis, ignoring NaNs.
-        else:
-            averaged_psd[i] = np.nan
+    non_nan_count = np.zeros((len(lstar_intervals), psd_B.shape[1]))
     
     for mu_index in range(len(Mu_set)):
+        # Iterate through each Lstar interval.
+        for i, lstar_val in enumerate(lstar_intervals):
+            # Find indices within the current Lstar interval and time range.
+            lstar_start = lstar_val - 1/2 * lstar_delta
+            lstar_end = lstar_val + 1/2 * lstar_delta
+            interval_indices = np.where((Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop) & (Lstar_B_set >= lstar_start) & (Lstar_B_set < lstar_end))[0]           
+            
+            non_nan_count[i, mu_index] = np.sum(~np.isnan(psd_B[interval_indices, mu_index]))
+            # Calculate averages for the current Lstar interval
+            if len(interval_indices) > 1 and np.sum(~np.isnan(psd_B[interval_indices, mu_index])) >= 20:
+                averaged_psd[i, mu_index] = np.nanmean(psd_B[interval_indices, mu_index])  # average along the first axis, ignoring NaNs.
+            else:
+                averaged_psd[i, mu_index] = np.nan
+            
         # Create a mask to filter out NaN values
         nan_mask = ~np.isnan(averaged_psd[:, mu_index])
-    
+        
         # Apply the mask to both averaged_lstar and averaged_psd
         ax.plot(
             lstar_intervals[nan_mask],
@@ -348,7 +355,7 @@ if __name__ == '__main__':
             marker='o',
             markersize=4,
             label=f"{Mu_set[mu_index]:.0f}"
-        )
+            )
     
     ax.set_xlim(3, 5.5)
     ax.set_xlabel(r"L*", fontsize=textsize - 2)
