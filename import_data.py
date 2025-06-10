@@ -1,35 +1,77 @@
-import spacepy.datamodel as dm
 import numpy as np
 # Update geomagnetic index and leapsecond data
 import spacepy.toolbox
 #spacepy.toolbox.update(all=True)
 
 #%% Single file example
-data = dm.readJSONheadedASCII("/home/will/GPS_data/april2017storm/ns60/ns60_170416_v1.10.ascii")
+#data = dm.readJSONheadedASCII("/home/will/GPS_data/april2017storm/ns60/ns60_170416_v1.10.ascii")
 # This is how to see the full tree
-data.tree(verbose=True, attrs=True)
+#data.tree(verbose=True, attrs=True)
 # This is how to see the attributes of one element of the data tree specifically
-data['local_time'].attrs
+#data['local_time'].attrs
 
 #%% Importing all data files
 import os
+import glob
+import spacepy.datamodel as dm
 input_folder = "/home/will/GPS_data/april2017storm/"
-loaded_data = {}
 def process_GPS_data(input_folder):
-    individual_file_data_by_satellite = {}
+    """
+    Processes GPS data files from a specified input folder.
+    It expects data organized in satellite-specific subdirectories (e.g., ns60, ns63).
+    For each satellite, it finds all .ascii files, sorts them by date,
+    and then attempts to read the *list* of sorted files into a SpaceData object.
+
+    Args:
+        input_folder (str): The absolute path to the main directory containing
+                            satellite data subfolders.
+
+    Returns:
+        dict: A dictionary where keys are satellite names (from folder names)
+              and values are SpaceData objects loaded from the *list* of files.
+              Returns an empty dictionary if no data is found.
+    """
+    loaded_data = {} # Initialize an empty dictionary to store loaded data.
+    print(f"Starting to process files in: {input_folder}\n")
+
+    # Use os.walk to traverse the directory tree.
+    # 'root' is the current directory path (e.g., "/home/will/GPS_data/april2017storm/").
+    # 'dirnames' is a list of subdirectories in the current 'root' (e.g., ['ns60', 'ns63']).
+    # '_' (underscore) is used as a throwaway variable for 'filenames' as it's not used directly here.
     for (root, satnames, _) in os.walk(input_folder):
+        # Iterate over each satellite subdirectory name found in the current 'root'.
         for satname in satnames:
+            # Construct the full path to the current satellite's directory.
             sat_dir_path = os.path.join(root, satname)
             print(f"Reading in satellite {satname}")
-            for (_, _, sat_filenames) in os.walk(sat_dir_path):
-                for sat_filename in sat_filenames:
-                    sat_file_path = os.path.join(sat_dir_path, sat_filename)
-                    print(f"    Reading in file {sat_filename}")
-                    loaded_data_temp = dm.readJSONheadedASCII(sat_file_path)
-                    if satname not in loaded_data:
-                        loaded_data[satname] = []
-                    loaded_data[satname].append(loaded_data_temp)
+            # Use glob.glob to find all files matching "ns*.ascii" pattern
+            # directly within the current satellite's directory.
+            sat_filenames = glob.glob(sat_dir_path + "/ns*ascii")
+            # Sort the collected filenames by their date (YYMMDD) component.
+            sorted_sat_filenames = sorted(sat_filenames, 
+                key=lambda filepath: os.path.basename(filepath).split('_v')[0].split('_')[-1])
+            # Attempt to read all sorted files for the current satellite into a single SpaceData object.
+            # dm.readJSONheadedASCII can accept a list of file paths.
+            loaded_data[satname] = dm.readJSONheadedASCII(sorted_sat_filenames)
+    # Convert the loaded_data dictionary to a new dictionary.
+    loaded_data = dict(loaded_data)  
+    print("Data Loaded \n")    
     return loaded_data
+
+#%% Limit data to selected time period
+import datetime as dt
+def data_period(data, start_date, stop_date):
+    start_object = dt.datetime.strptime(start_date, "%m/%d/%Y")
+    start_year = float(start_object.year)
+    start_day = float(start_object.timetuple().tm_yday)
+    
+    stop_object = dt.datetime.strptime(stop_date, "%m/%d/%Y")
+    stop_year = float(stop_object.year)
+    stop_day = float(stop_object.timetuple().tm_yday)
+
+
+
+    return time_restricted_data
 
 #%% Steve's date conversion function
 import datetime as dt
@@ -60,4 +102,6 @@ def ticks_from_gps(year, decday, use_astropy=False):
 # Load in data
 loaded_data = process_GPS_data(input_folder)
 
-#for sat_file, sat_data in loaded_data
+# Restrict to time period
+start_date  = "04/21/2017"
+stop_date   = "04/25/2017" # inclusive, last day you want to see data
