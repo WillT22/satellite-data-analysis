@@ -39,8 +39,10 @@ def process_GPS_data(input_folder):
     # 'dirnames' is a list of subdirectories in the current 'root' (e.g., ['ns60', 'ns63']).
     # '_' (underscore) is used as a throwaway variable for 'filenames' as it's not used directly here.
     for (root, satnames, _) in os.walk(input_folder):
+        # Sort satellite names in numerical order
+        sorted_satnames = sorted(satnames, key=lambda s: int(s[2:]))
         # Iterate over each satellite subdirectory name found in the current 'root'.
-        for satname in satnames:
+        for satname in sorted_satnames:
             # Construct the full path to the current satellite's directory.
             sat_dir_path = os.path.join(root, satname)
             print(f"Reading in satellite {satname}")
@@ -61,6 +63,7 @@ def process_GPS_data(input_folder):
 #%% Limit data to selected time period
 import datetime as dt
 def data_period(data, start_date, stop_date):
+    print("Identifying Relevant Time Period...")
     start_object = dt.datetime.strptime(start_date, "%m/%d/%Y")
     start_year = float(start_object.year)
     start_day = float(start_object.timetuple().tm_yday)
@@ -69,14 +72,22 @@ def data_period(data, start_date, stop_date):
     stop_year = float(stop_object.year)
     stop_day = float(stop_object.timetuple().tm_yday)
 
-
-
+    time_restricted_data = {}
+    for satellite, sat_data in data.items():
+        year_key = (sat_data['year'] >= start_year) & (sat_data['year'] <= stop_year)
+        day_key = (sat_data['decimal_day'] >= start_day) & (sat_data['decimal_day'] <= stop_day)
+        time_key = year_key & day_key
+        for item, item_data in data[satellite].items():
+            if satellite not in time_restricted_data:
+                time_restricted_data[satellite] = {}
+            time_restricted_data[satellite][item] = item_data[time_key]
+    print("Relevant Time Period Identified \n")
     return time_restricted_data
 
 #%% Steve's date conversion function
 import datetime as dt
 import spacepy.time as spt
-def ticks_from_gps(year, decday, use_astropy=False):
+def ticks_from_gps(data, use_astropy=False):
     '''Get a Ticktock from the year and decimal day in GPS time
 
     Notes
@@ -86,17 +97,23 @@ def ticks_from_gps(year, decday, use_astropy=False):
     2 - The timestamps correspond to the midpoints of the integration
     intervals
     '''
-    intyear = year.astype(int)
-    datearray = spt.doy2date(intyear, decday, dtobj=True, flAns=True)
-    # this is GPS time, so needs to be adjusted by leap seconds
-    GPS0 = dt.datetime(1980, 1, 6)  # Zero epoch for GPS seconds system
-    gpsoffset = datearray - GPS0
-    gpsseconds = [tt.total_seconds() for tt in gpsoffset]
-    if not use_astropy:
-        return spt.Ticktock(gpsseconds, dtype='GPS')
-    else:
-        import astropy.time
-        return astropy.time.Time(gpsseconds, format='gps')
+    print('Converting Time for each Satellite...')
+    for satellite, sat_data in data.items():
+        year = sat_data['year']
+        decday = sat_data['decimal_day']
+        intyear = year.astype(int)
+        datearray = spt.doy2date(intyear, decday, dtobj=True, flAns=True)
+        # this is GPS time, so needs to be adjusted by leap seconds
+        GPS0 = dt.datetime(1980, 1, 6)  # Zero epoch for GPS seconds system
+        gpsoffset = datearray - GPS0
+        gpsseconds = [tt.total_seconds() for tt in gpsoffset]
+        if not use_astropy:
+            data[satellite]['Time'] = spt.Ticktock(gpsseconds, dtype='GPS')
+        else:
+            import astropy.time
+            data[satellite]['Time'] = astropy.time.Time(gpsseconds, format='gps')
+    print('Satellite Times Converted \n')
+    return data
 
 # %%
 # Load in data
@@ -105,3 +122,7 @@ loaded_data = process_GPS_data(input_folder)
 # Restrict to time period
 start_date  = "04/21/2017"
 stop_date   = "04/25/2017" # inclusive, last day you want to see data
+storm_data = data_period(loaded_data, start_date, stop_date)
+
+# Convert satellite time to Ticktock object
+storm_data_ticks = ticks_from_gps(storm_data)
