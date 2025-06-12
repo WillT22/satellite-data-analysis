@@ -14,6 +14,13 @@ import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 
+# Add the directory containing the script to the Python path
+import sys
+script_dir = os.path.dirname(__file__)
+print(script_dir)
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+
 # Import functions
 from analysis_functions import process_l3_data
 from analysis_functions import time_average
@@ -26,8 +33,8 @@ from analysis_functions import interpolate_flux_by_alpha
 from analysis_functions import find_psd
 
 # Import the latest version of OMNI data
-#from spacepy import toolbox as tb
-#tb.update(omni2=True)
+from spacepy import toolbox as tb
+tb.update(omni2=True)
 
 # Initialize global variables
 textsize = 16
@@ -42,8 +49,9 @@ electron_E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6)
 
 #%% Start main class
 if __name__ == '__main__':
-#%% Folder containing CDF files
-    folder_path_l3 = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/l3/"
+#% Folder containing CDF files
+    #folder_path_l3 = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/l3/"
+    folder_path_l3 = "/mnt/box/Multipoint_Box/REPT_Data/April 2017 Storm/l3/"
     if not os.path.exists(folder_path_l3):
         raise FileNotFoundError(f"Error: Folder path not found: {folder_path_l3}")
     
@@ -52,12 +60,12 @@ if __name__ == '__main__':
     file_paths_l3_B = glob.glob(folder_path_l3 + "rbspb*[!r]*.cdf") 
     
     
-#%% Function for reading in RBSP flux data
+#% Function for reading in RBSP flux data
     # Read in data from RBSP CDF files
     print("Processing Flux Data:")
-    Epoch_A, Position_A, FEDU_A, energy_channels_A, alpha_A = process_l3_data(file_paths_l3_A)
+    Epoch_A, Position_A, MLT_A, FEDU_A, energy_channels_A, alpha_A = process_l3_data(file_paths_l3_A)
     FEDU_A = np.where(FEDU_A == -1e+31, 0, FEDU_A)
-    Epoch_B, Position_B, FEDU_B, energy_channels_B, alpha_B = process_l3_data(file_paths_l3_B)
+    Epoch_B, Position_B, MLT_B, FEDU_B, energy_channels_B, alpha_B = process_l3_data(file_paths_l3_B)
     FEDU_B = np.where(FEDU_B == -1e+31, 0, FEDU_B)
     
     # Handle cases where only A or B data is present (check which lists are not empty)
@@ -79,13 +87,13 @@ if __name__ == '__main__':
             min_epoch = min(Epoch_B)
             max_epoch = max(Epoch_B)
         
-#%% Time average flux for 1 minute resolution
+#% Time average flux for 1 minute resolution
     print("Averaging over 1 minute (RBSP-A)")
     Epoch_A_averaged, Position_A_averaged, FEDU_A_averaged = time_average(Epoch_A, Position_A, FEDU_A)
     print("Averaging over 1 minute (RBSP-B)")
     Epoch_B_averaged, Position_B_averaged, FEDU_B_averaged = time_average(Epoch_B, Position_B, FEDU_B)
     
-#%% Average fluxed with the same pitch angle
+#% Average fluxed with the same pitch angle
     # use only unique values of alpha
     alpha_A_unique = np.array(sorted(list(set(np.round(alpha_A, 4)))))
     alpha_B_unique = np.array(sorted(list(set(np.round(alpha_B, 4)))))    
@@ -95,7 +103,7 @@ if __name__ == '__main__':
     print("Averaging fluxes with the same pitch angle (RBSP-B)")
     FEDU_B_averaged2 = average_fluxes_by_pitch_angle(FEDU_B_averaged, alpha_A_unique, energy_channels_B)
 
-#%% Obtain Omni Information & prepare for calculating K and L*
+#% Obtain Omni Information & prepare for calculating K and L*
     # Set up for IRBEM Calculations
     time_A = Ticktock(Epoch_A_averaged, 'UTC')
     time_B = Ticktock(Epoch_B_averaged, 'UTC')
@@ -107,7 +115,7 @@ if __name__ == '__main__':
     omnivals_refined_A = get_Omni(Epoch_A_averaged, Position_A_averaged)
     omnivals_refined_B = get_Omni(Epoch_B_averaged, Position_B_averaged)
     
-#%% Calculate the first adiabatic invariant
+#% Calculate the first adiabatic invariant
     # Calculate the first adiabatic invariant for RBSP-A
     print("Calculating Mu (RBSP-A)")
     # Calculate the B field from IRBEM
@@ -132,16 +140,16 @@ if __name__ == '__main__':
     # At each time point, mu depends on particle energy and pitch angle
     Mu_B = (energy_grid**2 + 2 * energy_grid * electron_E0) * np.sin(alpha_grid)**2 / (2 * electron_E0 * blocal_grid)
 
-#%% Load Computationally Intensive Saved Data
+#% Load Computationally Intensive Saved Data
     
     print("Loading Saved Data")
-    loaded_data = np.load('vital_data_2.npz', allow_pickle=True)
+    loaded_data = np.load('/mnt/box/Multipoint_Box/REPT_Data/vital_data_2.npz', allow_pickle=True)
     
     # Access the loaded variables
     results_A = loaded_data['results_A'].item()
     results_B = loaded_data['results_B'].item()
     
-#%% Calculate L*
+#% Calculate L*
     # Calculate L* for RBSP-A    
     print("Calculating L* (RBSP-A)")
     # Use IRBEM get_Lstar function  ***COMPUTATIONALLY EXPENSIVE***
@@ -158,7 +166,7 @@ if __name__ == '__main__':
     Bmin_B, Bmirr_B, Lm_B, Lstar_B, MLT_B, Xj_B = results_B["Bmin"], results_B["Bmirr"], results_B["Lm"], results_B["Lstar"], results_B["MLT"], results_B["Xj"]
     Lstar_B[Lstar_B < 0] = np.nan
     
-#%% Save chosen data
+#% Save chosen data
     '''
     print("Saving Data")
     # Create a dictionary to store the variables
@@ -167,9 +175,9 @@ if __name__ == '__main__':
         'results_B': results_B,
     }
     # Save the dictionary to a .npz file (NumPy zip archive)
-    np.savez('vital_data_2.npz', **data_to_save)
+    np.savez('/mnt/box/Multipoint_Box/REPT_Data/vital_data_2.npz', **data_to_save)
     '''
-#%% Calculate K
+#% Calculate K
     # Calculate K from X_j: K = X_j * \sqrt(B_mirr)
     print("Calculating K (RBSP-A)")
     K_A = Xj_A * np.sqrt(Bmirr_A*1e-5) # R_E*G^(1/2)
@@ -182,7 +190,7 @@ if __name__ == '__main__':
     # Find alpha at each time point given a set K
     alpha_B_set = find_alpha(K_set, K_B, alpha_B_unique) 
     
-#%% Find L* for calculated alpha values from set K
+#% Find L* for calculated alpha values from set K
     print("Calculating L* for set K values (RBSP-A)")
     Lstar_A_set = np.zeros(len(alpha_A_set))
     for time_index in range(len(alpha_A_set)):    
@@ -193,25 +201,25 @@ if __name__ == '__main__':
     for time_index in range(len(alpha_B_set)):    
         Lstar_B_set[time_index] = np.interp(alpha_B_set[time_index], alpha_B_unique, Lstar_B[time_index,:])
 
-#%% Find energy for a given mu at each time point
+#% Find energy for a given mu at each time point
     # Find kinetic energy of particle population with a given Mu and alpha calculated from a given K 
     energy_A_set = energy_from_mu_alpha(Mu_set, alpha_A_set, Blocal_A)
     # Find kinetic energy of particle population with a given Mu and alpha calculated from a given K 
     energy_B_set = energy_from_mu_alpha(Mu_set, alpha_B_set, Blocal_B)
 
-#%% Interpolate flux for each pitch angle given a mu and K  
+#% Interpolate flux for each pitch angle given a mu and K  
     print("Interpolating Flux over Pitch Angle (RBSP-A)")
     FEDU_A_interpa = interpolate_flux_by_alpha(FEDU_A_averaged2, alpha_A_unique, alpha_A_set)
     print("Interpolating Flux over Pitch Angle (RBSP-B)")
     FEDU_B_interpa = interpolate_flux_by_alpha(FEDU_B_averaged2, alpha_A_unique, alpha_B_set)
     
-#%% Interpolate flux for each energy given a mu and K
+#% Interpolate flux for each energy given a mu and K
     print("Interpolating Flux over Energy (RBSP-A)")
     FEDU_A_interpaE = interpolate_flux_by_energy(FEDU_A_interpa, energy_channels_A, energy_A_set)
     print("Interpolating Flux over Energy (RBSP-B)")
     FEDU_B_interpaE = interpolate_flux_by_energy(FEDU_B_interpa, energy_channels_B, energy_B_set)
     
-#%% Calculate PSD from flux and energy for a given mu and K
+#% Calculate PSD from flux and energy for a given mu and K
     print("Calculating PSD (RBSP-A)")    
     psd_A = find_psd(FEDU_A_interpaE, energy_A_set)
     print("Calculating PSD (RBSP-B)") 

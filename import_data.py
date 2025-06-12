@@ -1,4 +1,6 @@
 import numpy as np
+import matplotlib.pyplot as plt
+import spacepy.plot as splot
 # Update geomagnetic index and leapsecond data
 import spacepy.toolbox
 #spacepy.toolbox.update(all=True)
@@ -12,6 +14,7 @@ import spacepy.toolbox
 
 #%% Importing all data files
 import os
+import sys
 import glob
 import spacepy.datamodel as dm
 input_folder = "/home/will/GPS_data/april2017storm/"
@@ -55,8 +58,6 @@ def process_GPS_data(input_folder):
             # Attempt to read all sorted files for the current satellite into a single SpaceData object.
             # dm.readJSONheadedASCII can accept a list of file paths.
             loaded_data[satname] = dm.readJSONheadedASCII(sorted_sat_filenames)
-    # Convert the loaded_data dictionary to a new dictionary.
-    loaded_data = dict(loaded_data)  
     print("Data Loaded \n")    
     return loaded_data
 
@@ -74,13 +75,13 @@ def data_period(data, start_date, stop_date):
 
     time_restricted_data = {}
     for satellite, sat_data in data.items():
-        year_key = (sat_data['year'] >= start_year) & (sat_data['year'] <= stop_year)
-        day_key = (sat_data['decimal_day'] >= start_day) & (sat_data['decimal_day'] <= stop_day)
-        time_key = year_key & day_key
+        year_mask = (sat_data['year'] >= start_year) & (sat_data['year'] <= stop_year)
+        day_mask = (sat_data['decimal_day'] >= start_day) & (sat_data['decimal_day'] <= stop_day)
+        time_mask = year_mask & day_mask
         for item, item_data in data[satellite].items():
             if satellite not in time_restricted_data:
                 time_restricted_data[satellite] = {}
-            time_restricted_data[satellite][item] = item_data[time_key]
+            time_restricted_data[satellite][item] = item_data[time_mask]
     print("Relevant Time Period Identified \n")
     return time_restricted_data
 
@@ -115,7 +116,7 @@ def ticks_from_gps(data, use_astropy=False):
     print('Satellite Times Converted \n')
     return data
 
-# %%
+# %% 
 # Load in data
 loaded_data = process_GPS_data(input_folder)
 
@@ -126,3 +127,86 @@ storm_data = data_period(loaded_data, start_date, stop_date)
 
 # Convert satellite time to Ticktock object
 storm_data_ticks = ticks_from_gps(storm_data)
+
+#%% Figure attempt
+# start by making axes to display the data
+fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(10, 5))
+# now we just make the Spectrogram object as before
+satellite = storm_data_ticks['ns59']
+mask = satellite['proton_integrated_flux_fit'][:, 2]> 0
+mask = np.logical_and(mask, satellite['L_LGM_T89IGRF'] < 20)
+
+specdata = dm.SpaceData()
+specdata['L'] = satellite['L_LGM_T89IGRF'][mask]
+specdata['Time'] = satellite['Time'].UTC[mask]
+specdata['Data'] = satellite['proton_integrated_flux_fit'][mask, 2]
+
+# Explicitly set bin sizes
+# Time bins are 90 minutes
+tstart = '2017-04-21T00:00:00'
+tend = '2017-04-26T00:00:00'
+tbins = spt.tickrange(tstart, tend, deltadays=1.5/24).UTC
+# L bins are variable 1/3, 1/2, and 1
+ybins = np.hstack([np.arange(4, 5, 0.125),
+                   np.arange(5, 7, 1/3),
+                   np.arange(7, 9, 1)])  # uneven bins are allowed!
+
+spec = splot.Spectrogram(specdata, variables=['Time', 'L', 'Data'],
+                         bins=[tbins, ybins],
+                         xlim=spt.Ticktock([tstart, tend]).UTC.tolist(),
+                         ylim=[4, 8],
+                         extended_out=True)
+_ = spec.plot(target=ax, cmap='gnuplot2',
+              ylabel='L (T89)',
+              colorbar_label='Int. Flux [cm$^{-2}$s$^{-1}$sr$^{-1}$MeV$^{-1}$]')
+
+# %% Read in and process REPT Data
+analysis_functions_folder = "/home/will/satellite-data-analysis/IRBEM"
+sys.path.append(analysis_functions_folder)
+import importlib
+import analysis_functions
+importlib.reload(analysis_functions)
+from analysis_functions import process_l2_data
+from analysis_functions import time_average_FESA
+
+folder_path_l2 = "/mnt/box/Multipoint_Box/REPT_Data/April 2017 Storm/l2/"
+if not os.path.exists(folder_path_l2):
+    raise FileNotFoundError(f"Error: Folder path not found: {folder_path_l2}")
+    
+# Get all CDF file paths in the folder
+file_paths_l2_A = glob.glob(folder_path_l2 + "rbspa*[!r]*.cdf") 
+file_paths_l2_B = glob.glob(folder_path_l2 + "rbspb*[!r]*.cdf") 
+
+# Read in data from RBSP CDF files
+print("Processing Flux Data:")
+Epoch_A, Position_A, MLT_A, FESA_A, energy_channels_A = process_l2_data(file_paths_l2_A)
+FESA_A = np.where(FESA_A == -1e+31, 0, FESA_A)
+Epoch_B, Position_B, MLT_B, FESA_B, energy_channels_B = process_l2_data(file_paths_l2_B)
+FESA_B = np.where(FESA_B == -1e+31, 0, FESA_B)
+    
+# Handle cases where only A or B data is present (check which lists are not empty)
+if not Epoch_A and not FEDU_A:
+    print("No RBSPA data found in the folder.")
+if not Epoch_B and not FEDU_B:
+    print("No RBSPB data found in the folder.")
+        
+# Find the earliest and latest Epoch values
+if Epoch_A and Epoch_B: 
+    min_epoch = min(min(Epoch_A), min(Epoch_B))
+    max_epoch = max(max(Epoch_A), max(Epoch_B))
+else:
+    # Handle cases where either Epoch_A or Epoch_B is empty
+    if Epoch_A:
+        min_epoch = min(Epoch_A)
+        max_epoch = max(Epoch_A)
+    elif Epoch_B:
+        min_epoch = min(Epoch_B)
+        max_epoch = max(Epoch_B)
+        
+#%% Time average flux for 5 minute resolution
+print("Averaging over 5 minute (RBSP-A)")
+Epoch_A_averaged, Position_A_averaged, FESA_A_averaged = time_average_FESA(Epoch_A, Position_A, FESA_A, time_delta=5)
+print("Averaging over 5 minute (RBSP-B)")
+Epoch_B_averaged, Position_B_averaged, FESA_B_averaged = time_average_FESA(Epoch_B, Position_B, FESA_B, time_delta=5)
+
+# %% 

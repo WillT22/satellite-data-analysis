@@ -6,10 +6,43 @@ import spacepy.omni as omni
 import scipy.constants as sc
 
 #%% Proccess REPT CDF
+def process_l2_data(file_paths):
+    # Initialize varaibles to be read in
+    Epoch = []
+    Position = []
+    MLT = []
+    FESA = None
+    energy_channels = []
+    # Itterate over files in file path
+    for file_path in file_paths:
+        # Extract filename without path
+        file_name = os.path.basename(file_path)
+        print(f"Processing file: {file_name}")
+        # Load the CDF data
+        cdf_data = pycdf.CDF(file_path)
+        # Read in data
+        Epoch.extend(cdf_data["Epoch"][:])
+        Position.extend(cdf_data["Position"][:])
+        MLT.extend(cdf_data["MLT"][:])
+        # Get energy channels from first file
+        if FESA is None:
+            FESA = cdf_data["FESA"][:]
+            energy_channels = cdf_data["FESA_Energy"][:]
+        else:
+            FESA = np.vstack((FESA, cdf_data["FESA"][:]))
+        cdf_data.close()
+    # Convert from km to R_E
+    Position = np.array(Position)
+    Re = 6378.137 # Earth's Radius
+    Position = Position / Re
+    # finish reading in data
+    return Epoch, Position, MLT, FESA, energy_channels
+
 def process_l3_data(file_paths):
     # Initialize varaibles to be read in
     Epoch = []
     Position = []
+    MLT = []
     FEDU = None
     energy_channels = []
     # Itterate over files in file path
@@ -22,6 +55,7 @@ def process_l3_data(file_paths):
         # Read in data
         Epoch.extend(cdf_data["Epoch"][:])
         Position.extend(cdf_data["Position"][:])
+        MLT.extend(cdf_data["MLT"][:])
         # Get energy channels from first file
         if FEDU is None:
             FEDU = cdf_data["FEDU"][:]
@@ -36,24 +70,65 @@ def process_l3_data(file_paths):
     Re = 6378.137 # Earth's Radius
     Position = Position / Re
     # finish reading in data
-    return Epoch, Position, FEDU, energy_channels, pitch_angle
+    return Epoch, Position, MLT, FEDU, energy_channels, pitch_angle
 
-#%% Time average for 1 minute resolution
-def time_average(epoch, position, FEDU):
+#%% Time average for time period resolution for FESA data
+def time_average_FESA(epoch, position, FESA, time_delta = 1):
     
+    if not isinstance(time_delta, int) or time_delta <= 0:
+        raise ValueError("time_delta must be a positive integer representing minutes.")
+
     # Find minutes of whole period
-    epoch_minutes = [epoch[0].replace(second=0, microsecond=0)]
-    for time_index in range(len(epoch[1:])):
-        if epoch[time_index].minute != epoch[time_index-1].minute:
-            epoch_minutes.append(epoch[time_index].replace(second=0, microsecond=0))
+    start_time_period = epoch[0].replace(second=0, microsecond=0)
+    current_bin_start = start_time_period - datetime.timedelta(minutes=start_time_period.minute % time_delta)
+    
+    # Create time bounds within which data is averaged
+    averaged_epochs = []
+    
+    while current_bin_start <= epoch[-1]:
+        averaged_epochs.append(current_bin_start)
+        current_bin_start += datetime.timedelta(minutes=time_delta)
+            
+    # Find average position each minute
+    average_positions = []
+    average_FESA = []
+    for bin_start_time in averaged_epochs:
+        bin_end_time = bin_start_time + datetime.timedelta(minutes=time_delta)
+        minute_indices = np.where((np.array(epoch) >= bin_start_time) & (np.array(epoch) < bin_end_time))[0]
+        
+        if minute_indices.size > 0:
+            average_positions.append(np.mean(position[minute_indices], axis=0))
+            average_FESA.append(np.mean(FESA[minute_indices], axis=0))
+        else:
+            average_positions.append(np.array([np.nan, np.nan, np.nan]))
+            average_FESA.append(np.full(FESA.shape[1], np.nan))
+    
+    return averaged_epochs, np.array(average_positions), np.array(average_FESA)
+
+#%% Time average for time period resolution for FEDU data
+def time_average_FEDU(epoch, position, FEDU, time_delta = 1):
+    
+    if not isinstance(time_delta, int) or time_delta <= 0:
+        raise ValueError("time_delta must be a positive integer representing minutes.")
+
+    # Find minutes of whole period
+    current_bin_start = epoch[0].replace(second=0, microsecond=0)
+    print(current_bin_start)
+    start_time_period = current_bin_start - datetime.timedelta(minutes=current_bin_start.minute % time_delta)
+    
+    # Create time bounds within which data is averaged
+    averaged_epochs = []
+    
+    while current_bin_start <= epoch[-1]:
+        averaged_epochs.append(current_bin_start)
+        current_bin_start += datetime.timedelta(minutes=time_delta)
             
     # Find average position each minute
     average_positions = []
     average_FEDU = []
-    for minute_index in range(len(epoch_minutes)):
-        minute_start = epoch_minutes[minute_index] - datetime.timedelta(seconds=30)
-        minute_end =  epoch_minutes[minute_index] + datetime.timedelta(seconds=30)
-        minute_indices = np.where((np.array(epoch) >= minute_start) & (np.array(epoch) < minute_end))[0]
+    for bin_start_time in averaged_epochs:
+        bin_end_time = bin_start_time + datetime.timedelta(minutes=time_delta)
+        minute_indices = np.where((np.array(epoch) >= bin_start_time) & (np.array(epoch) < bin_end_time))[0]
         
         if minute_indices.size > 0:
             average_positions.append(np.mean(position[minute_indices], axis=0))
