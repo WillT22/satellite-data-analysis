@@ -10,7 +10,7 @@ import spacepy.toolbox
 # This is how to see the full tree
 #data.tree(verbose=True, attrs=True)
 # This is how to see the attributes of one element of the data tree specifically
-#data['local_time'].attrs
+#data['L_shell'].attrs
 
 #%% Importing all data files
 import os
@@ -201,12 +201,13 @@ if FESA_B is not None:
     _, vmax_B = subplot_B.get_clim() 
 
 # Add labels and title
-ax.set_ylabel('L', fontsize=textsize)
+ax.set_xlabel('UTC', fontsize=textsize)
+ax.set_ylabel('L*', fontsize=textsize)
 ax.set_title(f'RBSP REPT {energy_channels_A[4]:.2f} MeV Electron Spin-Averaged Flux', fontsize=textsize)
 # Force labels for first and last x-axis tick marks 
 min_epoch_plot = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((min_epoch - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
 max_epoch_plot = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((max_epoch - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
-ax.set_xlim(min_epoch, max_epoch) 
+ax.set_xlim(min_epoch_plot, max_epoch_plot) 
 # Set time labels every 12 hours
 ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12) )
 ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H')) 
@@ -224,9 +225,6 @@ cbar.set_ticks(np.logspace(np.log10(vmin), np.log10(vmax), num=5))
 # Flux is in (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)
 cbar.set_label(label = r'Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', fontsize=textsize)
 cbar.ax.tick_params(labelsize=textsize)
-
-# Add x-axis label for last plot
-ax.set_xlabel('UTC', fontsize=textsize)
 
 # Show the plot
 plt.show()
@@ -260,7 +258,7 @@ for satname, satdata in storm_data.items():
 # Force labels for first and last x-axis tick marks 
 min_epoch_plot = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((min_epoch - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
 max_epoch_plot = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((max_epoch - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
-ax.set_xlim(min_epoch, max_epoch) 
+ax.set_xlim(min_epoch_plot, max_epoch_plot) 
 # Set time labels every 12 hours
 ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12) )
 ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H')) 
@@ -275,8 +273,76 @@ cbar.set_ticks(np.logspace(np.log10(vmin), np.log10(vmax), num=5))
 cbar.set_label(label = r'Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', fontsize=textsize)
 cbar.ax.tick_params(labelsize=textsize)
 
-# Add x-axis label for last plot
+# Add Labels
 ax.set_xlabel('UTC', fontsize=textsize)
+ax.set_ylabel('L', fontsize=textsize)
+ax.set_title(f'GPS CDX {storm_data['ns59']['electron_diff_flux_energy'][0][10]:.2f} MeV Electron Differential Flux', fontsize=textsize)
+
+# Show the plot
+plt.show()
+
+# %% Combined Plot
+# Create the figure with subplots
+fig, ax = plt.subplots(figsize=(20, 4))
+
+if FESA_A is not None:
+    subplot_A = ax.scatter(Epoch_A, L_star_A, c=FESA_A[:, 4], norm=colors.LogNorm())
+    # Set colorbar limits to 5 orders of magnitude
+    _, vmax_A = subplot_A.get_clim() 
+if FESA_B is not None:
+    subplot_B = ax.scatter(Epoch_B, L_star_B, c=FESA_B[:, 4], norm=colors.LogNorm())
+    # Set colorbar limits to 5 orders of magnitude
+    _, vmax_B = subplot_B.get_clim() 
+
+# Add labels and title
+ax.set_xlabel('UTC', fontsize=textsize)
+ax.set_ylabel('L*', fontsize=textsize)
+ax.set_title(f'RBSP REPT {energy_channels_A[4]:.2f} MeV Electron Spin-Averaged Flux', fontsize=textsize)
+# Force labels for first and last x-axis tick marks 
+min_epoch_plot = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((min_epoch - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+max_epoch_plot = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((max_epoch - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+ax.set_xlim(min_epoch_plot, max_epoch_plot) 
+# Set time labels every 12 hours
+ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12) )
+ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H')) 
+ax.tick_params(axis='both', which='major', labelsize=textsize)
+ax.set_yticks(np.arange(2, 8, 1))  # Set ticks from 2 to 7 with interval 1
+ax.set_ylim(2, 7)
+ax.grid(True)
+  
+cbar = plt.colorbar(subplot_A, ax=ax, shrink=0.9)  # Adjust shrink as needed
+vmax = 10**math.ceil(math.log10(max(vmax_A,vmax_B)))
+vmin = vmax/10**4
+subplot_A.set_clim(vmin, vmax) 
+subplot_B.set_clim(vmin, vmax) 
+
+for satname, satdata in storm_data.items():
+    eflux = np.array(satdata['electron_diff_flux'])
+    mask_eflux = eflux > -1.0
+    mask_eflux_4 = mask_eflux[:,10]
+
+    Epoch_A_np = np.array(Epoch_A)
+    Epoch_B_np = np.array(Epoch_B)
+    mask_mlt = np.zeros_like(satdata['local_time'], dtype=bool)
+    for index, time in enumerate(satdata['Time'].UTC[mask_eflux_4]):
+        time_diffs_A = np.abs(Epoch_A_np - time)
+        closest_index_A = np.argmin(time_diffs_A)
+        if satdata['local_time'][index] >= MLT_A[closest_index_A]-1.5 and satdata['local_time'][index] <= MLT_A[closest_index_A]+1.5:
+            mask_mlt[index] = True
+        else:
+            time_diffs_B = np.abs(Epoch_B_np - time)
+            closest_index_B = np.argmin(time_diffs_B)
+            if satdata['local_time'][index] >= MLT_B[closest_index_B]-1.5 and satdata['local_time'][index] <= MLT_B[closest_index_B]+1.5:
+                mask_mlt[index] = True
+    mask_combined = mask_eflux_4 & mask_mlt
+
+    subplot_satname = ax.scatter(satdata['Time'].UTC[mask_combined], satdata['L_shell'][mask_combined], c=eflux[mask_combined,10], norm=colors.LogNorm())
+    subplot_satname.set_clim(vmin, vmax) 
+
+cbar.set_ticks(np.logspace(np.log10(vmin), np.log10(vmax), num=5))
+# Flux is in (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)
+cbar.set_label(label = r'Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', fontsize=textsize)
+cbar.ax.tick_params(labelsize=textsize)
 
 # Show the plot
 plt.show()
