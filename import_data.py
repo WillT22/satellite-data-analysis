@@ -240,6 +240,7 @@ for satname, satdata in storm_data.items():
     mask_eflux_4 = mask_eflux[:,10]
 
     Epoch_A_np = np.array(Epoch_A)
+    Epoch_B_np = np.array(Epoch_B)
     mask_mlt = np.zeros_like(satdata['local_time'], dtype=bool)
     for index, time in enumerate(satdata['Time'].UTC[mask_eflux_4]):
         time_diffs_A = np.abs(Epoch_A_np - time)
