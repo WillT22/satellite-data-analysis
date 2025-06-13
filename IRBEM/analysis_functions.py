@@ -10,6 +10,7 @@ def process_l2_data(file_paths):
     # Initialize varaibles to be read in
     Epoch = []
     Position = []
+    L_star = []
     MLT = []
     FESA = None
     energy_channels = []
@@ -23,6 +24,7 @@ def process_l2_data(file_paths):
         # Read in data
         Epoch.extend(cdf_data["Epoch"][:])
         Position.extend(cdf_data["Position"][:])
+        L_star.extend(cdf_data["L_star"][:])
         MLT.extend(cdf_data["MLT"][:])
         # Get energy channels from first file
         if FESA is None:
@@ -36,7 +38,7 @@ def process_l2_data(file_paths):
     Re = 6378.137 # Earth's Radius
     Position = Position / Re
     # finish reading in data
-    return Epoch, Position, MLT, FESA, energy_channels
+    return Epoch, Position, L_star, MLT, FESA, energy_channels
 
 def process_l3_data(file_paths):
     # Initialize varaibles to be read in
@@ -73,7 +75,7 @@ def process_l3_data(file_paths):
     return Epoch, Position, MLT, FEDU, energy_channels, pitch_angle
 
 #%% Time average for time period resolution for FESA data
-def time_average_FESA(epoch, position, FESA, time_delta = 1):
+def time_average_FESA(epoch, position, FESA, MLT, time_delta = 1):
     
     if not isinstance(time_delta, int) or time_delta <= 0:
         raise ValueError("time_delta must be a positive integer representing minutes.")
@@ -91,6 +93,7 @@ def time_average_FESA(epoch, position, FESA, time_delta = 1):
             
     # Find average position each minute
     average_positions = []
+    average_MLT = []
     average_FESA = []
     for bin_start_time in averaged_epochs:
         bin_end_time = bin_start_time + datetime.timedelta(minutes=time_delta)
@@ -98,9 +101,11 @@ def time_average_FESA(epoch, position, FESA, time_delta = 1):
         
         if minute_indices.size > 0:
             average_positions.append(np.mean(position[minute_indices], axis=0))
+            average_MLT.append(np.mean(MLT[minute_indices], axis=0))
             average_FESA.append(np.mean(FESA[minute_indices], axis=0))
         else:
             average_positions.append(np.array([np.nan, np.nan, np.nan]))
+            average_MLT.append(np.mean(MLT[minute_indices], axis=0))
             average_FESA.append(np.full(FESA.shape[1], np.nan))
     
     return averaged_epochs, np.array(average_positions), np.array(average_FESA)

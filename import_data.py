@@ -18,6 +18,11 @@ import sys
 import glob
 import spacepy.datamodel as dm
 input_folder = "/home/will/GPS_data/april2017storm/"
+
+#sat_raw = dm.readJSONheadedASCII("/home/will/GPS_data/april2017storm/ns59/ns59_170416_v1.10.ascii")
+#sat_raw.tree(verbose=True, attrs=True)
+#sat_raw['electron_diff_flux'].attrs
+
 def process_GPS_data(input_folder):
     """
     Processes GPS data files from a specified input folder.
@@ -122,43 +127,11 @@ loaded_data = process_GPS_data(input_folder)
 
 # Restrict to time period
 start_date  = "04/21/2017"
-stop_date   = "04/25/2017" # inclusive, last day you want to see data
+stop_date   = "04/26/2017" # exclusive, end of the last day you want to see
 storm_data = data_period(loaded_data, start_date, stop_date)
 
 # Convert satellite time to Ticktock object
-storm_data_ticks = ticks_from_gps(storm_data)
-
-#%% Figure attempt
-# start by making axes to display the data
-fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(10, 5))
-# now we just make the Spectrogram object as before
-satellite = storm_data_ticks['ns59']
-mask = satellite['proton_integrated_flux_fit'][:, 2]> 0
-mask = np.logical_and(mask, satellite['L_LGM_T89IGRF'] < 20)
-
-specdata = dm.SpaceData()
-specdata['L'] = satellite['L_LGM_T89IGRF'][mask]
-specdata['Time'] = satellite['Time'].UTC[mask]
-specdata['Data'] = satellite['proton_integrated_flux_fit'][mask, 2]
-
-# Explicitly set bin sizes
-# Time bins are 90 minutes
-tstart = '2017-04-21T00:00:00'
-tend = '2017-04-26T00:00:00'
-tbins = spt.tickrange(tstart, tend, deltadays=1.5/24).UTC
-# L bins are variable 1/3, 1/2, and 1
-ybins = np.hstack([np.arange(4, 5, 0.125),
-                   np.arange(5, 7, 1/3),
-                   np.arange(7, 9, 1)])  # uneven bins are allowed!
-
-spec = splot.Spectrogram(specdata, variables=['Time', 'L', 'Data'],
-                         bins=[tbins, ybins],
-                         xlim=spt.Ticktock([tstart, tend]).UTC.tolist(),
-                         ylim=[4, 8],
-                         extended_out=True)
-_ = spec.plot(target=ax, cmap='gnuplot2',
-              ylabel='L (T89)',
-              colorbar_label='Int. Flux [cm$^{-2}$s$^{-1}$sr$^{-1}$MeV$^{-1}$]')
+storm_data = ticks_from_gps(storm_data)
 
 # %% Read in and process REPT Data
 analysis_functions_folder = "/home/will/satellite-data-analysis/IRBEM"
@@ -179,9 +152,9 @@ file_paths_l2_B = glob.glob(folder_path_l2 + "rbspb*[!r]*.cdf")
 
 # Read in data from RBSP CDF files
 print("Processing Flux Data:")
-Epoch_A, Position_A, MLT_A, FESA_A, energy_channels_A = process_l2_data(file_paths_l2_A)
+Epoch_A, Position_A, L_star_A, MLT_A, FESA_A, energy_channels_A = process_l2_data(file_paths_l2_A)
 FESA_A = np.where(FESA_A == -1e+31, 0, FESA_A)
-Epoch_B, Position_B, MLT_B, FESA_B, energy_channels_B = process_l2_data(file_paths_l2_B)
+Epoch_B, Position_B, L_star_B, MLT_B, FESA_B, energy_channels_B = process_l2_data(file_paths_l2_B)
 FESA_B = np.where(FESA_B == -1e+31, 0, FESA_B)
     
 # Handle cases where only A or B data is present (check which lists are not empty)
@@ -203,10 +176,108 @@ else:
         min_epoch = min(Epoch_B)
         max_epoch = max(Epoch_B)
         
-#%% Time average flux for 5 minute resolution
-print("Averaging over 5 minute (RBSP-A)")
-Epoch_A_averaged, Position_A_averaged, FESA_A_averaged = time_average_FESA(Epoch_A, Position_A, FESA_A, time_delta=5)
-print("Averaging over 5 minute (RBSP-B)")
-Epoch_B_averaged, Position_B_averaged, FESA_B_averaged = time_average_FESA(Epoch_B, Position_B, FESA_B, time_delta=5)
+# %% Plot Flux from REPT l2 for 4.2 MeV channel
+#from spacepy import pycdf
+#cdf_data = pycdf.CDF(file_paths_l2_A[0])
+#print(cdf_data)
 
-# %% 
+print("Plotting Data:")
+# Create a new colormap object
+import matplotlib
+from matplotlib import colors
+import math
+textsize = 16
+
+# Create the figure with subplots
+fig, ax = plt.subplots(figsize=(20, 4))
+
+if FESA_A is not None:
+    subplot_A = ax.scatter(Epoch_A, L_star_A, c=FESA_A[:, 4], norm=colors.LogNorm())
+    # Set colorbar limits to 5 orders of magnitude
+    _, vmax_A = subplot_A.get_clim() 
+if FESA_B is not None:
+    subplot_B = ax.scatter(Epoch_B, L_star_B, c=FESA_B[:, 4], norm=colors.LogNorm())
+    # Set colorbar limits to 5 orders of magnitude
+    _, vmax_B = subplot_B.get_clim() 
+
+# Add labels and title
+ax.set_ylabel('L', fontsize=textsize)
+ax.set_title(f'RBSP REPT {energy_channels_A[4]:.2f} MeV Electron Spin-Averaged Flux', fontsize=textsize)
+# Force labels for first and last x-axis tick marks 
+min_epoch_plot = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((min_epoch - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+max_epoch_plot = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((max_epoch - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+ax.set_xlim(min_epoch, max_epoch) 
+# Set time labels every 12 hours
+ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12) )
+ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H')) 
+ax.tick_params(axis='both', which='major', labelsize=textsize)
+ax.set_yticks(np.arange(2, 8, 1))  # Set ticks from 2 to 7 with interval 1
+ax.set_ylim(2, 7)
+ax.grid(True)
+  
+cbar = plt.colorbar(subplot_A, ax=ax, shrink=0.9)  # Adjust shrink as needed
+vmax = 10**math.ceil(math.log10(max(vmax_A,vmax_B)))
+vmin = vmax/10**4
+subplot_A.set_clim(vmin, vmax) 
+subplot_B.set_clim(vmin, vmax) 
+cbar.set_ticks(np.logspace(np.log10(vmin), np.log10(vmax), num=5))
+# Flux is in (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)
+cbar.set_label(label = r'Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', fontsize=textsize)
+cbar.ax.tick_params(labelsize=textsize)
+
+# Add x-axis label for last plot
+ax.set_xlabel('UTC', fontsize=textsize)
+
+# Show the plot
+plt.show()
+
+#%% Plot Flux for GPS data
+fig, ax = plt.subplots(figsize=(20, 4))
+
+for satname, satdata in storm_data.items():
+    eflux = np.array(satdata['electron_diff_flux'])
+    mask_eflux = eflux > -1.0
+    mask_eflux_4 = mask_eflux[:,10]
+
+    Epoch_A_np = np.array(Epoch_A)
+    mask_mlt = np.zeros_like(satdata['local_time'], dtype=bool)
+    for index, time in enumerate(satdata['Time'].UTC[mask_eflux_4]):
+        time_diffs_A = np.abs(Epoch_A_np - time)
+        closest_index_A = np.argmin(time_diffs_A)
+        if satdata['local_time'][index] >= MLT_A[closest_index_A]-1.5 and satdata['local_time'][index] <= MLT_A[closest_index_A]+1.5:
+            mask_mlt[index] = True
+        else:
+            time_diffs_B = np.abs(Epoch_B_np - time)
+            closest_index_B = np.argmin(time_diffs_B)
+            if satdata['local_time'][index] >= MLT_B[closest_index_B]-1.5 and satdata['local_time'][index] <= MLT_B[closest_index_B]+1.5:
+                mask_mlt[index] = True
+    mask_combined = mask_eflux_4 & mask_mlt
+
+    subplot_satname = ax.scatter(satdata['Time'].UTC[mask_combined], satdata['L_shell'][mask_combined], c=eflux[mask_combined,10], norm=colors.LogNorm())
+    subplot_satname.set_clim(vmin, vmax) 
+
+# Force labels for first and last x-axis tick marks 
+min_epoch_plot = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((min_epoch - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+max_epoch_plot = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((max_epoch - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+ax.set_xlim(min_epoch, max_epoch) 
+# Set time labels every 12 hours
+ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12) )
+ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H')) 
+ax.tick_params(axis='both', which='major', labelsize=textsize)
+ax.set_yticks(np.arange(2, 8, 1))  # Set ticks from 2 to 7 with interval 1
+ax.set_ylim(2, 7)
+ax.grid(True)
+
+cbar = plt.colorbar(subplot_A, ax=ax, shrink=0.9)  # Adjust shrink as needed
+cbar.set_ticks(np.logspace(np.log10(vmin), np.log10(vmax), num=5))
+# Flux is in (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)
+cbar.set_label(label = r'Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', fontsize=textsize)
+cbar.ax.tick_params(labelsize=textsize)
+
+# Add x-axis label for last plot
+ax.set_xlabel('UTC', fontsize=textsize)
+
+# Show the plot
+plt.show()
+
+# %%
