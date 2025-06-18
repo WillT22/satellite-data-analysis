@@ -251,7 +251,11 @@ for satname, satdata in storm_data.items():
             if satdata['local_time'][index] >= MLT_B[closest_index_B]-1.5 and satdata['local_time'][index] <= MLT_B[closest_index_B]+1.5:
                 mask_mlt[index] = True
     mask_combined = mask_eflux_4 & mask_mlt
-
+    '''
+    if mask_combined.any():
+        print(satname)
+        print(sum(mask_combined))
+    '''
     subplot_satname = ax.scatter(satdata['Time'].UTC[mask_combined], satdata['L_shell'][mask_combined], c=eflux[mask_combined,10], norm=colors.LogNorm())
     subplot_satname.set_clim(vmin, vmax) 
 
@@ -276,7 +280,7 @@ cbar.ax.tick_params(labelsize=textsize)
 # Add Labels
 ax.set_xlabel('UTC', fontsize=textsize)
 ax.set_ylabel('L', fontsize=textsize)
-ax.set_title(f'GPS CDX {storm_data['ns59']['electron_diff_flux_energy'][0][10]:.2f} MeV Electron Differential Flux', fontsize=textsize)
+ax.set_title(f'GPS CXD {storm_data['ns59']['electron_diff_flux_energy'][0][10]:.2f} MeV Electron Differential Flux', fontsize=textsize)
 
 # Show the plot
 plt.show()
