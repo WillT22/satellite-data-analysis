@@ -140,7 +140,6 @@ import importlib
 import analysis_functions
 importlib.reload(analysis_functions)
 from analysis_functions import process_l2_data
-from analysis_functions import time_average_FESA
 
 folder_path_l2 = "/mnt/box/Multipoint_Box/REPT_Data/April 2017 Storm/l2/"
 if not os.path.exists(folder_path_l2):
@@ -158,9 +157,9 @@ Epoch_B, Position_B, L_star_B, MLT_B, FESA_B, energy_channels_B = process_l2_dat
 FESA_B = np.where(FESA_B == -1e+31, 0, FESA_B)
     
 # Handle cases where only A or B data is present (check which lists are not empty)
-if not Epoch_A and not FEDU_A:
+if not Epoch_A and not FESA_A:
     print("No RBSPA data found in the folder.")
-if not Epoch_B and not FEDU_B:
+if not Epoch_B and not FESA_B:
     print("No RBSPB data found in the folder.")
         
 # Find the earliest and latest Epoch values
