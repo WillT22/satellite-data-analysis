@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import spacepy.plot as splot
 # Update geomagnetic index and leapsecond data
 import spacepy.toolbox
 #spacepy.toolbox.update(all=True)
