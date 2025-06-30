@@ -23,7 +23,7 @@ if script_dir not in sys.path:
 
 # Import functions
 from analysis_functions import process_l3_data
-from analysis_functions import time_average
+from analysis_functions import time_average_FEDU
 from analysis_functions import get_Omni
 from analysis_functions import find_alpha
 from analysis_functions import energy_from_mu_alpha
@@ -34,7 +34,7 @@ from analysis_functions import find_psd
 
 # Import the latest version of OMNI data
 from spacepy import toolbox as tb
-tb.update(omni2=True)
+#tb.update(omni2=True)
 
 # Initialize global variables
 textsize = 16
@@ -89,11 +89,11 @@ if __name__ == '__main__':
         
 #% Time average flux for 1 minute resolution
     print("Averaging over 1 minute (RBSP-A)")
-    Epoch_A_averaged, Position_A_averaged, FEDU_A_averaged = time_average(Epoch_A, Position_A, FEDU_A)
+    Epoch_A_averaged, Position_A_averaged, FEDU_A_averaged = time_average_FEDU(Epoch_A, Position_A, FEDU_A)
     print("Averaging over 1 minute (RBSP-B)")
-    Epoch_B_averaged, Position_B_averaged, FEDU_B_averaged = time_average(Epoch_B, Position_B, FEDU_B)
+    Epoch_B_averaged, Position_B_averaged, FEDU_B_averaged = time_average_FEDU(Epoch_B, Position_B, FEDU_B)
     
-#% Average fluxed with the same pitch angle
+#% Average fluxes with the same pitch angle
     # use only unique values of alpha
     alpha_A_unique = np.array(sorted(list(set(np.round(alpha_A, 4)))))
     alpha_B_unique = np.array(sorted(list(set(np.round(alpha_B, 4)))))    

@@ -3,6 +3,8 @@ import glob
 import spacepy.datamodel as dm
 import datetime as dt
 import spacepy.time as spt
+from spacepy import coordinates as Coords
+import numpy as np
 
 #%% Import GPS data function
 def import_GPS(input_folder):
@@ -86,14 +88,27 @@ def data_from_gps(gps_data_in):
         GPS0 = dt.datetime(1980, 1, 6)  # Zero epoch for GPS seconds system
         gpsoffset = datearray - GPS0
         gpsseconds = [tt.total_seconds() for tt in gpsoffset]
-        time_temp = spt.Ticktock(gpsseconds, dtype='GPS')
-        gps_data_out[satellite]['Epoch'] = time_temp.UTC
+        gps_data_out[satellite]['Epoch'] = spt.Ticktock(gpsseconds, dtype='GPS')
     print('Satellite Times Converted \n')
 
+    print('Converting Position for each Satellite...')
+    for satellite, sat_data in gps_data_in.items():
+        print(f"    Converting Position for satellite {satellite}")
+        R = sat_data['Rad_Re']
+        Lat = np.deg2rad(sat_data['Geographic_Latitude'])
+        Lon = np.deg2rad(sat_data['Geographic_Longitude'])
+
+        position_init = Coords.Coords(np.column_stack((R,np.pi-Lat,Lon)),'GEO','sph')
+        position_init.ticks = gps_data_out[satellite]['Epoch']
+        gps_data_out[satellite]['Position'] = position_init.convert('GSM','car')
+
+    print('Satellite Positions Converted \n')
+
     # Extract relevant data
-    chosen_vars = ['Geographic_Latitude','Geographic_Longitude','local_time',
+    chosen_vars = ['local_time',
                    'b_satellite','b_equator',
-                   'electron_diff_flux_energy','electron_diff_flux']
+                   'L_LGM_T89IGRF', 'L_LGM_TS04IGRF',
+                   'electron_diff_flux_energy','electron_diff_flux', 'efitpars']
     for satellite, sat_data in gps_data_in.items():
         for var_name in chosen_vars:
             if var_name == 'local_time':
