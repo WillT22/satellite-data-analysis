@@ -22,15 +22,9 @@ if script_dir not in sys.path:
     sys.path.insert(0, script_dir)
 
 # Import functions
-from analysis_functions import process_l3_data
-from analysis_functions import time_average_FEDU
-from analysis_functions import get_Omni
-from analysis_functions import find_alpha
-from analysis_functions import energy_from_mu_alpha
-from analysis_functions import average_fluxes_by_pitch_angle
-from analysis_functions import interpolate_flux_by_energy
-from analysis_functions import interpolate_flux_by_alpha
-from analysis_functions import find_psd
+from analysis_functions import (process_l3_data, time_average_FEDU, get_Omni, find_alpha, 
+                                energy_from_mu_alpha, average_fluxes_by_pitch_angle, 
+                                interpolate_flux_by_energy, interpolate_flux_by_alpha, find_psd)
 
 # Import the latest version of OMNI data
 from spacepy import toolbox as tb

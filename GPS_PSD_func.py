@@ -1,3 +1,4 @@
+#%% Initialize
 import os
 import glob
 import spacepy.datamodel as dm
@@ -5,6 +6,10 @@ import datetime as dt
 import spacepy.time as spt
 from spacepy import coordinates as Coords
 import numpy as np
+
+from lgmpy import Lgm_Vector
+import lgmpy.Lgm_Wrap as lgm_lib
+from ctypes import pointer, c_int, c_double
 
 #%% Import GPS data function
 def import_GPS(input_folder):
@@ -24,7 +29,7 @@ def import_GPS(input_folder):
               Returns an empty dictionary if no data is found.
     """
     loaded_data = {} # Initialize an empty dictionary to store loaded data.
-    print(f"Starting to process files in: {input_folder}\n")
+    print(f"Starting to process files in: {input_folder}")
 
     # Use os.walk to traverse the directory tree.
     # 'root' is the current directory path (e.g., "/home/will/GPS_data/april2017storm/").
@@ -37,7 +42,7 @@ def import_GPS(input_folder):
         for satname in sorted_satnames:
             # Construct the full path to the current satellite's directory.
             sat_dir_path = os.path.join(root, satname)
-            print(f"Reading in satellite {satname}")
+            print(f"    Reading in satellite {satname}")
             # Use glob.glob to find all files matching "ns*.ascii" pattern
             # directly within the current satellite's directory.
             sat_filenames = glob.glob(sat_dir_path + "/ns*ascii")
@@ -70,8 +75,34 @@ def data_period(data, start_date, stop_date):
             if satellite not in time_restricted_data:
                 time_restricted_data[satellite] = {}
             time_restricted_data[satellite][item] = item_data[time_mask]
+    
+    QD_folder = "/home/will/QinDenton/"
+    QD_filenames = []
+    current_date_object = dt.datetime.strptime(start_date, "%m/%d/%Y")
+    while current_date_object <= dt.datetime.strptime(stop_date, "%m/%d/%Y"):
+        print(f"    {current_date_object.date()}")
+        QD_year = os.path.join(QD_folder, str(current_date_object.year),'5min')
+        QD_filenames.append(os.path.join(QD_year, f"QinDenton_{current_date_object.strftime("%Y%m%d")}_5min.txt"))
+        current_date_object += dt.timedelta(days=1)
+    QD_data = dm.readJSONheadedASCII(QD_filenames)
+    
     print("Relevant Time Period Identified \n")
-    return time_restricted_data
+    return time_restricted_data, QD_data
+
+#%% Import Qin Denton data for selected period
+def QD_data_period(QD_folder, start_date, stop_date):
+    print("Identifying Relevant Time Period for Qin Denton...")
+    start_date = dt.datetime.strptime(start_date, "%m/%d/%Y") 
+    stop_date = dt.datetime.strptime(stop_date, "%m/%d/%Y")
+
+    QD_filenames = []
+    current_date = start_date
+    while current_date <= stop_date:
+        QD_year = os.path.join(QD_folder, str(current_date.year),'5min')
+        QD_filenames.append(os.path.join(QD_year, f"QinDenton_{current_date.strftime("%Y%m%d")}_5min.txt"))
+        current_date += dt.timedelta(days=1)
+    QD_data = dm.readJSONheadedASCII(QD_filenames)
+    return QD_data
 
 #%% Modified from Steve's date conversion function
 def data_from_gps(gps_data_in):
@@ -101,7 +132,6 @@ def data_from_gps(gps_data_in):
         position_init = Coords.Coords(np.column_stack((R,np.pi-Lat,Lon)),'GEO','sph')
         position_init.ticks = gps_data_out[satellite]['Epoch']
         gps_data_out[satellite]['Position'] = position_init.convert('GSM','car')
-
     print('Satellite Positions Converted \n')
 
     # Extract relevant data
@@ -118,3 +148,77 @@ def data_from_gps(gps_data_in):
             else:
                 gps_data_out[satellite][var_name] = gps_data_in[satellite][var_name]
     return gps_data_out
+
+#%% Load preprocessed data from file
+def load_preprocessed(npzfile):
+    print("Loading Preprocessed Data...")
+    loaded_data = {}
+    for satellite, sat_data in npzfile.items():
+        loaded_data[satellite] = {}
+        temp_inner_dict = sat_data.item()
+        for item, item_data in temp_inner_dict.items():
+            loaded_data[satellite][item] = item_data
+    print("Preprocessed Data Loaded \n")
+    return loaded_data
+
+#%% Find local pitch angle
+def find_local90PA(gps_data_in):
+    gps_data_out = gps_data_in
+    for satellite, sat_data in gps_data_in.items():
+        Beq = sat_data['b_equator']
+        Bsat = sat_data['b_satellite']
+        mask = np.where(Beq > 0) and np.where(Bsat > 0)
+        gps_data_out[satellite]['local90PA'] = np.zeros_like(Beq)
+        gps_data_out[satellite]['local90PA'].fill(np.nan)
+        gps_data_out[satellite]['local90PA'][mask] = np.rad2deg(np.arcsin(np.sqrt(Beq[mask] / Bsat[mask])))
+    return(gps_data_out)
+
+#%% Convert TickTock to Lgm_DateTime
+def ticktock_to_Lgm_DateTime(ticktock):
+    dt_obj = ticktock.UTC[0]
+    lgm_dt = lgm_lib.Lgm_DateTime()
+    # Date (YYYYMMDD)
+    lgm_dt.Date = dt_obj.year * 10000 + dt_obj.month * 100 + dt_obj.day
+    # Time (decimal hours)
+    lgm_dt.Time = float(dt_obj.hour + 
+                               dt_obj.minute / 60.0 + 
+                               dt_obj.second / 3600.0 + 
+                               dt_obj.microsecond / 3600000000.0)
+    
+    # Other fields (populate as needed, based on datetime object attributes)
+    lgm_dt.Year = dt_obj.year
+    lgm_dt.Month = dt_obj.month
+    lgm_dt.Day = dt_obj.day
+    lgm_dt.Hour = dt_obj.hour
+    lgm_dt.Minute = dt_obj.minute
+    lgm_dt.Second = float(dt_obj.second + dt_obj.microsecond / 1e6) # Seconds with microseconds
+    lgm_dt.Doy = dt_obj.timetuple().tm_yday # Day of Year
+
+    lgm_dt.TimeSystem = lgm_lib.LGM_TIME_SYS_UTC
+
+    return(lgm_dt)
+
+#%% Find pitch angle corresponding to set K
+
+def AlphaOfK(gps_data_in, K_set, qindenton_data, ext_mag_model = 'T89'):
+    gps_data_out = gps_data_in
+    alphaofK = {}
+
+    MagInfo = lgm_lib.Lgm_InitMagInfo()
+    IntMagModel = c_int(lgm_lib.__dict__[f"LGM_IGRF"])
+    ExtMagModel = c_int(lgm_lib.__dict__[f"LGM_EXTMODEL_{ext_mag_model}"])
+    lgm_lib.Lgm_Set_MagModel(IntMagModel, ExtMagModel, MagInfo)
+
+    K_set_c = c_double(K_set)
+
+    for satellite, sat_data in gps_data_in.items():
+        gps_data_out[satellite]['AlphaofK'] = np.zeros_like(sat_data['b_satellite'])
+        gps_data_out[satellite]['AlphaofK'].fill(np.nan)
+        for i, epoch in enumerate(sat_data['Epoch']):
+            current_time = ticktock_to_Lgm_DateTime(epoch)
+            current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i].data[0])
+            lgm_lib.Lgm_Setup_AlphaOfK(current_time, current_vec, MagInfo)
+            gps_data_out[satellite]['AlphaofK'][i] = lgm_lib.Lgm_AlphaOfK(K_set_c, MagInfo)
+            lgm_lib.Lgm_TearDown_AlphaOfK(MagInfo)
+    return(gps_data_out)
+
