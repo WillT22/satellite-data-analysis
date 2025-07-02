@@ -38,19 +38,28 @@ if __name__ == '__main__':
     input_folder = "/home/will/GPS_data/april2017storm/"
     loaded_data = import_GPS(input_folder)
 
+    raw_save_path = os.path.join(base_save_folder, 'raw_gps.npz')
+    # Save Data for later recall:
+    print("Saving Raw GPS Data...")
+    np.savez(raw_save_path, **loaded_data)
+    print("Data Saved \n")
+
+    # Read in data from previous save
+    raw_data_load = np.load(raw_save_path, allow_pickle=True)
+    loaded_data = load_data(raw_data_load)
+
 ### Preprocessing ###    
     # Restrict to time period
     storm_data_raw = data_period(loaded_data, start_date, stop_date)
     QD_storm_data = QinDenton_period(start_date, stop_date)
     
-    # Convert satellite time to Ticktock object
-    # and position from spherical GEO to GSM
+    # Convert satellite position from spherical GEO to GSM and extract relevant data
     # (Takes a few minutes)
     storm_data = data_from_gps(storm_data_raw)
     
     processed_save_path = os.path.join(base_save_folder, 'processed_gps.npz')
     # Save Data for later recall:
-    print("Saving Data...")
+    print("Saving Processed GPS Data...")
     np.savez(processed_save_path, **storm_data)
     print("Data Saved \n")
     
@@ -69,7 +78,7 @@ if __name__ == '__main__':
     alphaofK_save_path = os.path.join(base_save_folder, alphaofK_filename)
     
     # Save Data for later recall:
-    print("Saving Data...")
+    print("Saving AlphaofK Data...")
     np.savez(alphaofK_save_path, **alphaofK)
     print("Data Saved \n")
 

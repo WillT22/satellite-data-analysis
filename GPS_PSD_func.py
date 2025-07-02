@@ -142,7 +142,7 @@ def data_from_gps(time_restricted_data):
 
 #%% Load preprocessed data from file
 def load_data(npzfile):
-    print("Loading Data...")
+    print(f"Loading {npzfile} Data...")
     loaded_data = {}
     for satellite, sat_data in npzfile.items():
         loaded_data[satellite] = {}
