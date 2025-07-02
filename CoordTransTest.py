@@ -22,7 +22,6 @@ if __name__ == '__main__':
     datetime_format = "%Y-%m-%dT%H:%M:%S.%f"
     loaded_data['DateTime'] = np.array([dt.datetime.strptime(s, datetime_format) for s in loaded_data['DateTime']], dtype=object)
 
-    d = lgm_lib.Lgm_DateTime
     output_lgm = Lgm_Vector.Lgm_Vector()
     output = np.zeros_like(loaded_data['TestPosition'], dtype=np.float64)
     diff = np.zeros(len(loaded_data['DateTime']))

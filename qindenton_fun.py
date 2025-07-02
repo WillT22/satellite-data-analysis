@@ -4,7 +4,7 @@ import numpy as np
 import os
 
 #%% Limit data to selected time period
-def data_period(QD_folder, start_date, stop_date):
+def QD_data_period(QD_folder, start_date, stop_date):
     print("Identifying Relevant Time Period...")
     start_date = dt.datetime.strptime(start_date, "%m/%d/%Y") 
     stop_date = dt.datetime.strptime(stop_date, "%m/%d/%Y")
@@ -26,6 +26,6 @@ QD_folder = "/home/will/QinDenton/"
 
 start_date  = "01/19/2000"
 stop_date   = "02/02/2000" # exclusive, end of the last day you want to see
-QD_data = data_period(QD_folder, start_date, stop_date)
+QD_data = QD_data_period(QD_folder, start_date, stop_date)
 
 #QD_data.tree(verbose=True, attrs=True)
