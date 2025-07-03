@@ -21,7 +21,7 @@ from Zhao2018_PAD_Model import (import_Zhao_coeffs)
 #%% Global Variables
 textsize = 16
 Re = 6378.137 #Earth's Radius
-K_set = [0.10,1] # R_E*G^(1/2)
+K_set = 0.1 # R_E*G^(1/2)
 
 # Conversions
 # electron mass in MeV is (m_e [kg] * c^2 [m^2/s^2]) [J] / (sc.eV [J/eV] * 10^6 [eV/MeV])
@@ -81,15 +81,15 @@ if __name__ == '__main__':
 
     alphaofK_filename = f"alphaofK_{extMag}.npz"
     alphaofK_save_path = os.path.join(base_save_folder, alphaofK_filename)
-    
+    '''
     # Save Data for later recall:
     print("Saving AlphaofK Data...")
     np.savez(alphaofK_save_path, **alphaofK)
     print("Data Saved \n")
-    
+    '''
     # Load data from previous save
-    alphaofK_load = np.load(alphaofK_save_path, allow_pickle=True)
-    alphaofK = load_data(alphaofK_load)
+    #alphaofK_load = np.load(alphaofK_save_path, allow_pickle=True)
+    #alphaofK = load_data(alphaofK_load)
 
 ### Find Energies from Mu and AlphaofK ###
     # Find Mu spread of energy channels

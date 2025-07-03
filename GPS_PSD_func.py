@@ -273,9 +273,9 @@ def AlphaOfK(gps_data, K_set, extMag = 'T89'):
         alphaofK[satellite]['K_set'] = K_set
         alphaofK[satellite]['AlphaofK'] = np.zeros((k_dim_size,len(sat_data['b_satellite'])))
         alphaofK[satellite]['AlphaofK'].fill(np.nan)
-        for k in range(k_dim_size):
+        for ki in range(k_dim_size):
             if isinstance(K_set, (np.ndarray, list)):
-                current_K_value = K_set[k]
+                current_K_value = K_set[ki]
             else:
                 current_K_value = K_set
             for i, epoch in enumerate(sat_data['Epoch']):
@@ -283,10 +283,11 @@ def AlphaOfK(gps_data, K_set, extMag = 'T89'):
                 current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i].data[0])
                 QD_inform_MagInfo(epoch, MagInfo)
                 lgm_lib.Lgm_Setup_AlphaOfK(current_time, current_vec, MagInfo)
-                alphaofK[satellite]['AlphaofK'][k,i] = lgm_lib.Lgm_AlphaOfK(current_K_value, MagInfo)
+                alphaofK[satellite]['AlphaofK'][ki,i] = lgm_lib.Lgm_AlphaOfK(current_K_value, MagInfo)
                 lgm_lib.Lgm_TearDown_AlphaOfK(MagInfo)
-        epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-        alphaofK[satellite]['AlphaofK'] = pd.DataFrame(alphaofK[satellite]['AlphaofK'], index=K_set, columns=epoch_str)
+        if k_dim_size > 1:
+            epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
+            alphaofK[satellite]['AlphaofK'] = pd.DataFrame(alphaofK[satellite]['AlphaofK'], index=K_set, columns=epoch_str)
     print('Pitch Angles Calculated \n')
     return alphaofK
 
@@ -318,10 +319,25 @@ def MuofEnergy(gps_data, alphaofK):
         # Initialize the output array
         muofenergy[satellite]['MuofEnergy'] = {}
         epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-        for ki, K in enumerate(alphaofK[satellite]['K_set']):
+        
+        # Determine the size of the first dimension based on K_set's type
+        K_set = alphaofK[satellite]['K_set']
+        if isinstance(K_set, (np.ndarray, list)):
+            k_dim_size = len(K_set)
+        else: # Assume it's a scalar (float, int) if not an array/list
+            k_dim_size = 1
+        
+        for ki in range(k_dim_size):
+            if isinstance(K_set, (np.ndarray, list)):
+                K = K_set[ki]
+            else:
+                K = K_set
             muofenergy[satellite]['MuofEnergy'][K] = np.zeros((sat_data['Energy_Channels'].shape[0],len(sat_data['Epoch'])))
             # Convert Alpha_set to radians
-            alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'].values[ki,:])
+            if isinstance(alphaofK[satellite]['AlphaofK'], pd.DataFrame):
+                alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'].values[ki,:])
+            else:
+                alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'][ki,:])
             # Calculate sin^2(Alpha)
             sin_squared_alpha = np.sin(alpha_rad)**2
             for ch, channel in enumerate(sat_data['Energy_Channels']):
@@ -383,10 +399,23 @@ def EnergyofMu(gps_data, Mu_set, alphaofK):
         
         energyofMu[satellite]['EnergyofMu'] = {}
         epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-        for ki, K in enumerate(alphaofK[satellite]['K_set']):
+        K_set = alphaofK[satellite]['K_set']
+        if isinstance(K_set, (np.ndarray, list)):
+            k_dim_size = len(K_set)
+        else: # Assume it's a scalar (float, int) if not an array/list
+            k_dim_size = 1
+        
+        for ki in range(k_dim_size):
+            if isinstance(K_set, (np.ndarray, list)):
+                K = K_set[ki]
+            else:
+                K = K_set
             energyofMu[satellite]['EnergyofMu'][K] = np.zeros((Mu_set.shape[0],len(sat_data['Epoch'])))
             # Convert Alpha_set to radians
-            alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'].values[ki,:])
+            if isinstance(alphaofK[satellite]['AlphaofK'], pd.DataFrame):
+                alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'].values[ki,:])
+            else:
+                alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'][ki,:])
             # Calculate sin^2(Alpha)
             sin_squared_alpha = np.sin(alpha_rad)**2
             for i, mu in enumerate(Mu_set):
