@@ -9,11 +9,14 @@ import numpy as np
 import scipy.constants as sc
 import math
 
-import GPS_PSD_func
 import importlib
+import GPS_PSD_func
 importlib.reload(GPS_PSD_func)
 from GPS_PSD_func import (import_GPS, data_period, QinDenton_period, data_from_gps, load_data,
                             find_local90PA, AlphaOfK, MuofEnergy, EnergyofMu)
+import Zhao2018_PAD_Model
+importlib.reload(Zhao2018_PAD_Model)
+from Zhao2018_PAD_Model import (import_Zhao_coeffs)
 
 #%% Global Variables
 textsize = 16
@@ -74,16 +77,16 @@ if __name__ == '__main__':
     local90PA = find_local90PA(storm_data)
 
     # Find pitch angle corresponding to set K
-    #alphaofK = AlphaOfK(storm_data, K_set, extMag)
+    alphaofK = AlphaOfK(storm_data, K_set, extMag)
 
     alphaofK_filename = f"alphaofK_{extMag}.npz"
     alphaofK_save_path = os.path.join(base_save_folder, alphaofK_filename)
-    '''
+    
     # Save Data for later recall:
     print("Saving AlphaofK Data...")
     np.savez(alphaofK_save_path, **alphaofK)
     print("Data Saved \n")
-    '''
+    
     # Load data from previous save
     alphaofK_load = np.load(alphaofK_save_path, allow_pickle=True)
     alphaofK = load_data(alphaofK_load)
@@ -99,4 +102,4 @@ if __name__ == '__main__':
     energyofMu = EnergyofMu(storm_data, Mu_set, alphaofK)
 
 ### Find Flux at Set Pitch Angle ####
-# %%
+    Zhao_coeffs = import_Zhao_coeffs()
