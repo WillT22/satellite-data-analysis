@@ -2,10 +2,21 @@
 import re
 import numpy as np
 import pandas as pd
+import datetime as dt
+
+import importlib
+import GPS_PSD_func
+importlib.reload(GPS_PSD_func)
+from GPS_PSD_func import QinDenton_period
 
 #%%
 global Zhao_median_filepath
 Zhao_median_filepath = '/home/will/Zhao_2018_model_files/PAD_model_coeff_median.txt'
+
+start_date  = "04/21/2017"
+stop_date   = "04/26/2017" # exclusive, end of the last day you want to see
+
+QD_data = QinDenton_period(start_date, stop_date)
 
 #%% Extract coefficients from Zhao_2018
 # NOTE: MLT and L are midpoints of the bin!
@@ -112,6 +123,8 @@ def import_Zhao_coeffs():
             try:
                 mlt_val = float(parts[0])
                 data_row_values = np.array([float(val) for val in parts[1:]])
+                # Replace fill values with zeroes
+                data_row_values[data_row_values == 1e31] = 0
                             
                 # Data row must match the number of L_values
                 if len(data_row_values) == len(current_l_values):
@@ -135,4 +148,82 @@ def import_Zhao_coeffs():
     print("Zhao Coefficients Imported \n")
     return Zhao_coeffs
 
-#%%
+Zhao_coeffs = import_Zhao_coeffs()
+
+#%% Find PAD shape from Zhao 2018 model
+def find_Zhao_PAD_coeffs(gps_data, EnergyofMuAlpha):
+    print("Extracting Zhao Coefficients for each Epoch...")
+    Zhao_epoch_coeffs = {}
+    full_coeff_list = ['c2','c4','c6','c8','c10']
+    energy_bins = np.array(list(Zhao_coeffs.keys()), dtype=float)
+    for satellite, sat_data in gps_data.items():
+        Zhao_epoch_coeffs[satellite] = {}
+        sat_energyofmualpha = EnergyofMuAlpha[satellite]['EnergyofMuAlpha']
+        echannel_min = sat_data['Energy_Channels'][0]
+        echannel_max = sat_data['Energy_Channels'][-1]
+        epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
+        Mu_set = EnergyofMuAlpha[satellite]['Mu_set']
+        for ki, K_data in sat_energyofmualpha.items():
+            Zhao_epoch_coeffs[satellite][ki] = {}
+            K_data_values = K_data.values   
+            for i_mu in range(len(K_data_values[:,0])):
+                Mu_value = Mu_set[i_mu]
+                Zhao_epoch_coeffs[satellite][ki][Mu_value] = np.zeros((5,len(sat_data['Epoch'])))
+                    
+                for i_epoch, epoch in enumerate(sat_data['Epoch']):
+                    # Round down to the nearest 5 minutes
+                    time_dt = epoch.UTC[0] # Assumes time is a spacepy TickTock object
+                    minutes_to_subtract = time_dt.minute % 5
+                    rounded_dt = time_dt - dt.timedelta(
+                        minutes=minutes_to_subtract,
+                        seconds=time_dt.second,
+                        microseconds=time_dt.microsecond
+                    )
+                    time_index = int(np.where(QD_data['DateTime']==rounded_dt)[0])
+                    # Identify DST conditions during this epoch
+                    epoch_dst = QD_data['Dst'][time_index]
+                    if epoch_dst > -20:
+                        i_dst = 'Dst > -20 nT'
+                    elif epoch_dst < -20 and epoch_dst > -50:
+                        i_dst = '-50 nT < Dst < -20 nT'
+                    elif epoch_dst < -50:
+                        i_dst = 'Dst < -50 nT'
+
+                    # Do NOT extrapolate outside of energy channel range!
+                    Lshell = sat_data['L_LGM_T89IGRF'][i_epoch]
+                    energy_value = K_data_values[i_mu,i_epoch]
+                    if (energy_value > echannel_min and energy_value < echannel_max and Lshell <= 6):
+                        # Find energy bin
+                        i_energy = np.argmin(np.abs(energy_value-energy_bins))
+                        ebin_value = energy_bins[i_energy]
+                        # Find MLT bin
+                        i_MLT = int(((sat_data['MLT'][i_epoch] + 1) % 24) // 2)
+
+                        # For E < 1 MeV, m=10 at L<2, m=8 at 2<=L<4, and m=6 at 4<=L<=6
+                        coeff_key_list = list(Zhao_coeffs[ebin_value][i_dst].keys())
+                        coeff_data = Zhao_coeffs[ebin_value][i_dst]
+                        for i_c, coeff in enumerate(coeff_key_list):
+                            if ebin_value < 1:
+                                # Find Lshell bin
+                                i_L = int((Lshell - 0.9) // 0.2)
+                                if Lshell < 2:
+                                        coeff_data_temp = coeff_data[coeff]['data_matrix'].values
+                                        Zhao_epoch_coeffs[satellite][ki][Mu_value][i_c,i_epoch] = coeff_data_temp[i_MLT,i_L]
+                                elif Lshell >= 2 and Lshell < 4:
+                                    if coeff != 'c10':
+                                        coeff_data_temp = coeff_data[coeff]['data_matrix'].values
+                                        Zhao_epoch_coeffs[satellite][ki][Mu_value][i_c,i_epoch] = coeff_data_temp[i_MLT,i_L]
+                                elif Lshell >= 4:
+                                    if coeff != 'c10' and coeff != 'c8':
+                                        coeff_data_temp = coeff_data[coeff]['data_matrix'].values
+                                        Zhao_epoch_coeffs[satellite][ki][Mu_value][i_c,i_epoch] = coeff_data_temp[i_MLT,i_L]  
+                            # For E >= 1 MeV, m=6 for 3<=L<=6
+                            elif ebin_value >= 1 and Lshell >= 3:
+                                # Find Lshell bin
+                                i_L = int((Lshell - 2.9) // 0.2)
+                                if coeff != 'c10' and coeff != 'c8':
+                                    coeff_data_temp = coeff_data[coeff]['data_matrix'].values
+                                    Zhao_epoch_coeffs[satellite][ki][Mu_value][i_c,i_epoch] = coeff_data_temp[i_MLT,i_L]   
+                Zhao_epoch_coeffs[satellite][ki][Mu_value] = pd.DataFrame(Zhao_epoch_coeffs[satellite][ki][Mu_value], index=full_coeff_list, columns=epoch_str)         
+    print("Zhao Coefficients Extracted \n")
+    return Zhao_epoch_coeffs

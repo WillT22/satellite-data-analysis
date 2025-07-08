@@ -62,18 +62,40 @@ def import_GPS(input_folder):
 
 #%% Limit data to selected time period
 def data_period(data, start_date, stop_date):
+    '''
+    Processes and filters satellite data by a specified time period.
+    Args:
+    data (dict): A nested dictionary where keys are satellite names, and values
+                 are dictionaries containing data arrays (e.g., 'year', 'decimal_day',
+                 and other data variables). This is typically the output from 'import_GPS'.
+    start_date (str): The start date for filtering, in "MM/DD/YYYY" format.
+    stop_date (str): The stop date for filtering (exclusive), in "MM/DD/YYYY" format.
+
+    '''
+    # --- Phase 1: Convert Year/Decimal_Day to SpacePy Ticktock Epoch ---
     # Modified from Steve's date conversion function
     print('Converting Time for each Satellite...')
 
+    # Iterate through each satellite and its associated data in the input 'data' dictionary.
+    # 'data' is modified in-place to add the 'Epoch' key.
     for satellite, sat_data in data.items():
+        # Extract 'year' and 'decimal_day' NumPy arrays for the current satellite.
         year = sat_data['year']
         decday = sat_data['decimal_day']
+
+        # Convert the 'year' array to integer type, as doy2date expects integer years.
         intyear = year.astype(int)
+
+        # Convert Day-of-Year (Doy) and Year to datetime objects using spacepy.time.doy2date.
         datearray = spt.doy2date(intyear, decday, dtobj=True, flAns=True)
+        # --- Adjusting for GPS Time Offset ---
         # this is GPS time, so needs to be adjusted by leap seconds
         GPS0 = dt.datetime(1980, 1, 6)  # Zero epoch for GPS seconds system
+        # Calculate the time difference between each datetime in 'datearray' and the GPS epoch.
         gpsoffset = datearray - GPS0
+        # Convert each time difference object to total seconds.
         gpsseconds = [tt.total_seconds() for tt in gpsoffset]
+        # Create a spacepy.time.Ticktock object using the GPS seconds.
         data[satellite]['Epoch'] = spt.Ticktock(gpsseconds, dtype='GPS')
     print('Satellite Times Converted \n')
     
@@ -82,11 +104,15 @@ def data_period(data, start_date, stop_date):
     stop_object = dt.datetime.strptime(stop_date, "%m/%d/%Y")
 
     time_restricted_data = {}
+    # Iterate through each satellite's data again.
     for satellite, sat_data in data.items():
-        time_mask = (sat_data['Epoch'].UTC >= start_object) & (sat_data['Epoch'].UTC <= stop_object)
+        # Create a boolean mask for the 'Epoch' data (which is a Ticktock object) between the date bounds
+        time_mask = (sat_data['Epoch'].UTC >= start_object) & (sat_data['Epoch'].UTC < stop_object)
         for item, item_data in data[satellite].items():
+            # Initialize the satellite's dictionary in time_restricted_data if it doesn't exist
             if satellite not in time_restricted_data:
                 time_restricted_data[satellite] = {}
+            # Apply the time_mask and extract temporally relevant data
             time_restricted_data[satellite][item] = item_data[time_mask]
     
     print("Relevant Time Period Identified \n")
@@ -117,7 +143,7 @@ def limit_Lshell(time_restricted_data, Lshell, intMag = 'IGRF', extMag = 'T89'):
     lshell_time_restricted_data = {}
     for satellite, sat_data in time_restricted_data.items():
         lshell_time_restricted_data[satellite] = {}
-        lshell_time_restricted_data[satellite] = sat_data[sat_data[model_var] < Lshell]
+        lshell_time_restricted_data[satellite] = sat_data[sat_data[model_var] <= Lshell]
     return lshell_time_restricted_data
 
 #%% Extract relevant information from time processed data
@@ -292,19 +318,19 @@ def AlphaOfK(gps_data, K_set, extMag = 'T89'):
     return alphaofK
 
 #%% Calculate Mu from energy channels and set alpha:
-def MuofEnergy(gps_data, alphaofK):
+def MuofEnergyAlpha(gps_data, alphaofK):
     
     '''
-    muofenergy is structured like:
+    muofenergyalpha is structured like:
         Satellite name
             Epoch: vector of TickTock time objects
             Energy_Channels: vector of instrument energy channels used in calculation
-            MuofEnergy: dictionary separated by previously set K values
+            MuofEnergyAlpha: dictionary separated by previously set K values
                 each K index is a Pandas DataFrame columns by time and indexed by energy channel
     '''
     
     print('Calculating Mus for Energy Channels and Alphas...')
-    muofenergy = {}
+    muofenergyalpha = {}
     # Convert Mu_set to a NumPy array if it's a single value
 
     Mu_bounds = {}
@@ -312,12 +338,12 @@ def MuofEnergy(gps_data, alphaofK):
     Mu_max = 0
     for satellite, sat_data in gps_data.items():
         Mu_bounds[satellite] = {}
-        muofenergy[satellite] = {}
-        muofenergy[satellite]['Epoch'] = sat_data['Epoch']
-        muofenergy[satellite]['Energy_Channels'] = sat_data['Energy_Channels']
+        muofenergyalpha[satellite] = {}
+        muofenergyalpha[satellite]['Epoch'] = sat_data['Epoch']
+        muofenergyalpha[satellite]['Energy_Channels'] = sat_data['Energy_Channels']
 
         # Initialize the output array
-        muofenergy[satellite]['MuofEnergy'] = {}
+        muofenergyalpha[satellite]['MuofEnergyAlpha'] = {}
         epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
         
         # Determine the size of the first dimension based on K_set's type
@@ -332,7 +358,7 @@ def MuofEnergy(gps_data, alphaofK):
                 K = K_set[ki]
             else:
                 K = K_set
-            muofenergy[satellite]['MuofEnergy'][K] = np.zeros((sat_data['Energy_Channels'].shape[0],len(sat_data['Epoch'])))
+            muofenergyalpha[satellite]['MuofEnergyAlpha'][K] = np.zeros((sat_data['Energy_Channels'].shape[0],len(sat_data['Epoch'])))
             # Convert Alpha_set to radians
             if isinstance(alphaofK[satellite]['AlphaofK'], pd.DataFrame):
                 alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'].values[ki,:])
@@ -342,16 +368,16 @@ def MuofEnergy(gps_data, alphaofK):
             sin_squared_alpha = np.sin(alpha_rad)**2
             for ch, channel in enumerate(sat_data['Energy_Channels']):
                 # Reminder, GPS Bfield data is in Gauss
-                muofenergy[satellite]['MuofEnergy'][K][ch,:] = (channel**2 + 2*channel*E0) * sin_squared_alpha / (2*E0*sat_data['b_satellite'])
+                muofenergyalpha[satellite]['MuofEnergyAlpha'][K][ch,:] = (channel**2 + 2*channel*E0) * sin_squared_alpha / (2*E0*sat_data['b_satellite'])
 
             Mu_bounds[satellite][K] = np.zeros(2)
-            Mu_bounds[satellite][K][0] = np.min(muofenergy[satellite]['MuofEnergy'][K][0,:])
+            Mu_bounds[satellite][K][0] = np.min(muofenergyalpha[satellite]['MuofEnergyAlpha'][K][0,:])
             if Mu_bounds[satellite][K][0] < Mu_min:
                 Mu_min = Mu_bounds[satellite][K][0]
-            Mu_bounds[satellite][K][1] = np.max(muofenergy[satellite]['MuofEnergy'][K][-1,:])
+            Mu_bounds[satellite][K][1] = np.max(muofenergyalpha[satellite]['MuofEnergyAlpha'][K][-1,:])
             if Mu_bounds[satellite][K][1] > Mu_max:
                 Mu_max = Mu_bounds[satellite][K][1]
-            muofenergy[satellite]['MuofEnergy'][K] = pd.DataFrame(muofenergy[satellite]['MuofEnergy'][K], index=sat_data['Energy_Channels'], columns=epoch_str)
+            muofenergyalpha[satellite]['MuofEnergyAlpha'][K] = pd.DataFrame(muofenergyalpha[satellite]['MuofEnergyAlpha'][K], index=sat_data['Energy_Channels'], columns=epoch_str)
     Mu_bounds['Total'] = np.array((Mu_min, Mu_max))
 
     magnitude_min = 10**math.floor(math.log10(Mu_bounds['Total'][0]))
@@ -367,37 +393,37 @@ def MuofEnergy(gps_data, alphaofK):
     Mu_bounds['Rounded'] = np.array((Mu_min_round, Mu_max_round))
     
     print('Mus Calculated \n')
-    return muofenergy, Mu_bounds
+    return muofenergyalpha, Mu_bounds
 
 #%% Calculate energy from set mu and alpha:
-def EnergyofMu(gps_data, Mu_set, alphaofK):
+def EnergyofMuAlpha(gps_data, Mu_set, alphaofK):
     
     '''
-    energyofMu is structured like:
+    energyofmualpha is structured like:
         Satellite name
             Epoch: vector of TickTock time objects
             AlphaofK: Pandas DataFrame columns by time and indexed by K_set
-            EnergyofMu: dictionary separated by previously set K values
+            EnergyofMuAlpha: dictionary separated by previously set K values
                 each K index is a Pandas DataFrame columns by time and indexed by Mu_set
     '''
     
     print('Calculating Energies for given Mus and Alphas...')
-    energyofMu = {}
+    energyofmualpha = {}
     # Convert Mu_set to a NumPy array if it's a single value
     Mu_set = np.atleast_1d(Mu_set)
 
     for satellite, sat_data in gps_data.items():
-        energyofMu[satellite] = {}
-        energyofMu[satellite]['Epoch'] = sat_data['Epoch']
-        energyofMu[satellite]['AlphaofK'] = alphaofK[satellite]['AlphaofK']
-        energyofMu[satellite]['EnergyofMu'] = {}
+        energyofmualpha[satellite] = {}
+        energyofmualpha[satellite]['Epoch'] = sat_data['Epoch']
+        energyofmualpha[satellite]['Mu_set'] = Mu_set
+        energyofmualpha[satellite]['AlphaofK'] = alphaofK[satellite]['AlphaofK']
+        energyofmualpha[satellite]['EnergyofMuAlpha'] = {}
         # Convert Alpha_set to radians
         alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'])
 
         # Calculate sin^2(Alpha)
         sin_squared_alpha = np.sin(alpha_rad)**2 
         
-        energyofMu[satellite]['EnergyofMu'] = {}
         epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
         K_set = alphaofK[satellite]['K_set']
         if isinstance(K_set, (np.ndarray, list)):
@@ -410,7 +436,7 @@ def EnergyofMu(gps_data, Mu_set, alphaofK):
                 K = K_set[ki]
             else:
                 K = K_set
-            energyofMu[satellite]['EnergyofMu'][K] = np.zeros((Mu_set.shape[0],len(sat_data['Epoch'])))
+            energyofmualpha[satellite]['EnergyofMuAlpha'][K] = np.zeros((Mu_set.shape[0],len(sat_data['Epoch'])))
             # Convert Alpha_set to radians
             if isinstance(alphaofK[satellite]['AlphaofK'], pd.DataFrame):
                 alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'].values[ki,:])
@@ -420,7 +446,7 @@ def EnergyofMu(gps_data, Mu_set, alphaofK):
             sin_squared_alpha = np.sin(alpha_rad)**2
             for i, mu in enumerate(Mu_set):
                 # Reminder, GPS Bfield data is in Gauss
-                energyofMu[satellite]['EnergyofMu'][K][i,:] = np.sqrt(2 * E0 * mu * sat_data['b_satellite'] / sin_squared_alpha + E0**2) - E0
-            energyofMu[satellite]['EnergyofMu'][K] = pd.DataFrame(energyofMu[satellite]['EnergyofMu'][K], index=Mu_set, columns=epoch_str)
+                energyofmualpha[satellite]['EnergyofMuAlpha'][K][i,:] = np.sqrt(2 * E0 * mu * sat_data['b_satellite'] / sin_squared_alpha + E0**2) - E0
+            energyofmualpha[satellite]['EnergyofMuAlpha'][K] = pd.DataFrame(energyofmualpha[satellite]['EnergyofMuAlpha'][K], index=Mu_set, columns=epoch_str)
     print('Energies Calculated \n')
-    return energyofMu
+    return energyofmualpha
