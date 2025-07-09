@@ -8,6 +8,8 @@ sys.path.insert(0,current_script_dir)
 import numpy as np
 import scipy.constants as sc
 import math
+import matplotlib
+import matplotlib.pyplot as plt
 
 import importlib
 import GPS_PSD_func
@@ -16,7 +18,7 @@ from GPS_PSD_func import (import_GPS, data_period, QinDenton_period, data_from_g
                             find_local90PA, AlphaOfK, MuofEnergyAlpha, EnergyofMuAlpha)
 import Zhao2018_PAD_Model
 importlib.reload(Zhao2018_PAD_Model)
-from Zhao2018_PAD_Model import (import_Zhao_coeffs, find_Zhao_PAD_coeffs)
+from Zhao2018_PAD_Model import (import_Zhao_coeffs, find_Zhao_PAD_coeffs, create_PAD)
 
 #%% Global Variables
 textsize = 16
@@ -103,63 +105,62 @@ if __name__ == '__main__':
     energyofmualpha = EnergyofMuAlpha(storm_data, Mu_set, alphaofK)
 
 ### Find Flux at Set Pitch Angle ####
-    #--- 
-    Zhao_epoch_coeffs = find_Zhao_PAD_coeffs(storm_data, energyofmualpha)
+    #--- Extract Zhao Coefficients at each Epoch ---
+    #Zhao_epoch_coeffs = find_Zhao_PAD_coeffs(storm_data, energyofmualpha)
 
     Zhao_epoch_coeffs_filename = f"Zhao_epoch_coeffs.npz"
     Zhao_epoch_coeffs_save_path = os.path.join(base_save_folder, Zhao_epoch_coeffs_filename)
     
+    '''
     # Save Data for later recall:
     print("Saving Zhao coefficients for each Epoch...")
     np.savez(Zhao_epoch_coeffs_save_path, **Zhao_epoch_coeffs)
     print("Data Saved \n")
-    
+    '''
 
     # Load data from previous save
     Zhao_epoch_coeffs_load = np.load(Zhao_epoch_coeffs_save_path, allow_pickle=True)
     Zhao_epoch_coeffs = load_data(Zhao_epoch_coeffs_load)
 
-#%%
-# Test set
-satellite = 'ns58'
+    #--- Create Pitch Angle Distribution (PAD) from Coefficients ---
+    PAD_models = create_PAD(Zhao_epoch_coeffs)
+
+#%% Plot PAD
+satellite = 'ns60'
 k = 0.1
-i_epoch = 353
-mu = Mu_set[4]
-i_mu = np.where(Mu_set == mu)[0][0]
-test_coeffs = Zhao_epoch_coeffs[satellite][k][mu].values[:,i_epoch]
-test_epoch = np.array(storm_data[satellite]['Epoch'].UTC)[i_epoch]
-test_channels = np.array(storm_data[satellite]['Energy_Channels'])
+i_mu = 8
+mu = Mu_set[i_mu]
+
+mask_energy = ((energyofmualpha[satellite]['EnergyofMuAlpha'][k].values[i_mu,:]>=2.0) 
+                & (energyofmualpha[satellite]['EnergyofMuAlpha'][k].values[i_mu,:]<=2.2))
+mask_MLT = (storm_data[satellite]['MLT']<=0.1) | (storm_data[satellite]['MLT']>=23.9)
+mask_Lshell = (storm_data[satellite]['L_LGM_T89IGRF']>=4.9) & (storm_data[satellite]['L_LGM_T89IGRF']<=5.1)
+mask_combined = np.array(mask_energy & mask_MLT & mask_Lshell)
+mask_indices = np.where(mask_combined)[0]
+
+i_epoch = 3
+#in Figure 5 of Zhao 2018, for ns 64, i=200 is b2, i=242 is b4
 test_energy = energyofmualpha[satellite]['EnergyofMuAlpha'][k].values[i_mu,i_epoch]
-energy_bins = np.array(list(Zhao2018_PAD_Model.Zhao_coeffs.keys()), dtype=float)
-i_energy = np.argmin(np.abs(test_energy-energy_bins))
-ebin_value = energy_bins[i_energy]
-test_dst = Zhao2018_PAD_Model.QD_data['Dst'][i_epoch]
-if test_dst > -20:
-    i_dst = 'Dst > -20 nT'
-elif test_dst < -20 and test_dst > -50:
-    i_dst = '-50 nT < Dst < -20 nT'
-elif test_dst < -50:
-    i_dst = 'Dst < -50 nT'
+time_dt = storm_data[satellite]['Epoch'][i_epoch].UTC[0] # Transform from spacepy TickTock to datetime
+minutes_to_subtract = time_dt.minute % 5
+rounded_dt = time_dt - dt.timedelta(minutes=minutes_to_subtract,seconds=time_dt.second,microseconds=time_dt.microsecond)
+time_index = int(np.where(Zhao2018_PAD_Model.QD_data['DateTime']==rounded_dt)[0])
+test_dst = Zhao2018_PAD_Model.QD_data['Dst'][time_index]
 test_MLT = storm_data[satellite]['MLT'][i_epoch]
-i_MLT = int(((test_MLT + 1) % 24) // 2)
 test_Lshell = storm_data[satellite]['L_LGM_T89IGRF'][i_epoch]
-if ebin_value < 1:
-    i_L = int((test_Lshell - 0.9) // 0.2)
-elif ebin_value >= 1:
-    i_L = int((test_Lshell - 2.9) // 0.2)
-test_coeff_check = np.zeros(5)
-test_coeff_check[0] = Zhao2018_PAD_Model.Zhao_coeffs[ebin_value][i_dst]['c2']['data_matrix'].values[i_MLT,i_L]
-test_coeff_check[1] = Zhao2018_PAD_Model.Zhao_coeffs[ebin_value][i_dst]['c4']['data_matrix'].values[i_MLT,i_L]
-test_coeff_check[2] = Zhao2018_PAD_Model.Zhao_coeffs[ebin_value][i_dst]['c6']['data_matrix'].values[i_MLT,i_L]
-if (Zhao2018_PAD_Model.Zhao_coeffs[ebin_value][i_dst]['c8'] 
-    and Zhao2018_PAD_Model.Zhao_coeffs[ebin_value][i_dst]['c8']['data_matrix'].shape[1] > i_L):
-    test_coeff_check[3] = Zhao2018_PAD_Model.Zhao_coeffs[ebin_value][i_dst]['c8']['data_matrix'].values[i_MLT,i_L]
-if (Zhao2018_PAD_Model.Zhao_coeffs[ebin_value][i_dst]['c10'] 
-    and Zhao2018_PAD_Model.Zhao_coeffs[ebin_value][i_dst]['c10']['data_matrix'].shape[1] > i_L):
-    test_coeff_check[4] = Zhao2018_PAD_Model.Zhao_coeffs[ebin_value][i_dst]['c10']['data_matrix'].values[i_MLT,i_L]
+alpha_list = np.array(PAD_models[satellite][k][mu].index.tolist())
+epoch_list = PAD_models[satellite][k][mu].columns.tolist()
+datetime_format = "%Y-%m-%dT%H:%M:%S"
+epoch = [dt.datetime.strptime(dt_str,"%Y-%m-%dT%H:%M:%S") for dt_str in epoch_list]
+epoch_array = np.array(epoch)
+print(f"Satellite = {satellite}")
+print(f"Epoch Index = {i_epoch}")
+print(f"Epoch = {epoch[i_epoch]}")
 print(f"Energy = {test_energy}")
+print(f"DST = {test_dst}")
+print(f"MLT = {test_MLT}")
 print(f"Lshell = {test_Lshell}")
-print(f"Zhao Coefficients = {test_coeffs}")
-print(f"Coefficient Check = {test_coeff_check}")
-    
+fig, ax = plt.subplots(figsize=(6, 4))
+scatter = ax.scatter(alpha_list, PAD_models[satellite][k][mu].values[:,i_epoch])
+ax.set_xlim(min(alpha_list), max(alpha_list))
 # %%
