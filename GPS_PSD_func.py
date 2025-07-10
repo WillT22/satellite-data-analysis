@@ -12,7 +12,7 @@ import pandas as pd
 
 from lgmpy import Lgm_Vector
 import lgmpy.Lgm_Wrap as lgm_lib
-from ctypes import c_int, c_double
+from ctypes import c_int, c_double, pointer
 
 E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6) # this is m_0*c^2
 
@@ -198,6 +198,13 @@ def load_data(npzfile):
     print("Data Loaded \n")
     return loaded_data
 
+#%% Convert TickTock to Lgm_DateTime
+def ticktock_to_Lgm_DateTime(ticktock, c):
+    dt_obj = ticktock.UTC[0]
+    lgm_dt = lgm_lib.Lgm_DateTime_Create(dt_obj.year, dt_obj.month, dt_obj.day, 
+                                dt_obj.hour+dt_obj.minute/60+dt_obj.second/3600, lgm_lib.LGM_TIME_SYS_UTC, c)
+    return lgm_dt 
+
 #%% Find local pitch angle
 def find_local90PA(gps_data):
     local90PA = {}
@@ -212,30 +219,45 @@ def find_local90PA(gps_data):
         local90PA[satellite][mask] = np.rad2deg(np.arcsin(np.sqrt(Beq[mask] / Bsat[mask])))
     return local90PA
 
-#%% Convert TickTock to Lgm_DateTime
-def ticktock_to_Lgm_DateTime(ticktock):
-    dt_obj = ticktock.UTC[0]
-    lgm_dt = lgm_lib.Lgm_DateTime()
-    # Date (YYYYMMDD)
-    lgm_dt.Date = dt_obj.year * 10000 + dt_obj.month * 100 + dt_obj.day
-    # Time (decimal hours)
-    lgm_dt.Time = float(dt_obj.hour + 
-                               dt_obj.minute / 60.0 + 
-                               dt_obj.second / 3600.0 + 
-                               dt_obj.microsecond / 3600000000.0)
+#%% Find Loss Cone
+def find_Loss_Cone(gps_data, height = 100, extMag='T89'):
     
-    # Other fields (populate as needed, based on datetime object attributes)
-    lgm_dt.Year = dt_obj.year
-    lgm_dt.Month = dt_obj.month
-    lgm_dt.Day = dt_obj.day
-    lgm_dt.Hour = dt_obj.hour
-    lgm_dt.Minute = dt_obj.minute
-    lgm_dt.Second = float(dt_obj.second + dt_obj.microsecond / 1e6) # Seconds with microseconds
-    lgm_dt.Doy = dt_obj.timetuple().tm_yday # Day of Year
+    print('Finding Loss Cone...')
+    
+    MagInfo = lgm_lib.Lgm_InitMagInfo()
+    IntMagModel = c_int(lgm_lib.__dict__[f"LGM_IGRF"])
+    ExtMagModel = c_int(lgm_lib.__dict__[f"LGM_EXTMODEL_{extMag}"])
+    lgm_lib.Lgm_Set_MagModel(IntMagModel, ExtMagModel, MagInfo)
 
-    lgm_dt.TimeSystem = lgm_lib.LGM_TIME_SYS_UTC
+    loss_cone = {}
+    for satellite, sat_data in gps_data.items():
+        #print(f'    Finding Loss Cone for Satellite {satellite}')
+        loss_cone[satellite] = np.zeros((len(sat_data['Epoch']),3))
+            
+        for i_epoch, epoch in enumerate(sat_data['Epoch']):
+            current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
+            lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
+            current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
+            south_vec = Lgm_Vector.Lgm_Vector()
+            north_vec = Lgm_Vector.Lgm_Vector()
+            minB_vec = Lgm_Vector.Lgm_Vector()
+            QD_inform_MagInfo(epoch, MagInfo)
+                
+            lgm_lib.Lgm_Trace(pointer(current_vec), pointer(south_vec), pointer(north_vec), pointer(minB_vec),
+                                height, 0.01, 1e-7, MagInfo)
+                
+            loss_cone[satellite][i_epoch,0] = MagInfo.contents.Bmin
+            if sat_data['Position'][i_epoch].z >= 0:
+                loss_cone[satellite][i_epoch,1] = MagInfo.contents.Ellipsoid_Footprint_Bn
+            else:
+                loss_cone[satellite][i_epoch,1] = MagInfo.contents.Ellipsoid_Footprint_Bs
 
-    return lgm_dt 
+        loss_cone[satellite][:,2] = np.arcsin(np.sqrt(loss_cone[satellite][:,0]/loss_cone[satellite][:,1]))
+
+        epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
+        loss_cone[satellite] = pd.DataFrame(loss_cone[satellite], index=epoch_str, columns = ['Bmin','Bfp','Loss_Cone'])
+    print('Loss Cone Found')
+    return loss_cone
 
 #%% Set magnetic field model coefficients to closest time of QinDenton data
 ## Someday, replace this with Lgm_QinDenton in LANLGeoMag...
@@ -297,23 +319,23 @@ def AlphaOfK(gps_data, K_set, extMag = 'T89'):
         alphaofK[satellite] = {}
         alphaofK[satellite]['Epoch'] = sat_data['Epoch']
         alphaofK[satellite]['K_set'] = K_set
-        alphaofK[satellite]['AlphaofK'] = np.zeros((k_dim_size,len(sat_data['b_satellite'])))
+        alphaofK[satellite]['AlphaofK'] = np.zeros((len(sat_data['Epoch']),k_dim_size))
         alphaofK[satellite]['AlphaofK'].fill(np.nan)
-        for ki in range(k_dim_size):
+        for i_K in range(k_dim_size):
             if isinstance(K_set, (np.ndarray, list)):
-                current_K_value = K_set[ki]
+                current_K_value = K_set[i_K]
             else:
                 current_K_value = K_set
-            for i, epoch in enumerate(sat_data['Epoch']):
-                current_time = ticktock_to_Lgm_DateTime(epoch)
-                current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i].data[0])
+            for i_epoch, epoch in enumerate(sat_data['Epoch']):
+                current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
+                current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
                 QD_inform_MagInfo(epoch, MagInfo)
                 lgm_lib.Lgm_Setup_AlphaOfK(current_time, current_vec, MagInfo)
-                alphaofK[satellite]['AlphaofK'][ki,i] = lgm_lib.Lgm_AlphaOfK(current_K_value, MagInfo)
+                alphaofK[satellite]['AlphaofK'][i_epoch,i_K] = lgm_lib.Lgm_AlphaOfK(current_K_value, MagInfo)
                 lgm_lib.Lgm_TearDown_AlphaOfK(MagInfo)
         if k_dim_size > 1:
             epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-            alphaofK[satellite]['AlphaofK'] = pd.DataFrame(alphaofK[satellite]['AlphaofK'], index=K_set, columns=epoch_str)
+            alphaofK[satellite]['AlphaofK'] = pd.DataFrame(alphaofK[satellite]['AlphaofK'], index=epoch_str, columns=K_set)
     print('Pitch Angles Calculated \n')
     return alphaofK
 
@@ -347,37 +369,37 @@ def MuofEnergyAlpha(gps_data, alphaofK):
         epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
         
         # Determine the size of the first dimension based on K_set's type
-        K_set = alphaofK[satellite]['K_set']
+        K_set = np.array(list(alphaofK[satellite]['AlphaofK'].columns.tolist()), dtype=float)
         if isinstance(K_set, (np.ndarray, list)):
             k_dim_size = len(K_set)
         else: # Assume it's a scalar (float, int) if not an array/list
             k_dim_size = 1
         
-        for ki in range(k_dim_size):
+        for i_K in range(k_dim_size):
             if isinstance(K_set, (np.ndarray, list)):
-                K = K_set[ki]
+                K = K_set[i_K]
             else:
                 K = K_set
-            muofenergyalpha[satellite]['MuofEnergyAlpha'][K] = np.zeros((sat_data['Energy_Channels'].shape[0],len(sat_data['Epoch'])))
+            muofenergyalpha[satellite]['MuofEnergyAlpha'][K] = np.zeros((len(sat_data['Epoch']),sat_data['Energy_Channels'].shape[0]))
             # Convert Alpha_set to radians
             if isinstance(alphaofK[satellite]['AlphaofK'], pd.DataFrame):
-                alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'].values[ki,:])
+                alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'].values[:,i_K])
             else:
-                alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'][ki,:])
+                alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'][:,i_K])
             # Calculate sin^2(Alpha)
             sin_squared_alpha = np.sin(alpha_rad)**2
             for ch, channel in enumerate(sat_data['Energy_Channels']):
                 # Reminder, GPS Bfield data is in Gauss
-                muofenergyalpha[satellite]['MuofEnergyAlpha'][K][ch,:] = (channel**2 + 2*channel*E0) * sin_squared_alpha / (2*E0*sat_data['b_satellite'])
+                muofenergyalpha[satellite]['MuofEnergyAlpha'][K][:,ch] = (channel**2 + 2*channel*E0) * sin_squared_alpha / (2*E0*sat_data['b_satellite'])
 
             Mu_bounds[satellite][K] = np.zeros(2)
-            Mu_bounds[satellite][K][0] = np.min(muofenergyalpha[satellite]['MuofEnergyAlpha'][K][0,:])
+            Mu_bounds[satellite][K][0] = np.min(muofenergyalpha[satellite]['MuofEnergyAlpha'][K][:,0])
             if Mu_bounds[satellite][K][0] < Mu_min:
                 Mu_min = Mu_bounds[satellite][K][0]
-            Mu_bounds[satellite][K][1] = np.max(muofenergyalpha[satellite]['MuofEnergyAlpha'][K][-1,:])
+            Mu_bounds[satellite][K][1] = np.max(muofenergyalpha[satellite]['MuofEnergyAlpha'][K][:,-1])
             if Mu_bounds[satellite][K][1] > Mu_max:
                 Mu_max = Mu_bounds[satellite][K][1]
-            muofenergyalpha[satellite]['MuofEnergyAlpha'][K] = pd.DataFrame(muofenergyalpha[satellite]['MuofEnergyAlpha'][K], index=sat_data['Energy_Channels'], columns=epoch_str)
+            muofenergyalpha[satellite]['MuofEnergyAlpha'][K] = pd.DataFrame(muofenergyalpha[satellite]['MuofEnergyAlpha'][K], index=epoch_str, columns=sat_data['Energy_Channels'])
     Mu_bounds['Total'] = np.array((Mu_min, Mu_max))
 
     magnitude_min = 10**math.floor(math.log10(Mu_bounds['Total'][0]))
@@ -414,10 +436,6 @@ def EnergyofMuAlpha(gps_data, Mu_set, alphaofK):
 
     for satellite, sat_data in gps_data.items():
         energyofmualpha[satellite] = {}
-        energyofmualpha[satellite]['Epoch'] = sat_data['Epoch']
-        energyofmualpha[satellite]['Mu_set'] = Mu_set
-        energyofmualpha[satellite]['AlphaofK'] = alphaofK[satellite]['AlphaofK']
-        energyofmualpha[satellite]['EnergyofMuAlpha'] = {}
         # Convert Alpha_set to radians
         alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'])
 
@@ -431,22 +449,22 @@ def EnergyofMuAlpha(gps_data, Mu_set, alphaofK):
         else: # Assume it's a scalar (float, int) if not an array/list
             k_dim_size = 1
         
-        for ki in range(k_dim_size):
+        for i_K in range(k_dim_size):
             if isinstance(K_set, (np.ndarray, list)):
-                K = K_set[ki]
+                K = K_set[i_K]
             else:
                 K = K_set
-            energyofmualpha[satellite]['EnergyofMuAlpha'][K] = np.zeros((Mu_set.shape[0],len(sat_data['Epoch'])))
+            energyofmualpha[satellite][K] = np.zeros((len(sat_data['Epoch']),Mu_set.shape[0]))
             # Convert Alpha_set to radians
             if isinstance(alphaofK[satellite]['AlphaofK'], pd.DataFrame):
-                alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'].values[ki,:])
+                alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'].values[:,i_K])
             else:
-                alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'][ki,:])
+                alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'][:,i_K])
             # Calculate sin^2(Alpha)
             sin_squared_alpha = np.sin(alpha_rad)**2
-            for i, mu in enumerate(Mu_set):
+            for i_Mu, mu in enumerate(Mu_set):
                 # Reminder, GPS Bfield data is in Gauss
-                energyofmualpha[satellite]['EnergyofMuAlpha'][K][i,:] = np.sqrt(2 * E0 * mu * sat_data['b_satellite'] / sin_squared_alpha + E0**2) - E0
-            energyofmualpha[satellite]['EnergyofMuAlpha'][K] = pd.DataFrame(energyofmualpha[satellite]['EnergyofMuAlpha'][K], index=Mu_set, columns=epoch_str)
+                energyofmualpha[satellite][K][:,i_Mu] = np.sqrt(2 * E0 * mu * sat_data['b_satellite'] / sin_squared_alpha + E0**2) - E0
+            energyofmualpha[satellite][K] = pd.DataFrame(energyofmualpha[satellite][K], index=epoch_str, columns=Mu_set)
     print('Energies Calculated \n')
     return energyofmualpha

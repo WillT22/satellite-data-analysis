@@ -1,4 +1,3 @@
-
 #%% Importing relevant libraries
 import os
 import sys
@@ -15,7 +14,7 @@ import importlib
 import GPS_PSD_func
 importlib.reload(GPS_PSD_func)
 from GPS_PSD_func import (import_GPS, data_period, QinDenton_period, data_from_gps, load_data,
-                            find_local90PA, AlphaOfK, MuofEnergyAlpha, EnergyofMuAlpha)
+                            find_local90PA, AlphaOfK, MuofEnergyAlpha, EnergyofMuAlpha, find_Loss_Cone)
 import Zhao2018_PAD_Model
 importlib.reload(Zhao2018_PAD_Model)
 from Zhao2018_PAD_Model import (import_Zhao_coeffs, find_Zhao_PAD_coeffs, create_PAD)
@@ -65,20 +64,17 @@ if __name__ == '__main__':
     #storm_data = data_from_gps(storm_data_raw, Lshell=6, extMag= 'T89')
     
     processed_save_path = os.path.join(base_save_folder, 'processed_gps.npz')
-    """ 
+    '''
     # Save Data for later recall:
     print("Saving Processed GPS Data...")
     np.savez(processed_save_path, **storm_data)
     print("Data Saved \n")
-    """
+    '''
     # Read in data from previous save
     storm_data_load = np.load(processed_save_path, allow_pickle=True)
     storm_data = load_data(storm_data_load)
 
 ### Find Pitch Angles ###
-    # Find local pitch angle
-    local90PA = find_local90PA(storm_data)
-
     # Find pitch angle corresponding to set K
     #alphaofK = AlphaOfK(storm_data, K_set, extMag)
 
@@ -106,40 +102,87 @@ if __name__ == '__main__':
 
 ### Find Flux at Set Pitch Angle ####
     #--- Extract Zhao Coefficients at each Epoch ---
-    #Zhao_epoch_coeffs = find_Zhao_PAD_coeffs(storm_data, energyofmualpha)
+    Zhao_epoch_coeffs = find_Zhao_PAD_coeffs(storm_data, energyofmualpha)
 
     Zhao_epoch_coeffs_filename = f"Zhao_epoch_coeffs.npz"
     Zhao_epoch_coeffs_save_path = os.path.join(base_save_folder, Zhao_epoch_coeffs_filename)
     
-    '''
+    
     # Save Data for later recall:
     print("Saving Zhao coefficients for each Epoch...")
     np.savez(Zhao_epoch_coeffs_save_path, **Zhao_epoch_coeffs)
     print("Data Saved \n")
-    '''
+    
 
     # Load data from previous save
     Zhao_epoch_coeffs_load = np.load(Zhao_epoch_coeffs_save_path, allow_pickle=True)
     Zhao_epoch_coeffs = load_data(Zhao_epoch_coeffs_load)
 
     #--- Create Pitch Angle Distribution (PAD) from Coefficients ---
-    PAD_models = create_PAD(Zhao_epoch_coeffs)
+    PAD_models = create_PAD(storm_data, Zhao_epoch_coeffs, alphaofK)
+
+    PAD_models_filename = f"PAD_models.npz"
+    PAD_models_save_path = os.path.join(base_save_folder, PAD_models_filename)
+    
+    # Save Data for later recall:
+    print("Saving PAD models ...")
+    np.savez(PAD_models_save_path, **PAD_models)
+    print("Data Saved \n")
+    
+    # Load data from previous save
+    PAD_models_load = np.load(PAD_models_save_path, allow_pickle=True)
+    PAD_models = load_data(PAD_models_load)  
 
 #%% Plot PAD
-satellite = 'ns60'
+satellite = 'ns63'
 k = 0.1
 i_mu = 8
 mu = Mu_set[i_mu]
 
-mask_energy = ((energyofmualpha[satellite]['EnergyofMuAlpha'][k].values[i_mu,:]>=2.0) 
-                & (energyofmualpha[satellite]['EnergyofMuAlpha'][k].values[i_mu,:]<=2.2))
+mask_energy = ((energyofmualpha[satellite]['EnergyofMuAlpha'][k].values[i_mu,:]>=1.8) 
+                & (energyofmualpha[satellite]['EnergyofMuAlpha'][k].values[i_mu,:]<=2.4))
+print(sum(mask_energy))
 mask_MLT = (storm_data[satellite]['MLT']<=0.1) | (storm_data[satellite]['MLT']>=23.9)
+#mask_MLT = (storm_data[satellite]['MLT']>=5) & (storm_data[satellite]['MLT']<=7)
+print(sum(mask_MLT))
 mask_Lshell = (storm_data[satellite]['L_LGM_T89IGRF']>=4.9) & (storm_data[satellite]['L_LGM_T89IGRF']<=5.1)
+print(sum(mask_Lshell))
 mask_combined = np.array(mask_energy & mask_MLT & mask_Lshell)
 mask_indices = np.where(mask_combined)[0]
 
-i_epoch = 3
+#i_epoch = mask_indices[0]
+i_epoch = 22
 #in Figure 5 of Zhao 2018, for ns 64, i=200 is b2, i=242 is b4
+
+'''
+# MLT distribution
+MLT_long = []
+for satellite, sat_data in storm_data.items():
+    MLT_long.extend(sat_data['MLT'])
+fig, ax = plt.subplots(figsize=(6, 4))
+ax.hist(MLT_long, bins = np.arange(0, 24.25, 0.25))
+ax.set_xlim(0,24)
+ax.set_xticks(np.arange(0,25,6))
+ax.set_xlabel('MLT')
+'''
+'''
+# Does local MLT correspond with inclination?
+MLT_long = []
+local90_long = []
+Lshell_long = []
+for satellite, sat_data in storm_data.items():
+    MLT_long.extend(sat_data['MLT'])
+    local90_long.extend(local90PA[satellite])
+    Lshell_long.extend(sat_data['L_LGM_T89IGRF'])
+fig, ax = plt.subplots(figsize=(6, 4))
+ax.scatter(MLT_long,Lshell_long,color='C1')
+ax.set_xlim(0,24)
+ax.set_xticks(np.arange(0,25,6))
+ax.set_xlabel('MLT')
+#ax.set_ylabel('Local 90 Degree Pitch Angle')
+ax.set_ylabel('Local Lshell')
+'''
+
 test_energy = energyofmualpha[satellite]['EnergyofMuAlpha'][k].values[i_mu,i_epoch]
 time_dt = storm_data[satellite]['Epoch'][i_epoch].UTC[0] # Transform from spacepy TickTock to datetime
 minutes_to_subtract = time_dt.minute % 5
@@ -160,7 +203,12 @@ print(f"Energy = {test_energy}")
 print(f"DST = {test_dst}")
 print(f"MLT = {test_MLT}")
 print(f"Lshell = {test_Lshell}")
-fig, ax = plt.subplots(figsize=(6, 4))
-scatter = ax.scatter(alpha_list, PAD_models[satellite][k][mu].values[:,i_epoch])
-ax.set_xlim(min(alpha_list), max(alpha_list))
+
+fig, ax = plt.subplots(figsize=(3, 4))
+scatter = ax.scatter(alpha_list, np.log10(PAD_models[satellite][k][mu].values[:,i_epoch])+1)
+ax.set_xlim(0, 180)
+desired_xticks = np.arange(0, 181, 45) # From 0 to 180, step 45
+ax.set_xticks(desired_xticks)
+ax.set_xlabel('Pitch Angle')
+ax.set_ylim(0.2, 1.3)
 # %%

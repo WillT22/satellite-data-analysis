@@ -8,7 +8,7 @@ from scipy.special import legendre
 import importlib
 import GPS_PSD_func
 importlib.reload(GPS_PSD_func)
-from GPS_PSD_func import QinDenton_period
+from GPS_PSD_func import QinDenton_period, find_local90PA, find_Loss_Cone
 
 #%%
 global Zhao_median_filepath
@@ -178,24 +178,24 @@ def find_Zhao_PAD_coeffs(gps_data, EnergyofMuAlpha):
     for satellite, sat_data in gps_data.items():
         Zhao_epoch_coeffs[satellite] = {}
         # Get the matrix of energy values for each Mu and Epoch for the current satellite.
-        sat_energyofmualpha = EnergyofMuAlpha[satellite]['EnergyofMuAlpha']
+        sat_energyofmualpha = EnergyofMuAlpha[satellite]
         # Define the valid range for energy_value besed on instrument energy channels.
         echannel_min = sat_data['Energy_Channels'][0]
         echannel_max = sat_data['Energy_Channels'][-1]
         # Prepare a list of formatted epoch strings for the column headers of the final Pandas DataFrame for each Mu_value.
         epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-        # Get the Mu_set array for this satellite for use as a key in Zhao_epoch_coeffs.
-        Mu_set = EnergyofMuAlpha[satellite]['Mu_set']
         
         # --- Loop 1: Iterate through each K value (K_val is the index, K_data is the energy data for that Mu) ---
         for K_val, K_data in sat_energyofmualpha.items():
             Zhao_epoch_coeffs[satellite][K_val] = {}
             K_data_values = K_data.values   
             # --- Loop 2: Iterate through each Mu value in Mu_set ---
-            for Mu_val in range(len(K_data_values[:,0])):
+            # Get the Mu_set array for this satellite for use as a key in Zhao_epoch_coeffs.
+            Mu_set = np.array(list(EnergyofMuAlpha[satellite][K_val].columns.tolist()), dtype=float)
+            for Mu_val in range(len(Mu_set)):
                 Mu_value = Mu_set[Mu_val]
                 # Initialize final coefficient matrix for each satellite, K, and Mu_set value
-                Zhao_epoch_coeffs[satellite][K_val][Mu_value] = np.zeros((5,len(sat_data['Epoch'])))
+                Zhao_epoch_coeffs[satellite][K_val][Mu_value] = np.zeros((len(sat_data['Epoch']),5))
                 
                 # --- Loop 3: Iterate through each epoch (time step) for each satellite ---
                 for i_epoch, epoch in enumerate(sat_data['Epoch']):
@@ -222,7 +222,7 @@ def find_Zhao_PAD_coeffs(gps_data, EnergyofMuAlpha):
 
                     # Get the L-shell and energy value for the current (Mu, Epoch) point.
                     Lshell = sat_data['L_LGM_T89IGRF'][i_epoch]
-                    energy_value = K_data_values[Mu_val,i_epoch]
+                    energy_value = K_data_values[i_epoch,Mu_val]
                     
                     # --- Primary Filter Condition ---
                     # Do NOT extrapolate outside of energy channel range!
@@ -246,27 +246,27 @@ def find_Zhao_PAD_coeffs(gps_data, EnergyofMuAlpha):
                                 # Find Lshell bin
                                 i_L = int((Lshell - 0.9) // 0.2)
                                 if Lshell < 2: # m=10 (all 5 coeffs)
-                                        Zhao_epoch_coeffs[satellite][K_val][Mu_value][i_c,i_epoch] = coeff_data_temp[i_MLT,i_L]
+                                        Zhao_epoch_coeffs[satellite][K_val][Mu_value][i_epoch,i_c] = coeff_data_temp[i_MLT,i_L]
                                 elif Lshell >= 2 and Lshell < 4: # m=8 (c2,c4,c6,c8)
                                     if coeff != 'c10':
-                                        Zhao_epoch_coeffs[satellite][K_val][Mu_value][i_c,i_epoch] = coeff_data_temp[i_MLT,i_L]
+                                        Zhao_epoch_coeffs[satellite][K_val][Mu_value][i_epoch,i_c] = coeff_data_temp[i_MLT,i_L]
                                 elif Lshell >= 4: # m=6 (c2,c4,c6)
                                     if coeff != 'c10' and coeff != 'c8':
-                                        Zhao_epoch_coeffs[satellite][K_val][Mu_value][i_c,i_epoch] = coeff_data_temp[i_MLT,i_L]  
+                                        Zhao_epoch_coeffs[satellite][K_val][Mu_value][i_epoch,i_c] = coeff_data_temp[i_MLT,i_L]  
                             # For E >= 1 MeV, m=6 for 3<=L<=6
                             elif ebin_value >= 1: # For E >= 1 MeV
                                 if Lshell >= 3: # m=6 (c2,c4,c6)
                                     # Find Lshell bin
                                     i_L = int((Lshell - 2.9) // 0.2)
                                     if coeff != 'c10' and coeff != 'c8':
-                                        Zhao_epoch_coeffs[satellite][K_val][Mu_value][i_c,i_epoch] = coeff_data_temp[i_MLT,i_L]
+                                        Zhao_epoch_coeffs[satellite][K_val][Mu_value][i_epoch,i_c] = coeff_data_temp[i_MLT,i_L]
                                     else:
                                         # Lshell < 3 for E >= 1 MeV is outside the defined range for non-zero coeffs.
                                         # Coefficients for these points will remain 0.0 (from initialization).
                                         pass 
                 # After processing all coefficients for a specific (satellite, Mu_value) combination and all epochs, 
                 # convert the accumulated NumPy array into a Pandas DataFrame. 
-                Zhao_epoch_coeffs[satellite][K_val][Mu_value] = pd.DataFrame(Zhao_epoch_coeffs[satellite][K_val][Mu_value], index=full_coeff_list, columns=epoch_str)         
+                Zhao_epoch_coeffs[satellite][K_val][Mu_value] = pd.DataFrame(Zhao_epoch_coeffs[satellite][K_val][Mu_value], index=epoch_str, columns=full_coeff_list)         
     print("Zhao Coefficients Extracted \n")
     return Zhao_epoch_coeffs
 
@@ -277,30 +277,36 @@ def define_Legendre(alpha):
                   legendre(8)(np.cos(alpha_rad)), legendre(10)(np.cos(alpha_rad))])
     return P
 
-def create_PAD(Zhao_epoch_coeffs, local90PA, AlphaofK):
+def create_PAD(gps_data, Zhao_epoch_coeffs, AlphaofK):
     print("Creating PAD Models...")
+    local90PA = find_local90PA(gps_data)
+    loss_cone = find_Loss_Cone(gps_data)
     alpha_init = np.linspace(0,180,181)
     PAD_models = {}
     for satellite, sat_data in Zhao_epoch_coeffs.items():
         print(f"    Modeling PAD for satellite {satellite}")
         PAD_models[satellite] = {}
-        K_keys = np.array(list(sat_data.keys()), dtype=float)
+        K_set = np.array(list(sat_data.keys()), dtype=float)
         for K_val, K_data in sat_data.items():
-            i_K = np.where(K_keys == K_val)[0][0]
+            i_K = np.where(K_set == K_val)[0][0]
             PAD_models[satellite][K_val] = {}
             for Mu_val, Mu_data in K_data.items():
-                PAD_models[satellite][K_val][Mu_val] = np.zeros((len(alpha_init)+4,len(Mu_data.columns.tolist())))
                 coeff_data = Mu_data.values
-                epoch_list = Mu_data.columns.tolist()
+                epoch_list = Mu_data.index.tolist()
+                PAD_models[satellite][K_val][Mu_val] = np.zeros((len(epoch_list),len(alpha_init)+6))
                 for i_epoch, epoch in enumerate(epoch_list):
                     alpha_local90 = local90PA[satellite][i_epoch]
                     alpha_local90_add = np.array((alpha_local90, 180-alpha_local90))
-                    alphaofK = AlphaofK[satellite]['AlphaofK'].values[i_K,i_epoch]
+                    alpha_loss_cone = loss_cone[satellite].values[i_epoch,2]
+                    alpha_loss_cone_add = np.array((alpha_loss_cone, 180-alpha_loss_cone))
+                    alphaofK = AlphaofK[satellite]['AlphaofK'].values[i_epoch,i_K]
                     alphaofK_add = np.array((alphaofK, 180-alphaofK))
-                    alpha_epoch = np.append(alpha_init, [alpha_local90_add,alphaofK_add])
+                    alpha_epoch = np.append(alpha_init, [alpha_local90_add,alphaofK_add,alpha_loss_cone_add])
                     alpha_epoch.sort()
                     P = define_Legendre(alpha_epoch)
-                    PAD_models[satellite][K_val][Mu_val][:,i_epoch] = np.sum(coeff_data[:,i_epoch][:,np.newaxis] * P, axis=0) + 1
-                PAD_models[satellite][K_val][Mu_val] = pd.DataFrame(PAD_models[satellite][K_val][Mu_val], index=alpha_epoch, columns=epoch_list)
+                    PAD_models[satellite][K_val][Mu_val][i_epoch,:] = np.sum(coeff_data[i_epoch,:][:,np.newaxis] * P, axis=0) + 1
+                PAD_models[satellite][K_val][Mu_val] = pd.DataFrame(PAD_models[satellite][K_val][Mu_val], index=epoch_list, columns=alpha_epoch)
     print("PAD Models Completed")
     return PAD_models
+
+# %%
