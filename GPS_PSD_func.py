@@ -146,6 +146,53 @@ def limit_Lshell(time_restricted_data, Lshell, intMag = 'IGRF', extMag = 'T89'):
         lshell_time_restricted_data[satellite] = sat_data[sat_data[model_var] <= Lshell]
     return lshell_time_restricted_data
 
+#%% Find local pitch angle
+def find_local90PA(sat_data):
+    local90PA = {}
+    Beq = sat_data['b_equator']
+    Bsat = sat_data['b_satellite']
+    mask = np.where(Beq > 0) and np.where(Bsat > 0)
+    local90PA = np.zeros_like(Beq)
+    local90PA.fill(np.nan)
+    local90PA[mask] = np.rad2deg(np.arcsin(np.sqrt(Beq[mask] / Bsat[mask])))
+    return local90PA
+
+#%% Find Loss Cone
+def find_Loss_Cone(sat_data, height = 100, extMag='T89'):
+    
+    print(f'        Finding Loss Cone...')
+    
+    MagInfo = lgm_lib.Lgm_InitMagInfo()
+    IntMagModel = c_int(lgm_lib.__dict__[f"LGM_IGRF"])
+    ExtMagModel = c_int(lgm_lib.__dict__[f"LGM_EXTMODEL_{extMag}"])
+    lgm_lib.Lgm_Set_MagModel(IntMagModel, ExtMagModel, MagInfo)
+
+    b_min = np.zeros(len(sat_data['Epoch']))
+    b_footpoint = np.zeros(len(sat_data['Epoch']))
+    loss_cone = np.zeros(len(sat_data['Epoch']))
+        
+    for i_epoch, epoch in enumerate(sat_data['Epoch']):
+        current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
+        lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
+        current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
+        south_vec = Lgm_Vector.Lgm_Vector()
+        north_vec = Lgm_Vector.Lgm_Vector()
+        minB_vec = Lgm_Vector.Lgm_Vector()
+        QD_inform_MagInfo(epoch, MagInfo)
+                
+        lgm_lib.Lgm_Trace(pointer(current_vec), pointer(south_vec), pointer(north_vec), pointer(minB_vec),
+                            height, 0.01, 1e-7, MagInfo)
+                
+        b_min[i_epoch] = MagInfo.contents.Bmin
+        if sat_data['Position'][i_epoch].z >= 0:
+            b_footpoint[i_epoch] = MagInfo.contents.Ellipsoid_Footprint_Bn
+        else:
+            b_footpoint[i_epoch] = MagInfo.contents.Ellipsoid_Footprint_Bs
+
+    loss_cone = np.rad2deg(np.arcsin(np.sqrt(b_min/b_footpoint)))
+    print(f'        Loss Cone Found')
+    return b_min, b_footpoint, loss_cone
+
 #%% Extract relevant information from time processed data
 def data_from_gps(time_restricted_data, Lshell = [], intMag = 'IGRF', extMag = 'T89'):
     gps_data_out = {}
@@ -182,6 +229,10 @@ def data_from_gps(time_restricted_data, Lshell = [], intMag = 'IGRF', extMag = '
                 gps_data_out[satellite]['Energy_Channels'] = time_restricted_data[satellite][var_name][0]
             else:
                 gps_data_out[satellite][var_name] = time_restricted_data[satellite][var_name][Lmask]
+
+        gps_data_out[satellite]['local90PA'] = find_local90PA(gps_data_out[satellite])
+        gps_data_out[satellite]['b_min'], gps_data_out[satellite]['b_footpoint'], gps_data_out[satellite]['loss_cone'] = find_Loss_Cone(gps_data_out[satellite])
+        
     print('Satellite Data Processed \n')
 
     return gps_data_out
@@ -204,60 +255,6 @@ def ticktock_to_Lgm_DateTime(ticktock, c):
     lgm_dt = lgm_lib.Lgm_DateTime_Create(dt_obj.year, dt_obj.month, dt_obj.day, 
                                 dt_obj.hour+dt_obj.minute/60+dt_obj.second/3600, lgm_lib.LGM_TIME_SYS_UTC, c)
     return lgm_dt 
-
-#%% Find local pitch angle
-def find_local90PA(gps_data):
-    local90PA = {}
-    for satellite, sat_data in gps_data.items():
-        local90PA[satellite] = {}
-        Beq = sat_data['b_equator']
-        Bsat = sat_data['b_satellite']
-        mask = np.where(Beq > 0) and np.where(Bsat > 0)
-        local90PA[satellite]['Epoch'] = sat_data['Epoch']
-        local90PA[satellite] = np.zeros_like(Beq)
-        local90PA[satellite].fill(np.nan)
-        local90PA[satellite][mask] = np.rad2deg(np.arcsin(np.sqrt(Beq[mask] / Bsat[mask])))
-    return local90PA
-
-#%% Find Loss Cone
-def find_Loss_Cone(gps_data, height = 100, extMag='T89'):
-    
-    print('Finding Loss Cone...')
-    
-    MagInfo = lgm_lib.Lgm_InitMagInfo()
-    IntMagModel = c_int(lgm_lib.__dict__[f"LGM_IGRF"])
-    ExtMagModel = c_int(lgm_lib.__dict__[f"LGM_EXTMODEL_{extMag}"])
-    lgm_lib.Lgm_Set_MagModel(IntMagModel, ExtMagModel, MagInfo)
-
-    loss_cone = {}
-    for satellite, sat_data in gps_data.items():
-        #print(f'    Finding Loss Cone for Satellite {satellite}')
-        loss_cone[satellite] = np.zeros((len(sat_data['Epoch']),3))
-            
-        for i_epoch, epoch in enumerate(sat_data['Epoch']):
-            current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
-            lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
-            current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
-            south_vec = Lgm_Vector.Lgm_Vector()
-            north_vec = Lgm_Vector.Lgm_Vector()
-            minB_vec = Lgm_Vector.Lgm_Vector()
-            QD_inform_MagInfo(epoch, MagInfo)
-                
-            lgm_lib.Lgm_Trace(pointer(current_vec), pointer(south_vec), pointer(north_vec), pointer(minB_vec),
-                                height, 0.01, 1e-7, MagInfo)
-                
-            loss_cone[satellite][i_epoch,0] = MagInfo.contents.Bmin
-            if sat_data['Position'][i_epoch].z >= 0:
-                loss_cone[satellite][i_epoch,1] = MagInfo.contents.Ellipsoid_Footprint_Bn
-            else:
-                loss_cone[satellite][i_epoch,1] = MagInfo.contents.Ellipsoid_Footprint_Bs
-
-        loss_cone[satellite][:,2] = np.arcsin(np.sqrt(loss_cone[satellite][:,0]/loss_cone[satellite][:,1]))
-
-        epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-        loss_cone[satellite] = pd.DataFrame(loss_cone[satellite], index=epoch_str, columns = ['Bmin','Bfp','Loss_Cone'])
-    print('Loss Cone Found')
-    return loss_cone
 
 #%% Set magnetic field model coefficients to closest time of QinDenton data
 ## Someday, replace this with Lgm_QinDenton in LANLGeoMag...
@@ -468,3 +465,18 @@ def EnergyofMuAlpha(gps_data, Mu_set, alphaofK):
             energyofmualpha[satellite][K] = pd.DataFrame(energyofmualpha[satellite][K], index=epoch_str, columns=Mu_set)
     print('Energies Calculated \n')
     return energyofmualpha
+
+#%% Find Integral of Normalized PAD between Loss Cone and Local 90 PA
+def PAD_Integral(b_satellite, b_equator, b_footpoint, b_min, C):
+    # C is Zhao coefficients for that timepoint
+    a = b_satellite / b_equator
+    b = b_footpoint / b_min
+    P0 = (2*np.sqrt(1 - a/b))/a
+    P = np.array([
+        1 - 1/a             - 1/(2*b),
+        1 + 7/(3*a**2)      - 10/(3*a)          + 7/(8*b**2)        - 5/(3*b)           + 7/(6*a*b),
+        1 - 33/(5*a**3)     + 63/(5*a**2)       - 7/a-33/(16*b**3)  + 189/(40*b**2)     - 99/(40*a*b**2)    - 7/(2*b)           - 33/(10*a**2*b)        + 63/(10*a*b),
+        1 + 143/(7*a**4)    - 1716/(35*a**3)    + 198/(5*a**2)      - 12/a              + 715/(128*b**4)    - 429/(28*b**3)     + 715/(112*a*b**3)      + 297/(20*b**2)         + 429/(56*a**2*b**2)    - 1287/(70*a*b**2)          - 6/b                   + 143/(14*a**3*b)   - 858/(35*a**2*b)       + 99/(5*a*b),
+        1 - 4199/(63*a**5)  + 12155/(63*a**4)   - 1430/(7*a**3)     + 286/(3*a**2)      - 55/(3*a)          - 4199/(256*b**5)   + 60775/(1152*b**4)     - 20995/(1152*a*b**4)   - 3575/(56*b**3)        - 20995/(1008*a**2*b**3)    + 60775/(1008*a*b**3)   + 143/(4*b**2)      - 4199/(168*a**3*b**2)  + 12155/(168*a**2*b**2)     - 2145/(28*a*b**2)  - 55/(6*b)  + 143/(14*a**3*b)   - 858/(35*a**2*b)   + 99/(5*a*b)
+    ]) * P0 * a/2
+    return np.sum(C * P) + P0
