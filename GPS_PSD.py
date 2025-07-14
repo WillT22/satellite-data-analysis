@@ -14,10 +14,10 @@ import importlib
 import GPS_PSD_func
 importlib.reload(GPS_PSD_func)
 from GPS_PSD_func import (import_GPS, data_period, QinDenton_period, data_from_gps, load_data,
-                            AlphaOfK, MuofEnergyAlpha, EnergyofMuAlpha, PAD_Integral)
+                            AlphaOfK, MuofEnergyAlpha, EnergyofMuAlpha)
 import Zhao2018_PAD_Model
 importlib.reload(Zhao2018_PAD_Model)
-from Zhao2018_PAD_Model import (import_Zhao_coeffs, find_Zhao_PAD_coeffs, create_PAD)
+from Zhao2018_PAD_Model import (import_Zhao_coeffs, find_Zhao_PAD_coeffs, create_PAD, PAD_Scale_Factor, define_Legendre, define_Legendre_Int, P0_int)
 
 #%% Global Variables
 textsize = 16
@@ -117,24 +117,29 @@ if __name__ == '__main__':
     Zhao_epoch_coeffs = load_data(Zhao_epoch_coeffs_load)
 
     #--- Create Pitch Angle Distribution (PAD) from Coefficients ---
-    #PAD_models = create_PAD(storm_data, Zhao_epoch_coeffs, alphaofK)
+    '''
+    PAD_models = create_PAD(Zhao_epoch_coeffs, alphaofK)
 
     PAD_models_filename = f"PAD_models.npz"
     PAD_models_save_path = os.path.join(base_save_folder, PAD_models_filename)
-    '''
+    
     # Save Data for later recall:
     print("Saving PAD models ...")
     np.savez(PAD_models_save_path, **PAD_models)
     print("Data Saved \n")
-    '''
+    
     # Load data from previous save
     PAD_models_load = np.load(PAD_models_save_path, allow_pickle=True)
     PAD_models = load_data(PAD_models_load) 
+    '''
+
+    #--- Find Scale Factor from alphaofK and PAD Model ---#
+    scale_factor = PAD_Scale_Factor(storm_data,Zhao_epoch_coeffs,alphaofK)
 
 #%% Test PAD Integral
 satellite = 'ns63'
-k = 0.1
-i_mu = 8
+k = 1
+i_mu = 4
 mu = Mu_set[i_mu]
 i_epoch = 180
 
@@ -143,76 +148,26 @@ b_sat = storm_data[satellite]['b_satellite'][i_epoch]
 b_eq = storm_data[satellite]['b_equator'][i_epoch]
 b_fpt = storm_data[satellite]['b_footpoint'][i_epoch]
 b_min = storm_data[satellite]['b_min'][i_epoch]
-integral_test = PAD_Integral(b_sat,b_eq,b_fpt,b_min,Zhao_test_coeffs)
-print(integral_test)
 
-def Zhao_Integral_batch(a, C):
-    P = np.array([
-        2 / a -       2 / a**2,
-        2 / a -  20 / 3 / a**2 +  14 / 3 / a**3,
-        2 / a -      14 / a**2 + 126 / 5 / a**3 -    66 / 5 / a**4,
-        2 / a -      24 / a**2 + 396 / 5 / a**3 - 3432 / 35 / a**4 +    286 / 7 / a**5,
-        2 / a - 110 / 3 / a**2 + 572 / 3 / a**3 -  2860 / 7 / a**4 + 24310 / 63 / a**5 - 8398 / 63 / a**6
-    ]) * a / 2
-    return np.sum(C * P) + 2/a
+a = b_sat/b_eq
+b = b_fpt/b_min
 
-test_batch = Zhao_Integral_batch(b_sat/b_eq,Zhao_test_coeffs)
-print(test_batch)
+x = np.sqrt(1 - 1/a)
+y = np.sqrt(1 - 1/b)
 
-PAD_epoch = PAD_models[satellite][k][mu]['Model'].values[i_epoch,:]
-alpha_epoch = PAD_models[satellite][k][mu]['pitch_angles'].values[i_epoch,:]
-loss_cone_epoch = storm_data[satellite]['loss_cone'][i_epoch]
-local90_epoch = storm_data[satellite]['local90PA'][i_epoch]
-integral_mask = (alpha_epoch >= loss_cone_epoch) & (alpha_epoch <= local90_epoch)
-alpha_epoch_rad = np.deg2rad(alpha_epoch)
-integrand = PAD_epoch * np.sin(alpha_epoch_rad)
-numerical_integral_test = 2 * 2*np.pi*np.trapz(PAD_epoch[integral_mask]*np.sin(alpha_epoch_rad[integral_mask]),alpha_epoch_rad[integral_mask])
-print(numerical_integral_test)
+coeffs = Zhao_epoch_coeffs[satellite][k][mu].values
+alphaofK_data = alphaofK[satellite]['AlphaofK'].values
+P = define_Legendre(alphaofK_data[:,1])
+PAD_models = np.sum(coeffs * P, axis=1) + 1
+P_int = define_Legendre_Int(x,y)
+PAD_integral = 2 * 2*np.pi * (np.sum(coeffs * P_int, axis=1) + (P0_int(y) - P0_int(x)))
 
-integral2_mask = (alpha_epoch <= local90_epoch)
-numerical_integral2_test = 2 * 2*np.pi * np.trapz(PAD_epoch[integral2_mask]*np.sin(alpha_epoch_rad[integral2_mask]),np.deg2rad(alpha_epoch[integral2_mask]))
-print(numerical_integral2_test)
-
-def P0_int(x):
-    return x
-def P2_int(x):
-    return 1/2*(-x + x**3)
-def P4_int(x):
-    return 1/8*(3*x - 10*x**3 + 7*x**5)
-def P6_int(x):
-    return 1/16*(-5*x + 35*x**3 - 63*x**5 + 33*x**7)
-def P8_int(x):
-    return 1/128*(35*x - 420*x**3 + 1386*x**5 - 1716*x**7 + 715*x**9)
-def P10_int(x):
-    return 1/256*(-63*x + 1155*x**3 - 6006*x**5 + 12870*x**7 - 12155*x**9 + 4199*x**11)
-
-def Zhao_Integral_batch(a, b, C):
-    x = np.sqrt(1 - 1/a)
-    y = np.sqrt(1 - 1/b)
-    P = np.array([
-        P2_int(y) - P2_int(x),
-        P4_int(y) - P4_int(x),
-        P6_int(y) - P6_int(x),
-        P8_int(y) - P8_int(x),
-        P10_int(y) - P10_int(x),
-    ])
-    return 2 * 2*np.pi * (np.sum(C * P) + (P0_int(y) - P0_int(x)))
-
-test_batch = Zhao_Integral_batch(b_sat/b_eq,b_fpt/b_min,Zhao_test_coeffs)
-print(test_batch)
-
-def Zhao_Integral_batch2(a, C):
-    x = np.sqrt(1 - 1/a)
-    P = np.array([
-        P2_int(1) - P2_int(x),
-        P4_int(1) - P4_int(x),
-        P6_int(1) - P6_int(x),
-        P8_int(1) - P8_int(x),
-        P10_int(1) - P10_int(x),
-    ])
-    return 2 * 2*np.pi * (np.sum(C * P) + (P0_int(1) - P0_int(x)))
-
-test_batch2 = Zhao_Integral_batch2(b_sat/b_eq,Zhao_test_coeffs)
-print(test_batch2)
+fig, ax = plt.subplots(figsize=(8, 5))
+for i_Mu in range(len(Mu_set)):
+    mu = Mu_set[i_Mu]
+    ax.scatter(storm_data[satellite]['local90PA'], scale_factor[satellite][k].values[:,i_Mu],
+               label=f'Mu = {mu:.2f}')
+#ax.set_xlim(min(alpha_list), max(alpha_list))
+ax.legend(title='Mu Values', loc='best', fontsize=10)
 
 # %%

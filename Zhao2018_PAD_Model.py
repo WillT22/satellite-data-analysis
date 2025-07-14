@@ -176,6 +176,7 @@ def find_Zhao_PAD_coeffs(gps_data, EnergyofMuAlpha):
     energy_bins = np.array(list(Zhao_coeffs.keys()), dtype=float)
     # --- Outer Loop: Iterate through each satellite in the GPS data ---
     for satellite, sat_data in gps_data.items():
+        print(f"    Extracting Coefficients for satellite {satellite}")
         Zhao_epoch_coeffs[satellite] = {}
         # Get the matrix of energy values for each Mu and Epoch for the current satellite.
         sat_energyofmualpha = EnergyofMuAlpha[satellite]
@@ -275,7 +276,7 @@ def define_Legendre(alpha):
     alpha_rad = np.radians(alpha)
     P = np.array([legendre(2)(np.cos(alpha_rad)), legendre(4)(np.cos(alpha_rad)), legendre(6)(np.cos(alpha_rad)),
                   legendre(8)(np.cos(alpha_rad)), legendre(10)(np.cos(alpha_rad))])
-    return P
+    return P.transpose()
 
 def create_PAD(gps_data, Zhao_epoch_coeffs, AlphaofK):
     print("Creating PAD Models...")
@@ -313,4 +314,82 @@ def create_PAD(gps_data, Zhao_epoch_coeffs, AlphaofK):
     print("PAD Models Completed")
     return PAD_models
 
-# %%
+#%% Find Integral of Normalized PAD between Loss Cone and Local 90 PA
+def P0_int(x):
+    return x
+def P2_int(x):
+    return 1/2*(-x + x**3)
+def P4_int(x):
+    return 1/8*(3*x - 10*x**3 + 7*x**5)
+def P6_int(x):
+    return 1/16*(-5*x + 35*x**3 - 63*x**5 + 33*x**7)
+def P8_int(x):
+    return 1/128*(35*x - 420*x**3 + 1386*x**5 - 1716*x**7 + 715*x**9)
+def P10_int(x):
+    return 1/256*(-63*x + 1155*x**3 - 6006*x**5 + 12870*x**7 - 12155*x**9 + 4199*x**11)
+
+def define_Legendre_Int(x,y):
+    P_int = np.array([
+        P2_int(y) - P2_int(x),
+        P4_int(y) - P4_int(x),
+        P6_int(y) - P6_int(x),
+        P8_int(y) - P8_int(x),
+        P10_int(y) - P10_int(x)])
+    return P_int.transpose()
+
+def PAD_Scale_Factor(gps_data, Zhao_epoch_coeffs, alphaofK):
+    PAD_scale_factor = {}
+    for satellite, coeff_data in Zhao_epoch_coeffs.items():
+        PAD_scale_factor[satellite] = {}
+        K_set = np.array(list(coeff_data.keys()), dtype=float)
+        
+        sat_data = gps_data[satellite]
+        
+        # Inputs for PAD Integration between LC and local90
+        b_satellite = sat_data['b_satellite']
+        b_equator = sat_data['b_equator']
+        b_footpoint = sat_data['b_footpoint']
+        b_min = sat_data['b_min']
+        a = b_satellite/b_equator
+        b = b_footpoint/b_min
+        
+        x = np.sqrt(1 - 1/a)
+        y = np.sqrt(1 - 1/b)
+
+        # Inputs for PAD model generation (and logic restriction)
+        loss_cone = sat_data['loss_cone']
+        local90PA = sat_data['local90PA']
+        alphaofK_data = alphaofK[satellite]['AlphaofK'].values
+        
+        for K_val, K_data in coeff_data.items():
+            i_K = np.where(K_set == K_val)[0][0]
+            Mu_set = np.array(list(K_data.keys()), dtype=float)
+            epoch_list = K_data[Mu_set[0]].index.tolist()
+            
+            # Initialize arrays
+            PAD_models = np.zeros((len(epoch_list),len(Mu_set)))
+            PAD_integral = np.zeros((len(epoch_list),len(Mu_set)))
+            PAD_scale_factor[satellite][K_val]= np.zeros((len(epoch_list),len(Mu_set)))
+            
+            for Mu_val, Mu_data in K_data.items():
+                coeffs = Mu_data.values
+                
+                # Only calculate values where any coefficients are nonzero
+                coeff_mask = np.sum(coeffs,axis=1) != 0
+                # Only calculate if the desired angle is between LC and local90
+                alpha_mask = (alphaofK_data[:,i_K] > loss_cone) & (alphaofK_data[:,i_K] <= local90PA)
+                # Combine masks
+                valid_mask = coeff_mask & alpha_mask
+                i_Mu = np.where(Mu_set == Mu_val)[0][0]
+                
+                # Find PAD Model value for Mu_set values
+                P = define_Legendre(alphaofK_data[:,i_K])
+                PAD_models[valid_mask,i_Mu] = np.sum(coeffs[valid_mask,:] * P[valid_mask,:], axis=1) + 1
+                
+                # Find integral between loss cone and local 90 degree pitch angle
+                P_int = define_Legendre_Int(x,y)
+                PAD_integral[:,i_Mu] = 2 * 2*np.pi * (np.sum(coeffs * P_int, axis=1) + (P0_int(y) - P0_int(x)))
+            
+            # PAD scale factor is the flux value of the model at desired angle divided by the integral of the model
+            PAD_scale_factor[satellite][K_val] = pd.DataFrame(PAD_models/PAD_integral, index=epoch_list, columns=Mu_set) 
+    return PAD_scale_factor

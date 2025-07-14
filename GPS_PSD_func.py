@@ -465,18 +465,3 @@ def EnergyofMuAlpha(gps_data, Mu_set, alphaofK):
             energyofmualpha[satellite][K] = pd.DataFrame(energyofmualpha[satellite][K], index=epoch_str, columns=Mu_set)
     print('Energies Calculated \n')
     return energyofmualpha
-
-#%% Find Integral of Normalized PAD between Loss Cone and Local 90 PA
-def PAD_Integral(b_satellite, b_equator, b_footpoint, b_min, C):
-    # C is Zhao coefficients for that timepoint
-    a = b_satellite / b_equator
-    b = b_footpoint / b_min
-    P0 = (2*np.sqrt(1 - a/b))/a
-    P = np.array([
-        1 - 1/a             - 1/(2*b),
-        1 + 7/(3*a**2)      - 10/(3*a)          + 7/(8*b**2)        - 5/(3*b)           + 7/(6*a*b),
-        1 - 33/(5*a**3)     + 63/(5*a**2)       - 7/a-33/(16*b**3)  + 189/(40*b**2)     - 99/(40*a*b**2)    - 7/(2*b)           - 33/(10*a**2*b)        + 63/(10*a*b),
-        1 + 143/(7*a**4)    - 1716/(35*a**3)    + 198/(5*a**2)      - 12/a              + 715/(128*b**4)    - 429/(28*b**3)     + 715/(112*a*b**3)      + 297/(20*b**2)         + 429/(56*a**2*b**2)    - 1287/(70*a*b**2)          - 6/b                   + 143/(14*a**3*b)   - 858/(35*a**2*b)       + 99/(5*a*b),
-        1 - 4199/(63*a**5)  + 12155/(63*a**4)   - 1430/(7*a**3)     + 286/(3*a**2)      - 55/(3*a)          - 4199/(256*b**5)   + 60775/(1152*b**4)     - 20995/(1152*a*b**4)   - 3575/(56*b**3)        - 20995/(1008*a**2*b**3)    + 60775/(1008*a*b**3)   + 143/(4*b**2)      - 4199/(168*a**3*b**2)  + 12155/(168*a**2*b**2)     - 2145/(28*a*b**2)  - 55/(6*b)  + 143/(14*a**3*b)   - 858/(35*a**2*b)   + 99/(5*a*b)
-    ]) * P0 * a/2
-    return np.sum(C * P) + P0
