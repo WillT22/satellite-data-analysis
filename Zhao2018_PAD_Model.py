@@ -227,7 +227,7 @@ def find_Zhao_PAD_coeffs(gps_data, EnergyofMuAlpha):
                     
                     # --- Primary Filter Condition ---
                     # Do NOT extrapolate outside of energy channel range!
-                    if (energy_value > echannel_min and energy_value < echannel_max and Lshell <= 6):
+                    if (energy_value >= echannel_min and energy_value <= echannel_max and Lshell <= 6):
                         # Find the closest energy bin in Zhao_coeffs for the current energy_value.
                         i_energy = np.argmin(np.abs(energy_value-energy_bins))
                         ebin_value = energy_bins[i_energy]

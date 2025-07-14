@@ -6,6 +6,7 @@ import datetime as dt
 import spacepy.time as spt
 from spacepy import coordinates as Coords
 import numpy as np
+import scipy
 import scipy.constants as sc
 import math
 import pandas as pd
@@ -465,3 +466,58 @@ def EnergyofMuAlpha(gps_data, Mu_set, alphaofK):
             energyofmualpha[satellite][K] = pd.DataFrame(energyofmualpha[satellite][K], index=epoch_str, columns=Mu_set)
     print('Energies Calculated \n')
     return energyofmualpha
+
+#%% Calculate Energy Spectra
+def reletavistic_Maxwellian(energies, n, T): # Based on Maxwell-Juttner distribution from gps data readme
+    c_cms = sc.c * 10**2
+    p = np.sqrt((energies + E0)**2 - E0**2) / sc.c # reletavistic momentum in MeV/c
+    K2 = scipy.special.kn(2, E0/T) # modified Bessel function of the second kind
+    j_MJ = n * c_cms /(4*np.pi*T*K2*np.exp(E0/T)) * p**2*sc.c**2/E0**2 * np.exp(-energies/T)
+    return j_MJ
+
+def Gaussian(energies, n, mu, sigma):
+    c_cms = sc.c * 10**2
+    p = np.sqrt((energies + E0)**2 - E0**2) / sc.c # reletavistic momentum in MeV/c
+    j_G = n * np.exp(-np.log(p*sc.c/mu)**2/(2*sigma**2))
+    return j_G
+
+def energy_spectra(gps_data, energyofMuAlpha):
+    j_CXD = {}
+    for satellite, sat_data in gps_data.items():
+        echannel_min = sat_data['Energy_Channels'][0]
+        echannel_max = sat_data['Energy_Channels'][-1]
+        
+        j_CXD[satellite] = {}
+        
+        efitpars = sat_data['efitpars']
+        n1      = efitpars[:,0]     # number density of MJ1
+        T1      = efitpars[:,1]     # temperature of MJ1
+        n2      = efitpars[:,2]     # number density of MJ2
+        T2      = efitpars[:,3]     # temperature of MJ2
+        n3      = efitpars[:,4]     # number density of MJ3
+        T3      = efitpars[:,5]     # temperature of MJ3
+        nG      = efitpars[:,6]     # number density of Gaussian
+        muG     = efitpars[:,7]     # reletavistic momentum at Gaussian peak
+        sigma   = efitpars[:,8]     # standard deviation of Gaussian
+
+        energy_data = energyofMuAlpha[satellite]
+        for K_val, K_data in energy_data.items():
+            Mu_set = np.array(list(K_data.keys()), dtype=float)
+            epoch_list = K_data[Mu_set[0]].index.tolist()
+            j_CXD[satellite][K_val] = np.zeros((len(epoch_list),len(Mu_set)))
+            for Mu_val, Mu_data in K_data.items():
+                i_Mu = np.where(Mu_set == Mu_val)[0][0]
+
+                energies = Mu_data.values
+
+                # Do NOT extrapolate outside of energy channel range!
+                energy_mask = (energies >= echannel_min) & (energies <= echannel_max)
+                j_MJ1 = reletavistic_Maxwellian(energies,n1,T1)
+                j_MJ2 = reletavistic_Maxwellian(energies,n2,T2)
+                j_MJ3 = reletavistic_Maxwellian(energies,n3,T3)
+                j_G = Gaussian(energies,nG,muG,sigma)
+
+                j_CXD[satellite][K_val][energy_mask,i_Mu] = j_MJ1[energy_mask] + j_MJ2[energy_mask] + j_MJ3[energy_mask] + j_G[energy_mask]
+
+            j_CXD[satellite][K_val] = pd.DataFrame(j_CXD[satellite][K_val], index=epoch_list, columns=Mu_set) 
+    return j_CXD

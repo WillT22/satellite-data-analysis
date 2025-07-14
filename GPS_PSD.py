@@ -9,12 +9,13 @@ import scipy.constants as sc
 import math
 import matplotlib
 import matplotlib.pyplot as plt
+import pandas as pd
 
 import importlib
 import GPS_PSD_func
 importlib.reload(GPS_PSD_func)
 from GPS_PSD_func import (import_GPS, data_period, QinDenton_period, data_from_gps, load_data,
-                            AlphaOfK, MuofEnergyAlpha, EnergyofMuAlpha)
+                            AlphaOfK, MuofEnergyAlpha, EnergyofMuAlpha, energy_spectra)
 import Zhao2018_PAD_Model
 importlib.reload(Zhao2018_PAD_Model)
 from Zhao2018_PAD_Model import (import_Zhao_coeffs, find_Zhao_PAD_coeffs, create_PAD, PAD_Scale_Factor, define_Legendre, define_Legendre_Int, P0_int)
@@ -22,7 +23,7 @@ from Zhao2018_PAD_Model import (import_Zhao_coeffs, find_Zhao_PAD_coeffs, create
 #%% Global Variables
 textsize = 16
 Re = 6378.137 #Earth's Radius
-K_set = [0.1,1] # R_E*G^(1/2)
+K_set = np.array((0.1,1)) # R_E*G^(1/2)
 
 # Conversions
 # electron mass in MeV is (m_e [kg] * c^2 [m^2/s^2]) [J] / (sc.eV [J/eV] * 10^6 [eV/MeV])
@@ -136,18 +137,31 @@ if __name__ == '__main__':
     #--- Find Scale Factor from alphaofK and PAD Model ---#
     scale_factor = PAD_Scale_Factor(storm_data,Zhao_epoch_coeffs,alphaofK)
 
+### Find Flux at Set Energy ###
+    flux_energyofmualpha = energy_spectra(storm_data, energyofmualpha)
+
+### Find Flux at Set Pitch Angle and Energy
+    flux = {}
+    for satellite, sat_data in storm_data.items():
+        flux[satellite] = {}
+        epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
+        for i_K, K_value in enumerate(K_set):
+            flux[satellite][K_value] = flux_energyofmualpha[satellite][K_value].values * scale_factor[satellite][K_value].values
+            flux[satellite][K_value] = pd.DataFrame(flux[satellite][K_value], index = epoch_str, columns=Mu_set)
+
 #%% Test PAD Integral
 satellite = 'ns63'
-k = 1
+k = 0.1
+i_K = np.where(K_set == k)[0]
 i_mu = 4
 mu = Mu_set[i_mu]
 i_epoch = 180
 
-Zhao_test_coeffs = Zhao_epoch_coeffs[satellite][k][mu].values[i_epoch,:]
-b_sat = storm_data[satellite]['b_satellite'][i_epoch]
-b_eq = storm_data[satellite]['b_equator'][i_epoch]
-b_fpt = storm_data[satellite]['b_footpoint'][i_epoch]
-b_min = storm_data[satellite]['b_min'][i_epoch]
+Zhao_test_coeffs = Zhao_epoch_coeffs[satellite][k][mu].values
+b_sat = storm_data[satellite]['b_satellite']
+b_eq = storm_data[satellite]['b_equator']
+b_fpt = storm_data[satellite]['b_footpoint']
+b_min = storm_data[satellite]['b_min']
 
 a = b_sat/b_eq
 b = b_fpt/b_min
@@ -160,14 +174,47 @@ alphaofK_data = alphaofK[satellite]['AlphaofK'].values
 P = define_Legendre(alphaofK_data[:,1])
 PAD_models = np.sum(coeffs * P, axis=1) + 1
 P_int = define_Legendre_Int(x,y)
-PAD_integral = 2 * 2*np.pi * (np.sum(coeffs * P_int, axis=1) + (P0_int(y) - P0_int(x)))
+PAD_integral = np.array(2 * 2*np.pi * (np.sum(coeffs * P_int, axis=1) + (P0_int(y) - P0_int(x))))
 
+
+local90PA = storm_data[satellite]['local90PA']
+loss_cone = storm_data[satellite]['loss_cone']
+alphaofK_data = alphaofK[satellite]['AlphaofK'].values
+alpha_mask = (alphaofK_data[:,i_K].flatten() > loss_cone) & (alphaofK_data[:,i_K].flatten() <= local90PA)
 fig, ax = plt.subplots(figsize=(8, 5))
 for i_Mu in range(len(Mu_set)):
     mu = Mu_set[i_Mu]
-    ax.scatter(storm_data[satellite]['local90PA'], scale_factor[satellite][k].values[:,i_Mu],
+    coeffs = Zhao_epoch_coeffs[satellite][k][mu].values
+    coeff_mask = np.sum(coeffs,axis=1) != 0
+    mask = coeff_mask & alpha_mask
+    ax.scatter(local90PA[mask], scale_factor[satellite][k].values[mask,i_Mu],
                label=f'Mu = {mu:.2f}')
 #ax.set_xlim(min(alpha_list), max(alpha_list))
 ax.legend(title='Mu Values', loc='best', fontsize=10)
+ax.set_xlabel(r'Local Pitch Angle $\alpha$')
+ax.set_ylabel(r'Scale Factor')
 
+# %%
+vis_E = energyofmualpha[satellite][k]
+vis_fluxE = flux_energyofmualpha[satellite][k]
+import pandas as pd
+import scipy
+energy_channels = storm_data[satellite]['Energy_Channels']
+vis_fluxdata = pd.DataFrame(storm_data[satellite]['electron_diff_flux'],columns=energy_channels)
+
+energies = energyofmualpha[satellite][k].values[:,i_mu]
+efitpars = storm_data[satellite]['efitpars']
+n1      = efitpars[:,0]     # number density of MJ1
+T1      = efitpars[:,1]     # temperature of MJ1
+n2      = efitpars[:,2]     # number density of MJ2
+T2      = efitpars[:,3]     # temperature of MJ2
+n3      = efitpars[:,4]     # number density of MJ3
+T3      = efitpars[:,5]     # temperature of MJ3
+nG      = efitpars[:,6]     # number density of Gaussian
+muG     = efitpars[:,7]     # reletavistic momentum at Gaussian peak
+sigma   = efitpars[:,8]     # standard deviation of Gaussian
+c_cms = sc.c * 10**2
+p = np.sqrt((energies + E0)**2 - E0**2)# reletavistic momentum in MeV/c
+K2 = np.array(scipy.special.kn(2, E0/T1)) # modified Bessel function of the second kind
+j_MJ = n1 * c_cms /(4*np.pi*T1*K2*np.exp(E0/T1)) * p**2/E0**2 * np.exp(-energies/T1)
 # %%
