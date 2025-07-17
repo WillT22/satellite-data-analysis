@@ -112,28 +112,20 @@ def time_average_FESA(epoch, position, FESA, MLT, time_delta = 1):
 
 #%% Time average for time period resolution for FEDU data
 def time_average_FEDU(epoch, position, FEDU, time_delta = 1):
-    
-    if not isinstance(time_delta, int) or time_delta <= 0:
-        raise ValueError("time_delta must be a positive integer representing minutes.")
-
     # Find minutes of whole period
-    current_bin_start = epoch[0].replace(second=0, microsecond=0)
-    print(current_bin_start)
-    start_time_period = current_bin_start - datetime.timedelta(minutes=current_bin_start.minute % time_delta)
-    
-    # Create time bounds within which data is averaged
-    averaged_epochs = []
-    
-    while current_bin_start <= epoch[-1]:
-        averaged_epochs.append(current_bin_start)
-        current_bin_start += datetime.timedelta(minutes=time_delta)
+    epoch_minutes = [epoch[0].replace(second=0, microsecond=0)]
+    for time_index in range(len(epoch[1:])):
+        if epoch[time_index].minute != epoch[time_index-1].minute:
+            epoch_minutes.append(epoch[time_index].replace(second=0, microsecond=0))
             
     # Find average position each minute
     average_positions = []
     average_FEDU = []
-    for bin_start_time in averaged_epochs:
-        bin_end_time = bin_start_time + datetime.timedelta(minutes=time_delta)
-        minute_indices = np.where((np.array(epoch) >= bin_start_time) & (np.array(epoch) < bin_end_time))[0]
+    for minute_index in range(len(epoch_minutes)):
+        minute_start = epoch_minutes[minute_index] - datetime.timedelta(seconds=30)
+        print(minute_start)
+        minute_end =  epoch_minutes[minute_index] + datetime.timedelta(seconds=30)
+        minute_indices = np.where((np.array(epoch) >= minute_start) & (np.array(epoch) < minute_end))[0]
         
         if minute_indices.size > 0:
             average_positions.append(np.mean(position[minute_indices], axis=0))

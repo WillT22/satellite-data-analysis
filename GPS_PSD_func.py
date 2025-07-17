@@ -147,6 +147,36 @@ def limit_Lshell(time_restricted_data, Lshell, intMag = 'IGRF', extMag = 'T89'):
         lshell_time_restricted_data[satellite] = sat_data[sat_data[model_var] <= Lshell]
     return lshell_time_restricted_data
 
+#%% Set magnetic field model coefficients to closest time of QinDenton data
+## Someday, replace this with Lgm_QinDenton in LANLGeoMag...
+def QD_inform_MagInfo(time, MagInfo):
+    # Round down to the nearest 5 minutes
+    time_dt = time.UTC[0] # Assumes time is a spacepy TickTock object
+    minutes_to_subtract = time_dt.minute % 5
+    rounded_dt = time_dt - dt.timedelta(
+        minutes=minutes_to_subtract,
+        seconds=time_dt.second,
+        microseconds=time_dt.microsecond
+    )
+    time_index = int(np.where(QD_data['DateTime']==rounded_dt)[0])
+    # Map each variable from QD_data to MagInfo
+    MagInfo.contents.By    = c_double(QD_data['ByIMF'][time_index])
+    MagInfo.contents.Bz    = c_double(QD_data['BzIMF'][time_index])
+    MagInfo.contents.P     = c_double(QD_data['Pdyn'][time_index])
+    MagInfo.contents.G1    = c_double(QD_data['G'][time_index][0])
+    MagInfo.contents.G2    = c_double(QD_data['G'][time_index][1])
+    MagInfo.contents.G3    = c_double(QD_data['G'][time_index][2])
+    MagInfo.contents.Kp    = c_int(round(QD_data['Kp'][time_index]))
+    MagInfo.contents.fKp   = c_double(QD_data['Kp'][time_index])
+    MagInfo.contents.Dst   = c_double(QD_data['Dst'][time_index])
+    MagInfo.contents.W[0]  = c_double(QD_data['W'][time_index][0])
+    MagInfo.contents.W[1]  = c_double(QD_data['W'][time_index][1])
+    MagInfo.contents.W[2]  = c_double(QD_data['W'][time_index][2])
+    MagInfo.contents.W[3]  = c_double(QD_data['W'][time_index][3])
+    MagInfo.contents.W[4]  = c_double(QD_data['W'][time_index][4])
+    MagInfo.contents.W[5]  = c_double(QD_data['W'][time_index][5])
+    return
+
 #%% Find local pitch angle
 def find_local90PA(sat_data):
     local90PA = {}
@@ -215,21 +245,25 @@ def data_from_gps(time_restricted_data, Lshell = [], intMag = 'IGRF', extMag = '
         else:
             print("Error: Lshell must be a scalar")
 
-        R = sat_data['Rad_Re'][Lmask]
-        Lat = np.deg2rad(sat_data['Geographic_Latitude'][Lmask])
-        Lon = np.deg2rad(sat_data['Geographic_Longitude'][Lmask])
+        efit_mask = ((np.max(np.log10(time_restricted_data[satellite]['model_counts_electron_fit'][:,0:5]/time_restricted_data[satellite]['electron_diff_flux'][:,0:5]),axis=1) <= 0.11) 
+                                                | (np.sum(time_restricted_data[satellite]['electron_diff_flux'][:,0:5]==-1,axis=1)==0))
+        mask = Lmask & efit_mask
+
+        R = sat_data['Rad_Re'][mask]
+        Lat = np.deg2rad(sat_data['Geographic_Latitude'][mask])
+        Lon = np.deg2rad(sat_data['Geographic_Longitude'][mask])
 
         position_init = Coords.Coords(np.column_stack((R,np.pi-Lat,Lon)),'GEO','sph')
-        position_init.ticks = sat_data['Epoch'][Lmask]
+        position_init.ticks = sat_data['Epoch'][mask]
         gps_data_out[satellite]['Position'] = position_init.convert('GSM','car')
 
         for var_name in chosen_vars:
             if var_name == 'local_time':
-                gps_data_out[satellite]['MLT'] = time_restricted_data[satellite][var_name][Lmask]
+                gps_data_out[satellite]['MLT'] = time_restricted_data[satellite][var_name][mask]
             elif var_name == 'electron_diff_flux_energy':
                 gps_data_out[satellite]['Energy_Channels'] = time_restricted_data[satellite][var_name][0]
             else:
-                gps_data_out[satellite][var_name] = time_restricted_data[satellite][var_name][Lmask]
+                gps_data_out[satellite][var_name] = time_restricted_data[satellite][var_name][mask]
 
         gps_data_out[satellite]['local90PA'] = find_local90PA(gps_data_out[satellite])
         gps_data_out[satellite]['b_min'], gps_data_out[satellite]['b_footpoint'], gps_data_out[satellite]['loss_cone'] = find_Loss_Cone(gps_data_out[satellite])
@@ -244,9 +278,15 @@ def load_data(npzfile):
     loaded_data = {}
     for satellite, sat_data in npzfile.items():
         loaded_data[satellite] = {}
-        temp_inner_dict = sat_data.item()
-        for item, item_data in temp_inner_dict.items():
-            loaded_data[satellite][item] = item_data
+        if isinstance(sat_data, np.ndarray):
+            if sat_data.ndim == 0 and sat_data.dtype == object:
+                temp_inner_dict = sat_data.item()
+                for item, item_data in temp_inner_dict.items():
+                    loaded_data[satellite][item] = item_data
+            elif sat_data.ndim > 0:
+                loaded_data[satellite] = sat_data
+        elif isinstance(sat_data, pd.DataFrame):
+            loaded_data[satellite] = sat_data
     print("Data Loaded \n")
     return loaded_data
 
@@ -256,36 +296,6 @@ def ticktock_to_Lgm_DateTime(ticktock, c):
     lgm_dt = lgm_lib.Lgm_DateTime_Create(dt_obj.year, dt_obj.month, dt_obj.day, 
                                 dt_obj.hour+dt_obj.minute/60+dt_obj.second/3600, lgm_lib.LGM_TIME_SYS_UTC, c)
     return lgm_dt 
-
-#%% Set magnetic field model coefficients to closest time of QinDenton data
-## Someday, replace this with Lgm_QinDenton in LANLGeoMag...
-def QD_inform_MagInfo(time, MagInfo):
-    # Round down to the nearest 5 minutes
-    time_dt = time.UTC[0] # Assumes time is a spacepy TickTock object
-    minutes_to_subtract = time_dt.minute % 5
-    rounded_dt = time_dt - dt.timedelta(
-        minutes=minutes_to_subtract,
-        seconds=time_dt.second,
-        microseconds=time_dt.microsecond
-    )
-    time_index = int(np.where(QD_data['DateTime']==rounded_dt)[0])
-    # Map each variable from QD_data to MagInfo
-    MagInfo.contents.By    = c_double(QD_data['ByIMF'][time_index])
-    MagInfo.contents.Bz    = c_double(QD_data['BzIMF'][time_index])
-    MagInfo.contents.P     = c_double(QD_data['Pdyn'][time_index])
-    MagInfo.contents.G1    = c_double(QD_data['G'][time_index][0])
-    MagInfo.contents.G2    = c_double(QD_data['G'][time_index][1])
-    MagInfo.contents.G3    = c_double(QD_data['G'][time_index][2])
-    MagInfo.contents.Kp    = c_int(round(QD_data['Kp'][time_index]))
-    MagInfo.contents.fKp   = c_double(QD_data['Kp'][time_index])
-    MagInfo.contents.Dst   = c_double(QD_data['Dst'][time_index])
-    MagInfo.contents.W[0]  = c_double(QD_data['W'][time_index][0])
-    MagInfo.contents.W[1]  = c_double(QD_data['W'][time_index][1])
-    MagInfo.contents.W[2]  = c_double(QD_data['W'][time_index][2])
-    MagInfo.contents.W[3]  = c_double(QD_data['W'][time_index][3])
-    MagInfo.contents.W[4]  = c_double(QD_data['W'][time_index][4])
-    MagInfo.contents.W[5]  = c_double(QD_data['W'][time_index][5])
-    return
 
 #%% Find pitch angle corresponding to set K
 def AlphaOfK(gps_data, K_set, extMag = 'T89'):
@@ -314,11 +324,8 @@ def AlphaOfK(gps_data, K_set, extMag = 'T89'):
 
     for satellite, sat_data in gps_data.items():
         print(f"    Calculating Alpha for satellite {satellite}")
-        alphaofK[satellite] = {}
-        alphaofK[satellite]['Epoch'] = sat_data['Epoch']
-        alphaofK[satellite]['K_set'] = K_set
-        alphaofK[satellite]['AlphaofK'] = np.zeros((len(sat_data['Epoch']),k_dim_size))
-        alphaofK[satellite]['AlphaofK'].fill(np.nan)
+        alphaofK[satellite] = np.zeros((len(sat_data['Epoch']),k_dim_size))
+        alphaofK[satellite].fill(np.nan)
         for i_K in range(k_dim_size):
             if isinstance(K_set, (np.ndarray, list)):
                 current_K_value = K_set[i_K]
@@ -329,11 +336,11 @@ def AlphaOfK(gps_data, K_set, extMag = 'T89'):
                 current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
                 QD_inform_MagInfo(epoch, MagInfo)
                 lgm_lib.Lgm_Setup_AlphaOfK(current_time, current_vec, MagInfo)
-                alphaofK[satellite]['AlphaofK'][i_epoch,i_K] = lgm_lib.Lgm_AlphaOfK(current_K_value, MagInfo)
+                alphaofK[satellite][i_epoch,i_K] = lgm_lib.Lgm_AlphaOfK(current_K_value, MagInfo)
                 lgm_lib.Lgm_TearDown_AlphaOfK(MagInfo)
         if k_dim_size > 1:
             epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-            alphaofK[satellite]['AlphaofK'] = pd.DataFrame(alphaofK[satellite]['AlphaofK'], index=epoch_str, columns=K_set)
+            alphaofK[satellite] = pd.DataFrame(alphaofK[satellite], index=epoch_str, columns=K_set)
     print('Pitch Angles Calculated \n')
     return alphaofK
 
@@ -367,7 +374,7 @@ def MuofEnergyAlpha(gps_data, alphaofK):
         epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
         
         # Determine the size of the first dimension based on K_set's type
-        K_set = np.array(list(alphaofK[satellite]['AlphaofK'].columns.tolist()), dtype=float)
+        K_set = np.array(list(alphaofK[satellite].columns.tolist()), dtype=float)
         if isinstance(K_set, (np.ndarray, list)):
             k_dim_size = len(K_set)
         else: # Assume it's a scalar (float, int) if not an array/list
@@ -380,10 +387,10 @@ def MuofEnergyAlpha(gps_data, alphaofK):
                 K = K_set
             muofenergyalpha[satellite]['MuofEnergyAlpha'][K] = np.zeros((len(sat_data['Epoch']),sat_data['Energy_Channels'].shape[0]))
             # Convert Alpha_set to radians
-            if isinstance(alphaofK[satellite]['AlphaofK'], pd.DataFrame):
-                alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'].values[:,i_K])
+            if isinstance(alphaofK[satellite], pd.DataFrame):
+                alpha_rad = np.radians(alphaofK[satellite].values[:,i_K])
             else:
-                alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'][:,i_K])
+                alpha_rad = np.radians(alphaofK[satellite][:,i_K])
             # Calculate sin^2(Alpha)
             sin_squared_alpha = np.sin(alpha_rad)**2
             for ch, channel in enumerate(sat_data['Energy_Channels']):
@@ -435,13 +442,13 @@ def EnergyofMuAlpha(gps_data, Mu_set, alphaofK):
     for satellite, sat_data in gps_data.items():
         energyofmualpha[satellite] = {}
         # Convert Alpha_set to radians
-        alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'])
+        alpha_rad = np.radians(alphaofK[satellite])
 
         # Calculate sin^2(Alpha)
         sin_squared_alpha = np.sin(alpha_rad)**2 
         
         epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-        K_set = alphaofK[satellite]['K_set']
+        K_set = np.array(alphaofK[satellite].columns.tolist(), dtype=float)
         if isinstance(K_set, (np.ndarray, list)):
             k_dim_size = len(K_set)
         else: # Assume it's a scalar (float, int) if not an array/list
@@ -454,10 +461,10 @@ def EnergyofMuAlpha(gps_data, Mu_set, alphaofK):
                 K = K_set
             energyofmualpha[satellite][K] = np.zeros((len(sat_data['Epoch']),Mu_set.shape[0]))
             # Convert Alpha_set to radians
-            if isinstance(alphaofK[satellite]['AlphaofK'], pd.DataFrame):
-                alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'].values[:,i_K])
+            if isinstance(alphaofK[satellite], pd.DataFrame):
+                alpha_rad = np.radians(alphaofK[satellite].values[:,i_K])
             else:
-                alpha_rad = np.radians(alphaofK[satellite]['AlphaofK'][:,i_K])
+                alpha_rad = np.radians(alphaofK[satellite][:,i_K])
             # Calculate sin^2(Alpha)
             sin_squared_alpha = np.sin(alpha_rad)**2
             for i_Mu, mu in enumerate(Mu_set):
@@ -482,6 +489,7 @@ def Gaussian(energies, n, mu, sigma):
     return j_G
 
 def energy_spectra(gps_data, energyofMuAlpha):
+    print('Calculating Energy Spectra for given Mus and Alphas...')
     j_CXD = {}
     for satellite, sat_data in gps_data.items():
         echannel_min = sat_data['Energy_Channels'][0]
@@ -520,4 +528,56 @@ def energy_spectra(gps_data, energyofMuAlpha):
                 j_CXD[satellite][K_val][energy_mask,i_Mu] = j_MJ1[energy_mask] + j_MJ2[energy_mask] + j_MJ3[energy_mask] + j_G[energy_mask]
 
             j_CXD[satellite][K_val] = pd.DataFrame(j_CXD[satellite][K_val], index=epoch_list, columns=Mu_set) 
+    print('Energy Spectra Calculated\n')
     return j_CXD
+
+#%% Transform from flux to PSD
+# Define the relativistic energy conversion factor for an electron.
+# This converts the rest mass energy of an electron (m_0*c^2) from Joules to MeV.
+E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6)
+
+def find_psd(j_CXD, energyofMuAlpha):
+    print('Calculating PSD for set Mus and Ks...')
+    psd = {}
+    for satellite, sat_flux in j_CXD.items():
+        psd[satellite] = {}
+        for K_val, K_data in sat_flux.items():
+            Mu_set = np.array(K_data.columns.tolist(), dtype=float)
+            epoch_list = K_data[Mu_set[0]].index.tolist()
+            psd[satellite][K_val] = np.zeros((len(epoch_list),len(Mu_set)))
+            psd[satellite][K_val].fill(np.nan)
+            energy_data = energyofMuAlpha[satellite][K_val].values
+            for i_Mu in range(len(Mu_set)):
+                mask = ~((np.isnan(K_data.values[:,i_Mu])) | (K_data.values[:,i_Mu]==0))
+                E_rel = energy_data[mask, i_Mu]**2 + 2 * energy_data[mask, i_Mu] * E0
+                psd[satellite][K_val][mask, i_Mu] = K_data.values[mask,i_Mu] / E_rel * 1.66e-10 * 1e-3 * 200.3
+            psd[satellite][K_val] = pd.DataFrame(psd[satellite][K_val], index=epoch_list, columns=Mu_set)
+    print('PSD Calculated\n')
+    return psd
+
+#%% Calculate L_star
+def find_Lstar(gps_data, alphaofK, intMag = 'IGRF', extMag = 'T89'):
+    print('Finding L* for set Ks...')
+    #MagEphemInfo = lgm_lib.Lgm_InitMagEphemInfo(1,1)
+    LstarInfo = lgm_lib.InitLstarInfo(0)
+    IntMagModel = c_int(lgm_lib.__dict__[f"LGM_IGRF"])
+    ExtMagModel = c_int(lgm_lib.__dict__[f"LGM_EXTMODEL_{extMag}"])
+    lgm_lib.Lgm_Set_MagModel(IntMagModel, ExtMagModel, LstarInfo.contents.mInfo)
+    
+    for satellite, sat_data in gps_data.items():
+        print(f"    Calculating L* for satellite {satellite}")
+        gps_data[satellite]['Lstar'] = np.zeros_like(alphaofK[satellite].values)
+        K_set = np.array(list(alphaofK[satellite].columns.tolist()), dtype=float)
+        for i_K, K_val in enumerate(K_set):
+            for i_epoch, epoch in enumerate(sat_data['Epoch']):
+                # Could possibly speed up with NewTimeLstarInfo
+                current_time = ticktock_to_Lgm_DateTime(epoch, LstarInfo.contents.mInfo.contents.c)
+                lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, LstarInfo.contents.mInfo.contents.c)
+                current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
+                QD_inform_MagInfo(epoch, LstarInfo.contents.mInfo)
+                LstarInfo.contents.PitchAngle = c_double(alphaofK[satellite].values[i_epoch,i_K])
+                lgm_lib.Lgm_SetLstarTolerances(3, 24, LstarInfo) # Do I need this?
+                lgm_lib.Lstar(pointer(current_vec), LstarInfo)
+                gps_data[satellite]['Lstar'][[i_epoch,i_K]] = LstarInfo.contents.LS
+    print('L* Found\n')
+    return gps_data

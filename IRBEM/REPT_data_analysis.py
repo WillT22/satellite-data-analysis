@@ -22,6 +22,9 @@ if script_dir not in sys.path:
     sys.path.insert(0, script_dir)
 
 # Import functions
+import importlib
+import analysis_functions
+importlib.reload(analysis_functions)
 from analysis_functions import (process_l3_data, time_average_FEDU, get_Omni, find_alpha, 
                                 energy_from_mu_alpha, average_fluxes_by_pitch_angle, 
                                 interpolate_flux_by_energy, interpolate_flux_by_alpha, find_psd)
@@ -83,10 +86,36 @@ if __name__ == '__main__':
         
 #% Time average flux for 1 minute resolution
     print("Averaging over 1 minute (RBSP-A)")
-    Epoch_A_averaged, Position_A_averaged, FEDU_A_averaged = time_average_FEDU(Epoch_A, Position_A, FEDU_A)
+    #Epoch_A_averaged, Position_A_averaged, FEDU_A_averaged = time_average_FEDU(Epoch_A, Position_A, FEDU_A)
     print("Averaging over 1 minute (RBSP-B)")
-    Epoch_B_averaged, Position_B_averaged, FEDU_B_averaged = time_average_FEDU(Epoch_B, Position_B, FEDU_B)
+    #Epoch_B_averaged, Position_B_averaged, FEDU_B_averaged = time_average_FEDU(Epoch_B, Position_B, FEDU_B)
+    '''
+    print("Saving Data")
+    # Create a dictionary to store the variables
+    data_to_save = {
+        'Epoch_A_averaged': Epoch_A_averaged,
+        'Position_A_averaged': Position_A_averaged,
+        'FEDU_A_averaged': FEDU_A_averaged,
+        'Epoch_B_averaged': Epoch_B_averaged,
+        'Position_B_averaged': Position_B_averaged,
+        'FEDU_B_averaged': FEDU_B_averaged,
+
+    }
+    # Save the dictionary to a .npz file (NumPy zip archive)
+    np.savez('/mnt/box/Multipoint_Box/REPT_Data/averaged_data.npz', **data_to_save)
+    '''
+    print("Loading Saved Data")
+    loaded_data = np.load('/mnt/box/Multipoint_Box/REPT_Data/averaged_data.npz', allow_pickle=True)
     
+    # Access the loaded variables
+    Epoch_A_averaged = loaded_data['Epoch_A_averaged']
+    Position_A_averaged = loaded_data['Position_A_averaged']
+    FEDU_A_averaged = loaded_data['FEDU_A_averaged']
+    Epoch_B_averaged = loaded_data['Epoch_B_averaged']
+    Position_B_averaged = loaded_data['Position_B_averaged']
+    FEDU_B_averaged = loaded_data['FEDU_B_averaged']
+    
+
 #% Average fluxes with the same pitch angle
     # use only unique values of alpha
     alpha_A_unique = np.array(sorted(list(set(np.round(alpha_A, 4)))))
@@ -219,7 +248,7 @@ if __name__ == '__main__':
     print("Calculating PSD (RBSP-B)") 
     psd_B = find_psd(FEDU_B_interpaE, energy_B_set)
 
-#%% Plot PSD
+#% Plot PSD
     fig, ax = plt.subplots(figsize=(16, 4))
     
     mu_select = 2
@@ -275,10 +304,21 @@ if __name__ == '__main__':
     plt.show()
     
     
-#%% Plot PSD lineplots
-    fig, ax = plt.subplots(figsize=(6, 4.5))
-    color_set = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(Mu_set), dtype=int)]
-    color_set[3] = [0, 1, 1, 1]  # Teal
+#% Plot PSD lineplots
+    print("Saving Data")
+    # Create a dictionary to store the variables
+    data_to_save = {
+        'Epoch_B_averaged': Epoch_B_averaged,
+        'MLT_B': MLT_B,
+        'Lstar_B_set': Lstar_B_set,
+        'psd_B': psd_B,
+        'energy_B_set': energy_B_set,
+        'FEDU_B_interpa': FEDU_B_interpa,
+        'FEDU_B_interpaE': FEDU_B_interpaE,
+        
+    }
+    # Save the dictionary to a .npz file (NumPy zip archive)
+    np.savez('/mnt/box/Multipoint_Box/REPT_Data/plot_data.npz', **data_to_save)
     
     time_start  = datetime(2017, 4, 23, 18, 45, 0)
     time_stop   = datetime(2017, 4, 23, 22, 58, 0)
@@ -311,7 +351,12 @@ if __name__ == '__main__':
     # Initialize arrays to store averaged values.
     averaged_lstar = np.zeros(len(lstar_intervals))
     averaged_psd = np.zeros((len(lstar_intervals), psd_B.shape[1]))
-    
+
+    fig, ax = plt.subplots(figsize=(6, 4.5))
+    color_set = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(Mu_set), dtype=int)]
+    color_set[3] = [0, 1, 1, 1]  # Teal
+
+
     for mu_index in range(len(Mu_set)):
         # Iterate through each Lstar interval.
         for i, lstar_val in enumerate(lstar_intervals):
