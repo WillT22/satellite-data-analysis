@@ -145,7 +145,7 @@ def import_Zhao_coeffs():
     return Zhao_coeffs
 
 #%% Find PAD coefficients from Zhao 2018 model
-def find_Zhao_PAD_coeffs(gps_data, EnergyofMuAlpha):
+def find_Zhao_PAD_coeffs(gps_data, QD_data, EnergyofMuAlpha):
     """
     Extracts Zhao coefficients for each epoch based on current conditions (Dst), set parameters (Energy), and satellite location (MLT, L)
     
@@ -266,7 +266,7 @@ def find_Zhao_PAD_coeffs(gps_data, EnergyofMuAlpha):
 
 #%% Create PAD from Zhao 2018 model coefficients
 def define_Legendre(alpha):
-    alpha_rad = np.radians(alpha)
+    alpha_rad = np.deg2rad(alpha)
     P = np.array([legendre(2)(np.cos(alpha_rad)), legendre(4)(np.cos(alpha_rad)), legendre(6)(np.cos(alpha_rad)),
                   legendre(8)(np.cos(alpha_rad)), legendre(10)(np.cos(alpha_rad))])
     return P.transpose()

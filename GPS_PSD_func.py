@@ -470,7 +470,7 @@ def EnergyofMuAlpha(gps_data, Mu_set, alphaofK):
             for i_Mu, mu in enumerate(Mu_set):
                 # Reminder, GPS Bfield data is in Gauss
                 energyofmualpha[satellite][K][:,i_Mu] = np.sqrt(2 * E0 * mu * sat_data['b_satellite'] / sin_squared_alpha + E0**2) - E0
-            energyofmualpha[satellite][K] = pd.DataFrame(energyofmualpha[satellite][K], index=epoch_str, columns=Mu_set)
+            energyofmualpha[satellite][K] = pd.DataFrame(energyofmualpha[satellite][K]/2, index=epoch_str, columns=Mu_set)
     print('Energies Calculated \n')
     return energyofmualpha
 
@@ -568,15 +568,15 @@ def find_Lstar(gps_data, alphaofK, intMag = 'IGRF', extMag = 'T89'):
         print(f"    Calculating L* for satellite {satellite}")
         gps_data[satellite]['Lstar'] = np.zeros_like(alphaofK[satellite].values)
         K_set = np.array(list(alphaofK[satellite].columns.tolist()), dtype=float)
-        for i_K, K_val in enumerate(K_set):
-            for i_epoch, epoch in enumerate(sat_data['Epoch']):
+        for i_epoch, epoch in enumerate(sat_data['Epoch']):
+            for i_K in range(len(K_set)):
                 # Could possibly speed up with NewTimeLstarInfo
                 current_time = ticktock_to_Lgm_DateTime(epoch, LstarInfo.contents.mInfo.contents.c)
                 lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, LstarInfo.contents.mInfo.contents.c)
                 current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
                 QD_inform_MagInfo(epoch, LstarInfo.contents.mInfo)
                 LstarInfo.contents.PitchAngle = c_double(alphaofK[satellite].values[i_epoch,i_K])
-                lgm_lib.Lgm_SetLstarTolerances(3, 24, LstarInfo) # Do I need this?
+                LstarInfo.contents.mInfo.contents.Bm = 0
                 lgm_lib.Lstar(pointer(current_vec), LstarInfo)
                 gps_data[satellite]['Lstar'][[i_epoch,i_K]] = LstarInfo.contents.LS
     print('L* Found\n')
