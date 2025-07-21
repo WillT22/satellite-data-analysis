@@ -101,14 +101,12 @@ def data_period(data, start_date, stop_date):
     print('Satellite Times Converted \n')
     
     print("Identifying Relevant Time Period...")
-    start_object = dt.datetime.strptime(start_date, "%m/%d/%Y")
-    stop_object = dt.datetime.strptime(stop_date, "%m/%d/%Y")
 
     time_restricted_data = {}
     # Iterate through each satellite's data again.
     for satellite, sat_data in data.items():
         # Create a boolean mask for the 'Epoch' data (which is a Ticktock object) between the date bounds
-        time_mask = (sat_data['Epoch'].UTC >= start_object) & (sat_data['Epoch'].UTC < stop_object)
+        time_mask = (sat_data['Epoch'].UTC >= start_date) & (sat_data['Epoch'].UTC < stop_date)
         for item, item_data in data[satellite].items():
             # Initialize the satellite's dictionary in time_restricted_data if it doesn't exist
             if satellite not in time_restricted_data:
@@ -124,8 +122,8 @@ def QinDenton_period(start_date, stop_date):
     print('Loading QinDenton Data...')
     QD_folder = "/home/will/QinDenton/"
     QD_filenames = []
-    current_date_object = dt.datetime.strptime(start_date, "%m/%d/%Y")
-    while current_date_object <= dt.datetime.strptime(stop_date, "%m/%d/%Y"):
+    current_date_object = start_date
+    while current_date_object <= stop_date:
         QD_year = os.path.join(QD_folder, str(current_date_object.year),'5min')
         QD_filenames.append(os.path.join(QD_year, f"QinDenton_{current_date_object.strftime("%Y%m%d")}_5min.txt"))
         current_date_object += dt.timedelta(days=1)
@@ -214,11 +212,11 @@ def find_Loss_Cone(sat_data, height = 100, extMag='T89'):
         lgm_lib.Lgm_Trace(pointer(current_vec), pointer(south_vec), pointer(north_vec), pointer(minB_vec),
                             height, 0.01, 1e-7, MagInfo)
                 
-        b_min[i_epoch] = MagInfo.contents.Bmin
+        b_min[i_epoch] = MagInfo.contents.Bmin * 1e-5
         if sat_data['Position'][i_epoch].z >= 0:
-            b_footpoint[i_epoch] = MagInfo.contents.Ellipsoid_Footprint_Bn
+            b_footpoint[i_epoch] = MagInfo.contents.Ellipsoid_Footprint_Bn * 1e-5
         else:
-            b_footpoint[i_epoch] = MagInfo.contents.Ellipsoid_Footprint_Bs
+            b_footpoint[i_epoch] = MagInfo.contents.Ellipsoid_Footprint_Bs * 1e-5
 
     loss_cone = np.rad2deg(np.arcsin(np.sqrt(b_min/b_footpoint)))
     print(f'        Loss Cone Found')
@@ -395,7 +393,7 @@ def MuofEnergyAlpha(gps_data, alphaofK):
             sin_squared_alpha = np.sin(alpha_rad)**2
             for ch, channel in enumerate(sat_data['Energy_Channels']):
                 # Reminder, GPS Bfield data is in Gauss
-                muofenergyalpha[satellite]['MuofEnergyAlpha'][K][:,ch] = (channel**2 + 2*channel*E0) * sin_squared_alpha / (2*E0*sat_data['b_satellite'])
+                muofenergyalpha[satellite]['MuofEnergyAlpha'][K][:,ch] = (channel**2 + 2*channel*E0) * sin_squared_alpha / (2*E0*sat_data['b_equator'])
 
             Mu_bounds[satellite][K] = np.zeros(2)
             Mu_bounds[satellite][K][0] = np.min(muofenergyalpha[satellite]['MuofEnergyAlpha'][K][:,0])
@@ -469,8 +467,8 @@ def EnergyofMuAlpha(gps_data, Mu_set, alphaofK):
             sin_squared_alpha = np.sin(alpha_rad)**2
             for i_Mu, mu in enumerate(Mu_set):
                 # Reminder, GPS Bfield data is in Gauss
-                energyofmualpha[satellite][K][:,i_Mu] = np.sqrt(2 * E0 * mu * sat_data['b_satellite'] / sin_squared_alpha + E0**2) - E0
-            energyofmualpha[satellite][K] = pd.DataFrame(energyofmualpha[satellite][K]/2, index=epoch_str, columns=Mu_set)
+                energyofmualpha[satellite][K][:,i_Mu] = np.sqrt(2 * E0 * mu * sat_data['b_equator'] / sin_squared_alpha + E0**2) - E0
+            energyofmualpha[satellite][K] = pd.DataFrame(energyofmualpha[satellite][K], index=epoch_str, columns=Mu_set)
     print('Energies Calculated \n')
     return energyofmualpha
 

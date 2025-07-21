@@ -308,14 +308,16 @@ if __name__ == '__main__':
     print("Saving Data")
     # Create a dictionary to store the variables
     data_to_save = {
+        'Position_B_averaged': Position_B_averaged,
         'Epoch_B_averaged': Epoch_B_averaged,
+        'Blocal_B': Blocal_B,
+        'alpha_B_set': alpha_B_set,
+        'energy_B_set': energy_B_set,
         'MLT_B': MLT_B,
         'Lstar_B_set': Lstar_B_set,
-        'psd_B': psd_B,
-        'energy_B_set': energy_B_set,
         'FEDU_B_interpa': FEDU_B_interpa,
         'FEDU_B_interpaE': FEDU_B_interpaE,
-        
+        'psd_B': psd_B        
     }
     # Save the dictionary to a .npz file (NumPy zip archive)
     np.savez('/mnt/box/Multipoint_Box/REPT_Data/plot_data.npz', **data_to_save)

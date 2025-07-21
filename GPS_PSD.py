@@ -34,8 +34,11 @@ E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6) # this is m_0*c^2
 base_save_folder = "/home/will/GPS_data/april2017storm/"
 extMag = 'T89'
 
-start_date  = "04/21/2017"
-stop_date   = "04/26/2017" # exclusive, end of the last day you want to see
+#start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
+#stop_date   = dt.datetime(2017, 4, 26, 00, 00, 0)
+
+start_date = dt.datetime(2017, 4, 24, 17, 7, 0)
+stop_date = dt.datetime(2017, 4, 24, 21, 35, 0)#
 
 QD_storm_data = QinDenton_period(start_date, stop_date)
 
@@ -56,18 +59,19 @@ if __name__ == '__main__':
     np.savez(raw_save_path, **loaded_data)
     print("Data Saved \n")
     '''
+    
     # Read in data from previous save
     raw_data_load = np.load(raw_save_path, allow_pickle=True)
     loaded_data = load_data(raw_data_load)
     raw_data_load.close()
-
+    
 ### Preprocessing ###    
     # Restrict to time period
-    #storm_data_raw = data_period(loaded_data, start_date, stop_date)
+    storm_data_raw = data_period(loaded_data, start_date, stop_date)
     
     # Limit to relevant Lshells, convert satellite position from spherical GEO to GSM and extract relevant data
     # (Takes a few minutes)
-    #storm_data = data_from_gps(storm_data_raw, Lshell=6, extMag= 'T89')
+    storm_data = data_from_gps(storm_data_raw, Lshell=6, extMag= 'T89')
     
     processed_save_path = os.path.join(base_save_folder, 'processed_gps.npz')
     '''
@@ -76,14 +80,15 @@ if __name__ == '__main__':
     np.savez(processed_save_path, **storm_data)
     print("Data Saved \n")
     '''
+    '''
     # Read in data from previous save
     storm_data_load = np.load(processed_save_path, allow_pickle=True)
     storm_data = load_data(storm_data_load)
     storm_data_load.close()
-
+    '''
 ### Find Pitch Angles ###
     # Find pitch angle corresponding to set K
-    #alphaofK = AlphaOfK(storm_data, K_set, extMag)
+    alphaofK = AlphaOfK(storm_data, K_set, extMag)
 
     alphaofK_filename = f"alphaofK_{extMag}.npz"
     alphaofK_save_path = os.path.join(base_save_folder, alphaofK_filename)
@@ -93,6 +98,7 @@ if __name__ == '__main__':
     np.savez(alphaofK_save_path, **alphaofK)
     print("Data Saved \n")
     '''
+    '''
     # Load data from previous save
     alphaofK_load = np.load(alphaofK_save_path, allow_pickle=True)
     alphaofK = load_data(alphaofK_load)
@@ -100,7 +106,7 @@ if __name__ == '__main__':
         epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
         alphaofK[satellite] = pd.DataFrame(alphaofK[satellite], index=epoch_str, columns=K_set)
     alphaofK_load.close()
-    
+    '''
 ### Find Energies from Mu and AlphaofK ###
     # Find Mu spread of energy channels
     muofenergyalpha, Mu_bounds = MuofEnergyAlpha(storm_data, alphaofK)
@@ -114,7 +120,7 @@ if __name__ == '__main__':
 
 ### Find Flux at Set Pitch Angle ####
     #--- Extract Zhao Coefficients at each Epoch ---
-    #Zhao_epoch_coeffs = find_Zhao_PAD_coeffs(storm_data, QD_storm_data, energyofmualpha)
+    Zhao_epoch_coeffs = find_Zhao_PAD_coeffs(storm_data, QD_storm_data, energyofmualpha)
 
     Zhao_epoch_coeffs_filename = f"Zhao_epoch_coeffs.npz"
     Zhao_epoch_coeffs_save_path = os.path.join(base_save_folder, Zhao_epoch_coeffs_filename)
@@ -124,13 +130,14 @@ if __name__ == '__main__':
     np.savez(Zhao_epoch_coeffs_save_path, **Zhao_epoch_coeffs)
     print("Data Saved \n")
     '''
+    '''
     # Load data from previous save
     Zhao_epoch_coeffs_load = np.load(Zhao_epoch_coeffs_save_path, allow_pickle=True)
     Zhao_epoch_coeffs = load_data(Zhao_epoch_coeffs_load)
     Zhao_epoch_coeffs_load.close()
-    
+    '''
     #--- Create Pitch Angle Distribution (PAD) from Coefficients ---
-    #PAD_models = create_PAD(storm_data, Zhao_epoch_coeffs, alphaofK)
+    PAD_models = create_PAD(storm_data, Zhao_epoch_coeffs, alphaofK)
 
     PAD_models_filename = f"PAD_models.npz"
     PAD_models_save_path = os.path.join(base_save_folder, PAD_models_filename)
@@ -140,11 +147,12 @@ if __name__ == '__main__':
     np.savez(PAD_models_save_path, **PAD_models)
     print("Data Saved \n")
     '''
+    ''''
     # Load data from previous save
     PAD_models_load = np.load(PAD_models_save_path, allow_pickle=True)
     PAD_models = load_data(PAD_models_load)
     PAD_models_load.close()
-    
+    '''
     #--- Find Scale Factor from alphaofK and PAD Model ---#
     scale_factor = PAD_Scale_Factor(storm_data,Zhao_epoch_coeffs,alphaofK)
 
@@ -164,7 +172,7 @@ if __name__ == '__main__':
     psd = find_psd(flux,energyofmualpha)
 
 ### Calculate Lstar ###
-    #storm_data_complete = find_Lstar(storm_data,alphaofK)
+    storm_data_complete = find_Lstar(storm_data,alphaofK)
 
     complete_filename = f"storm_data_complete.npz"
     complete_save_path = os.path.join(base_save_folder, complete_filename)
@@ -174,27 +182,29 @@ if __name__ == '__main__':
     np.savez(complete_save_path, **storm_data_complete )
     print("Data Saved \n")
     '''
+    '''
     # Read in data from previous save
     complete_load = np.load(complete_save_path, allow_pickle=True)
     storm_data_complete = load_data(complete_load)
     complete_load.close()
+    '''
 
 #%% Plot PSD lineplots
 k = 0.1
 i_K = np.where(K_set == k)[0]
-mu = 4000
+mu = 12000
 i_mu = np.where(Mu_set == mu)[0]
 
 REPTB_load = np.load('/mnt/box/Multipoint_Box/REPT_Data/plot_data.npz', allow_pickle=True)
 REPTB_data = load_data(REPTB_load)
 REPTB_load.close()
 
-time_start  = dt.datetime(2017, 4, 23, 19, 30, 0)
-time_stop   = dt.datetime(2017, 4, 23, 23, 00, 0)
+#time_start  = dt.datetime(2017, 4, 23, 19, 30, 0)
+#time_stop   = dt.datetime(2017, 4, 23, 23, 00, 0)
     
-#time_start  = dt.datetime(2017, 4, 24, 17, 7, 0)
-#time_stop   = dt.datetime(2017, 4, 24, 21, 35, 0)
-    
+time_start  = dt.datetime(2017, 4, 24, 17, 7, 0)
+time_stop   = dt.datetime(2017, 4, 24, 21, 35, 0)
+   
 #time_start  = dt.datetime(2017, 4, 25, 15, 30, 0)
 #time_stop   = dt.datetime(2017, 4, 25, 19, 50, 0)
 
@@ -291,8 +301,8 @@ for i_hh, half_hour in enumerate(half_hours):
     color_for_point = cmap(norm(mdates.date2num(half_hour)))
     ax.plot(avg_Lstar[sat_valid[:,i_hh], i_hh], avg_psd[sat_valid[:,i_hh], i_hh],
                 marker='*', markersize=12,
-                color=color_for_point, # Use the calculated color
-                label=half_hour.strftime("%d-%m-%Y %H:%M")) # Label for each star
+                color=color_for_point) # Use the calculated color
+                #label=half_hour.strftime("%d-%m-%Y %H:%M")) # Label for each star
 sat_valid = pd.DataFrame(sat_valid,index=list(storm_data_complete.keys()),columns=half_hours)
 
 
@@ -320,4 +330,44 @@ title_str = f"Time Interval: {time_start.strftime('%Y-%m-%d %H:%M')} to {time_st
 ax.set_title(title_str)
 
 plt.show()
+
+# %% Let's see why PSD is different:
+satellite = 'ns67'
+sat_data = storm_data_complete[satellite]
+time_mask = (sat_data['Epoch'].UTC >= time_start) & (sat_data['Epoch'].UTC < time_stop)
+
+storm_time_data = {}
+for item, item_data in storm_data_complete[satellite].items():
+    if item == 'Epoch':
+        storm_time_data[item] = item_data.UTC[time_mask]
+    elif item == 'Energy_Channels':
+        storm_time_data[item] = item_data[0]
+    else:
+        storm_time_data[item] = item_data[time_mask]
+
+storm_time_data['alpha'] = alphaofK[satellite][0.1][time_mask]
+storm_time_data['alpha_local'] = np.rad2deg(np.arcsin(np.sqrt(sat_data['b_equator'][time_mask]/sat_data['b_satellite'][time_mask])*np.sin(np.deg2rad(storm_time_data['alpha']))))
+storm_time_data['alpha_ratio'] = storm_time_data['b_equator']/np.sin(np.deg2rad(alphaofK[satellite][0.1][time_mask]))**2
+storm_time_data['Flux'] = flux[satellite][0.1].values[time_mask]
+
+
+nearest_time = np.zeros(sum(time_mask),dtype=int)
+for i_epoch, epoch in enumerate(sat_data['Epoch'].UTC[time_mask]):
+    nearest_time[i_epoch] = np.argmin(np.abs(REPTB_data['Epoch_B_averaged']-epoch))
+
+REPTB_test = {}
+for item, item_data in REPTB_data.items():
+    REPTB_test[item] = item_data[nearest_time]
+
+REPTB_test['Blocal_B'] = REPTB_test['Blocal_B'] * 1e-5
+REPTB_test['alpha_ratio'] = REPTB_test['Blocal_B']/np.sin(np.deg2rad(REPTB_test['alpha_B_set']))**2
+REPTB_test['alpha_eq'] = np.rad2deg(np.arcsin(np.sqrt(REPTB_test['Blocal_B']/sat_data['b_equator'][time_mask])*np.sin(np.deg2rad(REPTB_test['alpha_B_set']))))
+
+struct_temp = {}
+struct_temp['REPT_B'] = {}
+from spacepy.time import Ticktock
+struct_temp['REPT_B']['Epoch'] = Ticktock(REPTB_test['Epoch_B_averaged'])
+from spacepy.coordinates import Coords
+struct_temp['REPT_B']['Position'] = Coords(REPTB_test['Position_B_averaged'])
+aofK_REPTB = AlphaOfK(struct_temp,K_set)
 # %%
