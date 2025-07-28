@@ -57,6 +57,8 @@ def import_GPS(input_folder):
                 key=lambda filepath: os.path.basename(filepath).split('_v')[0].split('_')[-1])
             # Attempt to read all sorted files for the current satellite into a single SpaceData object.
             # dm.readJSONheadedASCII can accept a list of file paths.
+            if not sorted_sat_filenames:
+                continue
             loaded_data[satname] = dm.readJSONheadedASCII(sorted_sat_filenames)
     print("Data Loaded \n")    
     return loaded_data
@@ -69,8 +71,8 @@ def data_period(data, start_date, stop_date):
     data (dict): A nested dictionary where keys are satellite names, and values
                  are dictionaries containing data arrays (e.g., 'year', 'decimal_day',
                  and other data variables). This is typically the output from 'import_GPS'.
-    start_date (str): The start date for filtering, in "MM/DD/YYYY" format.
-    stop_date (str): The stop date for filtering (exclusive), in "MM/DD/YYYY" format.
+    start_date (str)
+    stop_date (str)
 
     '''
     # --- Phase 1: Convert Year/Decimal_Day to SpacePy Ticktock Epoch ---
@@ -107,11 +109,19 @@ def data_period(data, start_date, stop_date):
     for satellite, sat_data in data.items():
         # Create a boolean mask for the 'Epoch' data (which is a Ticktock object) between the date bounds
         time_mask = (sat_data['Epoch'].UTC >= start_date) & (sat_data['Epoch'].UTC < stop_date)
+        if np.sum(time_mask) == 0:
+            print(f"No data within time period for satellite {satellite}")
+        
+        # Initialize the satellite's dictionary in time_restricted_data if it doesn't exist
+        if satellite not in time_restricted_data:
+            time_restricted_data[satellite] = {}
+
+        filtered_gps_seconds = sat_data['Epoch'].data[time_mask]
+        time_restricted_data[satellite]['Epoch'] = spt.Ticktock(filtered_gps_seconds, dtype='GPS')
+        # Apply the time_mask and extract temporally relevant data
         for item, item_data in data[satellite].items():
-            # Initialize the satellite's dictionary in time_restricted_data if it doesn't exist
-            if satellite not in time_restricted_data:
-                time_restricted_data[satellite] = {}
-            # Apply the time_mask and extract temporally relevant data
+            if item == 'Epoch': # Skip 'Epoch' as it's already handled above
+                continue
             time_restricted_data[satellite][item] = item_data[time_mask]
     
     print("Relevant Time Period Identified \n")
@@ -187,7 +197,7 @@ def find_local90PA(sat_data):
     return local90PA
 
 #%% Find Loss Cone
-def find_Loss_Cone(sat_data, height = 100, extMag='T89'):
+def find_Loss_Cone(sat_data, height = 100, extMag='T89c'):
     
     print(f'        Finding Loss Cone...')
     
@@ -296,7 +306,7 @@ def ticktock_to_Lgm_DateTime(ticktock, c):
     return lgm_dt 
 
 #%% Find pitch angle corresponding to set K
-def AlphaOfK(gps_data, K_set, extMag = 'T89'):
+def AlphaOfK(gps_data, K_set, extMag = 'T89c'):
     
     '''
     alphaofK is structured like:
@@ -331,10 +341,13 @@ def AlphaOfK(gps_data, K_set, extMag = 'T89'):
                 current_K_value = K_set
             for i_epoch, epoch in enumerate(sat_data['Epoch']):
                 current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
+                lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
                 current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
                 QD_inform_MagInfo(epoch, MagInfo)
                 lgm_lib.Lgm_Setup_AlphaOfK(current_time, current_vec, MagInfo)
                 alphaofK[satellite][i_epoch,i_K] = lgm_lib.Lgm_AlphaOfK(current_K_value, MagInfo)
+                #KofAlpha = lgm_lib.Lgm_KofAlpha(alphaofK[satellite][i_epoch,i_K], MagInfo)
+                #print(KofAlpha)
                 lgm_lib.Lgm_TearDown_AlphaOfK(MagInfo)
         if k_dim_size > 1:
             epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
@@ -554,8 +567,8 @@ def find_psd(j_CXD, energyofMuAlpha):
     return psd
 
 #%% Calculate L_star
-def find_Lstar(gps_data, alphaofK, intMag = 'IGRF', extMag = 'T89'):
-    print('Finding L* for set Ks...')
+def find_Lstar(gps_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
+    print(f'Finding L* for set Ks using model {extMag}...')
     #MagEphemInfo = lgm_lib.Lgm_InitMagEphemInfo(1,1)
     LstarInfo = lgm_lib.InitLstarInfo(0)
     IntMagModel = c_int(lgm_lib.__dict__[f"LGM_IGRF"])
@@ -574,7 +587,7 @@ def find_Lstar(gps_data, alphaofK, intMag = 'IGRF', extMag = 'T89'):
                 current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
                 QD_inform_MagInfo(epoch, LstarInfo.contents.mInfo)
                 LstarInfo.contents.PitchAngle = c_double(alphaofK[satellite].values[i_epoch,i_K])
-                LstarInfo.contents.mInfo.contents.Bm = 0
+                #LstarInfo.contents.mInfo.contents.Bm = c_double(sat_data['b_footpoint'][i_epoch])
                 lgm_lib.Lstar(pointer(current_vec), LstarInfo)
                 gps_data[satellite]['Lstar'][[i_epoch,i_K]] = LstarInfo.contents.LS
     print('L* Found\n')
