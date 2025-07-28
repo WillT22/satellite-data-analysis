@@ -4,7 +4,8 @@ import glob
 import spacepy.datamodel as dm
 import datetime as dt
 import spacepy.time as spt
-from spacepy import coordinates as Coords
+from spacepy.time import Ticktock
+from spacepy.coordinates import Coords
 import numpy as np
 import scipy
 import scipy.constants as sc
@@ -99,7 +100,7 @@ def data_period(data, start_date, stop_date):
         # Convert each time difference object to total seconds.
         gpsseconds = [tt.total_seconds() for tt in gpsoffset]
         # Create a spacepy.time.Ticktock object using the GPS seconds.
-        data[satellite]['Epoch'] = spt.Ticktock(gpsseconds, dtype='GPS')
+        data[satellite]['Epoch'] = Ticktock(gpsseconds, dtype='GPS')
     print('Satellite Times Converted \n')
     
     print("Identifying Relevant Time Period...")
@@ -117,7 +118,7 @@ def data_period(data, start_date, stop_date):
             time_restricted_data[satellite] = {}
 
         filtered_gps_seconds = sat_data['Epoch'].data[time_mask]
-        time_restricted_data[satellite]['Epoch'] = spt.Ticktock(filtered_gps_seconds, dtype='GPS')
+        time_restricted_data[satellite]['Epoch'] = Ticktock(filtered_gps_seconds, dtype='GPS')
         # Apply the time_mask and extract temporally relevant data
         for item, item_data in data[satellite].items():
             if item == 'Epoch': # Skip 'Epoch' as it's already handled above
@@ -261,7 +262,7 @@ def data_from_gps(time_restricted_data, Lshell = [], intMag = 'IGRF', extMag = '
         Lat = np.deg2rad(sat_data['Geographic_Latitude'][mask])
         Lon = np.deg2rad(sat_data['Geographic_Longitude'][mask])
 
-        position_init = Coords.Coords(np.column_stack((R,np.pi-Lat,Lon)),'GEO','sph')
+        position_init = Coords(np.column_stack((R,np.pi-Lat,Lon)),'GEO','sph')
         position_init.ticks = sat_data['Epoch'][mask]
         gps_data_out[satellite]['Position'] = position_init.convert('GSM','car')
 
@@ -306,7 +307,7 @@ def ticktock_to_Lgm_DateTime(ticktock, c):
     return lgm_dt 
 
 #%% Find pitch angle corresponding to set K
-def AlphaOfK(gps_data, K_set, extMag = 'T89c'):
+def AlphaOfK(sat_data, K_set, extMag = 'T89c'):
     
     '''
     alphaofK is structured like:
@@ -315,43 +316,30 @@ def AlphaOfK(gps_data, K_set, extMag = 'T89c'):
             K_set: vector of set Ks used in calculation
             AlphaofK: Pandas DataFrame columns by time and indexed by K_set
     '''
-
-    print('Calculating Pitch Angle for given Ks...')
-    alphaofK = {}
     
-    # Determine the size of the first dimension based on K_set's type
-    if isinstance(K_set, (np.ndarray, list)):
-        k_dim_size = len(K_set)
-    else: # Assume it's a scalar (float, int) if not an array/list
-        k_dim_size = 1
+    K_set = np.atleast_1d(K_set)
 
     MagInfo = lgm_lib.Lgm_InitMagInfo()
     IntMagModel = c_int(lgm_lib.__dict__[f"LGM_IGRF"])
     ExtMagModel = c_int(lgm_lib.__dict__[f"LGM_EXTMODEL_{extMag}"])
     lgm_lib.Lgm_Set_MagModel(IntMagModel, ExtMagModel, MagInfo)
 
-    for satellite, sat_data in gps_data.items():
-        print(f"    Calculating Alpha for satellite {satellite}")
-        alphaofK[satellite] = np.zeros((len(sat_data['Epoch']),k_dim_size))
-        alphaofK[satellite].fill(np.nan)
-        for i_K in range(k_dim_size):
-            if isinstance(K_set, (np.ndarray, list)):
-                current_K_value = K_set[i_K]
-            else:
-                current_K_value = K_set
-            for i_epoch, epoch in enumerate(sat_data['Epoch']):
-                current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
-                lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
-                current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
-                QD_inform_MagInfo(epoch, MagInfo)
-                lgm_lib.Lgm_Setup_AlphaOfK(current_time, current_vec, MagInfo)
-                alphaofK[satellite][i_epoch,i_K] = lgm_lib.Lgm_AlphaOfK(current_K_value, MagInfo)
-                #KofAlpha = lgm_lib.Lgm_KofAlpha(alphaofK[satellite][i_epoch,i_K], MagInfo)
-                #print(KofAlpha)
-                lgm_lib.Lgm_TearDown_AlphaOfK(MagInfo)
-        if k_dim_size > 1:
-            epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-            alphaofK[satellite] = pd.DataFrame(alphaofK[satellite], index=epoch_str, columns=K_set)
+    alphaofK = np.zeros((len(sat_data['Epoch']),len(K_set)))
+    alphaofK.fill(np.nan)
+    for i_K in range(len(K_set)):
+        current_K_value = K_set[i_K]
+        for i_epoch, epoch in enumerate(sat_data['Epoch']):
+            current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
+            lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
+            current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
+            QD_inform_MagInfo(epoch, MagInfo)
+            lgm_lib.Lgm_Setup_AlphaOfK(current_time, current_vec, MagInfo)
+            alphaofK[i_epoch,i_K] = lgm_lib.Lgm_AlphaOfK(current_K_value, MagInfo)
+            #KofAlpha = lgm_lib.Lgm_KofAlpha(alphaofK[i_epoch,i_K], MagInfo)
+            #print(KofAlpha)
+            lgm_lib.Lgm_TearDown_AlphaOfK(MagInfo)
+    epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
+    alphaofK = pd.DataFrame(alphaofK, index=epoch_str, columns=K_set)
     print('Pitch Angles Calculated \n')
     return alphaofK
 
