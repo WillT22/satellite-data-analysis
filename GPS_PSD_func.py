@@ -1,5 +1,6 @@
 #%% Initialize
 import os
+import sys
 import glob
 import spacepy.datamodel as dm
 import datetime as dt
@@ -7,6 +8,7 @@ import spacepy.time as spt
 from spacepy.time import Ticktock
 from spacepy.coordinates import Coords
 import numpy as np
+np.set_printoptions(threshold=sys.maxsize)
 import scipy
 import scipy.constants as sc
 import math
@@ -64,8 +66,55 @@ def import_GPS(input_folder):
     print("Data Loaded \n")    
     return loaded_data
 
+#%% Load preprocessed data from file
+def load_data(npzfile):
+    print(f"Loading {npzfile}")
+    loaded_data = {}
+    for satellite, sat_data in npzfile.items():
+        loaded_data[satellite] = {}
+        if isinstance(sat_data, np.ndarray):
+            if sat_data.ndim == 0 and sat_data.dtype == object:
+                temp_inner_dict = sat_data.item()
+                for item, item_data in temp_inner_dict.items():
+                    loaded_data[satellite][item] = item_data
+            elif sat_data.ndim > 0:
+                loaded_data[satellite] = sat_data
+        elif isinstance(sat_data, pd.DataFrame):
+            loaded_data[satellite] = sat_data
+    print("Data Loaded \n")
+    return loaded_data
+
+#%% Convert Time for GPS satellites
+def convert_time(sat_data):
+    # --- Phase 1: Convert Year/Decimal_Day to SpacePy Ticktock Epoch ---
+    # Modified from Steve's date conversion function
+    print('Converting Time for each Satellite...')
+
+    # Iterate through each satellite and its associated data in the input 'data' dictionary.
+    # 'data' is modified in-place to add the 'Epoch' key.
+    # Extract 'year' and 'decimal_day' NumPy arrays for the current satellite.
+    year = sat_data['year']
+    decday = sat_data['decimal_day']
+
+    # Convert the 'year' array to integer type, as doy2date expects integer years.
+    intyear = year.astype(int)
+
+    # Convert Day-of-Year (Doy) and Year to datetime objects using spacepy.time.doy2date.
+    datearray = spt.doy2date(intyear, decday, dtobj=True, flAns=True)
+    # --- Adjusting for GPS Time Offset ---
+    # this is GPS time, so needs to be adjusted by leap seconds
+    GPS0 = dt.datetime(1980, 1, 6)  # Zero epoch for GPS seconds system
+    # Calculate the time difference between each datetime in 'datearray' and the GPS epoch.
+    gpsoffset = datearray - GPS0
+    # Convert each time difference object to total seconds.
+    gpsseconds = [tt.total_seconds() for tt in gpsoffset]
+    # Create a spacepy.time.Ticktock object using the GPS seconds.
+    sat_data['Epoch'] = Ticktock(gpsseconds, dtype='GPS')
+    print('Satellite Times Converted \n')
+    return sat_data
+
 #%% Limit data to selected time period
-def data_period(data, start_date, stop_date):
+def data_period(sat_data, start_date, stop_date):
     '''
     Processes and filters satellite data by a specified time period.
     Args:
@@ -76,54 +125,29 @@ def data_period(data, start_date, stop_date):
     stop_date (str)
 
     '''
-    # --- Phase 1: Convert Year/Decimal_Day to SpacePy Ticktock Epoch ---
-    # Modified from Steve's date conversion function
-    print('Converting Time for each Satellite...')
-
-    # Iterate through each satellite and its associated data in the input 'data' dictionary.
-    # 'data' is modified in-place to add the 'Epoch' key.
-    for satellite, sat_data in data.items():
-        # Extract 'year' and 'decimal_day' NumPy arrays for the current satellite.
-        year = sat_data['year']
-        decday = sat_data['decimal_day']
-
-        # Convert the 'year' array to integer type, as doy2date expects integer years.
-        intyear = year.astype(int)
-
-        # Convert Day-of-Year (Doy) and Year to datetime objects using spacepy.time.doy2date.
-        datearray = spt.doy2date(intyear, decday, dtobj=True, flAns=True)
-        # --- Adjusting for GPS Time Offset ---
-        # this is GPS time, so needs to be adjusted by leap seconds
-        GPS0 = dt.datetime(1980, 1, 6)  # Zero epoch for GPS seconds system
-        # Calculate the time difference between each datetime in 'datearray' and the GPS epoch.
-        gpsoffset = datearray - GPS0
-        # Convert each time difference object to total seconds.
-        gpsseconds = [tt.total_seconds() for tt in gpsoffset]
-        # Create a spacepy.time.Ticktock object using the GPS seconds.
-        data[satellite]['Epoch'] = Ticktock(gpsseconds, dtype='GPS')
-    print('Satellite Times Converted \n')
     
+    if ('Epoch' in sat_data) == False:
+        sat_data = convert_time(sat_data)
     print("Identifying Relevant Time Period...")
-
     time_restricted_data = {}
     # Iterate through each satellite's data again.
-    for satellite, sat_data in data.items():
-        # Create a boolean mask for the 'Epoch' data (which is a Ticktock object) between the date bounds
-        time_mask = (sat_data['Epoch'].UTC >= start_date) & (sat_data['Epoch'].UTC < stop_date)
-        if np.sum(time_mask) == 0:
-            print(f"No data within time period for satellite {satellite}")
-        
-        # Initialize the satellite's dictionary in time_restricted_data if it doesn't exist
-        if satellite not in time_restricted_data:
-            time_restricted_data[satellite] = {}
+    # Create a boolean mask for the 'Epoch' data (which is a Ticktock object) between the date bounds
+    time_mask = (sat_data['Epoch'].UTC >= start_date) & (sat_data['Epoch'].UTC < stop_date)
+    if np.sum(time_mask) == 0:
+        print(f"No data within time period")
 
-        filtered_gps_seconds = sat_data['Epoch'].data[time_mask]
-        time_restricted_data[satellite]['Epoch'] = Ticktock(filtered_gps_seconds, dtype='GPS')
-        # Apply the time_mask and extract temporally relevant data
-        for item, item_data in data[satellite].items():
-            if item == 'Epoch': # Skip 'Epoch' as it's already handled above
-                continue
-            time_restricted_data[satellite][item] = item_data[time_mask]
+    filtered_time = sat_data['Epoch'].UTC[time_mask]
+    time_restricted_data['Epoch'] = Ticktock(filtered_time, dtype='UTC')
+    # Apply the time_mask and extract temporally relevant data
+    for item, item_data in sat_data.items():
+        if item == 'Epoch': # Skip 'Epoch' as it's already handled above
+            continue
+        if (item == 'Energy_Channels') or (item == 'Pitch_Angles'):
+            time_restricted_data[item] = item_data
+            continue
+        if isinstance(item_data, list):
+            item_data = np.array(item_data)
+        time_restricted_data[item] = item_data[time_mask]
     
     print("Relevant Time Period Identified \n")
     return time_restricted_data
@@ -281,23 +305,6 @@ def data_from_gps(time_restricted_data, Lshell = [], intMag = 'IGRF', extMag = '
 
     return gps_data_out
 
-#%% Load preprocessed data from file
-def load_data(npzfile):
-    print(f"Loading {npzfile}")
-    loaded_data = {}
-    for satellite, sat_data in npzfile.items():
-        loaded_data[satellite] = {}
-        if isinstance(sat_data, np.ndarray):
-            if sat_data.ndim == 0 and sat_data.dtype == object:
-                temp_inner_dict = sat_data.item()
-                for item, item_data in temp_inner_dict.items():
-                    loaded_data[satellite][item] = item_data
-            elif sat_data.ndim > 0:
-                loaded_data[satellite] = sat_data
-        elif isinstance(sat_data, pd.DataFrame):
-            loaded_data[satellite] = sat_data
-    print("Data Loaded \n")
-    return loaded_data
 
 #%% Convert TickTock to Lgm_DateTime
 def ticktock_to_Lgm_DateTime(ticktock, c):
@@ -326,21 +333,20 @@ def AlphaOfK(sat_data, K_set, extMag = 'T89c'):
 
     alphaofK = np.zeros((len(sat_data['Epoch']),len(K_set)))
     alphaofK.fill(np.nan)
-    for i_K in range(len(K_set)):
-        current_K_value = K_set[i_K]
+    for i_K, K in enumerate(K_set):
         for i_epoch, epoch in enumerate(sat_data['Epoch']):
             current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
             lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
             current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
             QD_inform_MagInfo(epoch, MagInfo)
             lgm_lib.Lgm_Setup_AlphaOfK(current_time, current_vec, MagInfo)
-            alphaofK[i_epoch,i_K] = lgm_lib.Lgm_AlphaOfK(current_K_value, MagInfo)
+            alphaofK[i_epoch,i_K] = lgm_lib.Lgm_AlphaOfK(K, MagInfo)
             #KofAlpha = lgm_lib.Lgm_KofAlpha(alphaofK[i_epoch,i_K], MagInfo)
             #print(KofAlpha)
             lgm_lib.Lgm_TearDown_AlphaOfK(MagInfo)
     epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
     alphaofK = pd.DataFrame(alphaofK, index=epoch_str, columns=K_set)
-    print('Pitch Angles Calculated \n')
+    print('Pitch Angles Calculated')
     return alphaofK
 
 #%% Calculate Mu from energy channels and set alpha:
@@ -374,16 +380,9 @@ def MuofEnergyAlpha(gps_data, alphaofK):
         
         # Determine the size of the first dimension based on K_set's type
         K_set = np.array(list(alphaofK[satellite].columns.tolist()), dtype=float)
-        if isinstance(K_set, (np.ndarray, list)):
-            k_dim_size = len(K_set)
-        else: # Assume it's a scalar (float, int) if not an array/list
-            k_dim_size = 1
+        K_set = np.atleast_1d(K_set)
         
-        for i_K in range(k_dim_size):
-            if isinstance(K_set, (np.ndarray, list)):
-                K = K_set[i_K]
-            else:
-                K = K_set
+        for i_K, K in enumerate(K_set):
             muofenergyalpha[satellite]['MuofEnergyAlpha'][K] = np.zeros((len(sat_data['Epoch']),sat_data['Energy_Channels'].shape[0]))
             # Convert Alpha_set to radians
             if isinstance(alphaofK[satellite], pd.DataFrame):
@@ -422,7 +421,7 @@ def MuofEnergyAlpha(gps_data, alphaofK):
     return muofenergyalpha, Mu_bounds
 
 #%% Calculate energy from set mu and alpha:
-def EnergyofMuAlpha(gps_data, Mu_set, alphaofK):
+def EnergyofMuAlpha(sat_data, Mu_set, alphaofK):
     
     '''
     energyofmualpha is structured like:
@@ -433,43 +432,34 @@ def EnergyofMuAlpha(gps_data, Mu_set, alphaofK):
                 each K index is a Pandas DataFrame columns by time and indexed by Mu_set
     '''
     
-    print('Calculating Energies for given Mus and Alphas...')
-    energyofmualpha = {}
-    # Convert Mu_set to a NumPy array if it's a single value
+    # Convert to a NumPy array if it's a single value
     Mu_set = np.atleast_1d(Mu_set)
 
-    for satellite, sat_data in gps_data.items():
-        energyofmualpha[satellite] = {}
-        # Convert Alpha_set to radians
-        alpha_rad = np.radians(alphaofK[satellite])
+    energyofmualpha = {}
+    # Convert Alpha_set to radians
+    alpha_rad = np.radians(alphaofK)
 
+    # Calculate sin^2(Alpha)
+    sin_squared_alpha = np.sin(alpha_rad)**2 
+    
+    epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
+    K_set = np.array(alphaofK.columns.tolist(), dtype=float)
+    K_set  = np.atleast_1d(K_set)
+    
+    for i_K in range(len(K_set)):
+        K = K_set[i_K]
+        energyofmualpha[K] = np.zeros((len(sat_data['Epoch']),Mu_set.shape[0]))
+        # Convert Alpha_set to radians
+        if isinstance(alphaofK, pd.DataFrame):
+            alpha_rad = np.radians(alphaofK.values[:,i_K])
+        else:
+            alpha_rad = np.radians(alphaofK[:,i_K])
         # Calculate sin^2(Alpha)
-        sin_squared_alpha = np.sin(alpha_rad)**2 
-        
-        epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-        K_set = np.array(alphaofK[satellite].columns.tolist(), dtype=float)
-        if isinstance(K_set, (np.ndarray, list)):
-            k_dim_size = len(K_set)
-        else: # Assume it's a scalar (float, int) if not an array/list
-            k_dim_size = 1
-        
-        for i_K in range(k_dim_size):
-            if isinstance(K_set, (np.ndarray, list)):
-                K = K_set[i_K]
-            else:
-                K = K_set
-            energyofmualpha[satellite][K] = np.zeros((len(sat_data['Epoch']),Mu_set.shape[0]))
-            # Convert Alpha_set to radians
-            if isinstance(alphaofK[satellite], pd.DataFrame):
-                alpha_rad = np.radians(alphaofK[satellite].values[:,i_K])
-            else:
-                alpha_rad = np.radians(alphaofK[satellite][:,i_K])
-            # Calculate sin^2(Alpha)
-            sin_squared_alpha = np.sin(alpha_rad)**2
-            for i_Mu, mu in enumerate(Mu_set):
-                # Reminder, GPS Bfield data is in Gauss
-                energyofmualpha[satellite][K][:,i_Mu] = np.sqrt(2 * E0 * mu * sat_data['b_equator'] / sin_squared_alpha + E0**2) - E0
-            energyofmualpha[satellite][K] = pd.DataFrame(energyofmualpha[satellite][K], index=epoch_str, columns=Mu_set)
+        sin_squared_alpha = np.sin(alpha_rad)**2
+        for i_Mu, mu in enumerate(Mu_set):
+            # Reminder, GPS Bfield data is in Gauss
+            energyofmualpha[K][:,i_Mu] = np.sqrt(2 * E0 * mu * sat_data['b_min'] / sin_squared_alpha + E0**2) - E0
+        energyofmualpha[K] = pd.DataFrame(energyofmualpha[K], index=epoch_str, columns=Mu_set)
     print('Energies Calculated \n')
     return energyofmualpha
 
@@ -538,24 +528,22 @@ E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6)
 def find_psd(j_CXD, energyofMuAlpha):
     print('Calculating PSD for set Mus and Ks...')
     psd = {}
-    for satellite, sat_flux in j_CXD.items():
-        psd[satellite] = {}
-        for K_val, K_data in sat_flux.items():
-            Mu_set = np.array(K_data.columns.tolist(), dtype=float)
-            epoch_list = K_data[Mu_set[0]].index.tolist()
-            psd[satellite][K_val] = np.zeros((len(epoch_list),len(Mu_set)))
-            psd[satellite][K_val].fill(np.nan)
-            energy_data = energyofMuAlpha[satellite][K_val].values
-            for i_Mu in range(len(Mu_set)):
-                mask = ~((np.isnan(K_data.values[:,i_Mu])) | (K_data.values[:,i_Mu]==0))
-                E_rel = energy_data[mask, i_Mu]**2 + 2 * energy_data[mask, i_Mu] * E0
-                psd[satellite][K_val][mask, i_Mu] = K_data.values[mask,i_Mu] / E_rel * 1.66e-10 * 1e-3 * 200.3
-            psd[satellite][K_val] = pd.DataFrame(psd[satellite][K_val], index=epoch_list, columns=Mu_set)
+    for K_val, K_data in j_CXD.items():
+        Mu_set = np.array(K_data.columns.tolist(), dtype=float)
+        epoch_list = K_data[Mu_set[0]].index.tolist()
+        psd[K_val] = np.zeros((len(epoch_list),len(Mu_set)))
+        psd[K_val].fill(np.nan)
+        energy_data = energyofMuAlpha[K_val].values
+        for i_Mu in range(len(Mu_set)):
+            mask = ~((np.isnan(K_data.values[:,i_Mu])) | (K_data.values[:,i_Mu]==0))
+            E_rel = energy_data[mask, i_Mu]**2 + 2 * energy_data[mask, i_Mu] * E0
+            psd[K_val][mask, i_Mu] = K_data.values[mask,i_Mu] / E_rel * 1.66e-10 * 1e-3 * 200.3
+        psd[K_val] = pd.DataFrame(psd[K_val], index=epoch_list, columns=Mu_set)
     print('PSD Calculated\n')
     return psd
 
 #%% Calculate L_star
-def find_Lstar(gps_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
+def find_Lstar(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
     print(f'Finding L* for set Ks using model {extMag}...')
     #MagEphemInfo = lgm_lib.Lgm_InitMagEphemInfo(1,1)
     LstarInfo = lgm_lib.InitLstarInfo(0)
@@ -563,20 +551,20 @@ def find_Lstar(gps_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
     ExtMagModel = c_int(lgm_lib.__dict__[f"LGM_EXTMODEL_{extMag}"])
     lgm_lib.Lgm_Set_MagModel(IntMagModel, ExtMagModel, LstarInfo.contents.mInfo)
     
-    for satellite, sat_data in gps_data.items():
-        print(f"    Calculating L* for satellite {satellite}")
-        gps_data[satellite]['Lstar'] = np.zeros_like(alphaofK[satellite].values)
-        K_set = np.array(list(alphaofK[satellite].columns.tolist()), dtype=float)
-        for i_epoch, epoch in enumerate(sat_data['Epoch']):
-            for i_K in range(len(K_set)):
-                # Could possibly speed up with NewTimeLstarInfo
-                current_time = ticktock_to_Lgm_DateTime(epoch, LstarInfo.contents.mInfo.contents.c)
-                lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, LstarInfo.contents.mInfo.contents.c)
-                current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
-                QD_inform_MagInfo(epoch, LstarInfo.contents.mInfo)
-                LstarInfo.contents.PitchAngle = c_double(alphaofK[satellite].values[i_epoch,i_K])
-                #LstarInfo.contents.mInfo.contents.Bm = c_double(sat_data['b_footpoint'][i_epoch])
-                lgm_lib.Lstar(pointer(current_vec), LstarInfo)
-                gps_data[satellite]['Lstar'][[i_epoch,i_K]] = LstarInfo.contents.LS
-    print('L* Found\n')
-    return gps_data
+        
+    sat_data['Lstar'] = np.zeros_like(alphaofK.values)
+    K_set = np.array(list(alphaofK.columns.tolist()), dtype=float)
+    for i_epoch, epoch in enumerate(sat_data['Epoch']):
+        for i_K, K in enumerate(K_set):
+            # Could possibly speed up with NewTimeLstarInfo
+            current_time = ticktock_to_Lgm_DateTime(epoch, LstarInfo.contents.mInfo.contents.c)
+            lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, LstarInfo.contents.mInfo.contents.c)
+            current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
+            QD_inform_MagInfo(epoch, LstarInfo.contents.mInfo)
+            LstarInfo.contents.PitchAngle = c_double(alphaofK.values[i_epoch,i_K])
+            #LstarInfo.contents.mInfo.contents.Bm = c_double(sat_data['b_footpoint'][i_epoch])
+            lgm_lib.Lstar(pointer(current_vec), LstarInfo)
+            sat_data['Lstar'][i_epoch,i_K] = LstarInfo.contents.LS
+    print('L* Found')
+
+    return sat_data

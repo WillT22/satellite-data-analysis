@@ -489,6 +489,9 @@ ax.scatter(REPTB_data1['alpha_B_set'], REPTB_data2['alpha_B_set'])
 ax.set_xlabel(r"PA (Interpolated)", fontsize=textsize)
 ax.set_ylabel(r"PA (AlphaOfK)", fontsize=textsize)
 ax.tick_params(axis='both', which='major', labelsize=textsize)
+ax.set(xlim=(40,90), ylim=(40,65))
+ax.plot(np.linspace(0,100,1000),np.linspace(0,100,1000), color='black', linestyle = '--')
+ax.set_aspect('equal')
 ax.grid(True)
 
 # %% Show local 90 PA distribution

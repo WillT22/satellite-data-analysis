@@ -1,5 +1,6 @@
 #%% Import and Initialize
 import numpy as np
+np.set_printoptions(threshold=sys.maxsize)
 import os
 import glob
 import scipy.constants as sc
@@ -262,7 +263,7 @@ if __name__ == '__main__':
     alpha_A_set = find_alpha(K_set, K_A, alpha_A_unique) 
     
     # print("Loading Saved Data")
-    loaded_data = np.load('/mnt/box/Multipoint_Box/REPT_Data/alphaofK.npz', allow_pickle=True)
+    loaded_data = np.load('/mnt/box/Multipoint_Box/REPT_Data/alphaofK_B.npz', allow_pickle=True)
     
     # # Access the loaded variables
     # alpha_A_set = loaded_data['alpha_A_set'].item()

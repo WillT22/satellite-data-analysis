@@ -61,7 +61,8 @@ ax.spines['top'].set_visible(False)
 ax.spines['left'].set_visible(False)
 
 #%% Compare L* for April 2017 storm
-complete_filename = f"storm_data_complete.npz"
+base_save_folder = "/home/will/GPS_data/april2017storm/"
+complete_filename = f"storm_data_T89c.npz"
 complete_save_path = os.path.join(base_save_folder, complete_filename)
 complete_load = np.load(complete_save_path, allow_pickle=True)
 storm_data_complete = load_data(complete_load)
@@ -95,9 +96,12 @@ fig, ax = plt.subplots(figsize=(14, 6))
 for satellite, sat_data in storm_data_TS04.items():
     lstar_mask = (sat_data['Lstar'][:,0] > -1e31) & (storm_data_complete[satellite]['Lstar'][:,0] > -1e31)
     ax.scatter(storm_data_complete[satellite]['Lstar'][lstar_mask,0], sat_data['Lstar'][lstar_mask,0])
+ax.plot(np.linspace(0,8,1000),np.linspace(0,8,1000), color='black', linestyle = '--')
+ax.set(xlim=(4.5,5.8),ylim=(4.8,5.7))
 ax.set_xlabel(r"L* T89", fontsize=textsize)
 ax.set_ylabel(r"L* TS04", fontsize=textsize)
 ax.tick_params(axis='both', which='major', labelsize=textsize)
+ax.set_aspect('equal')
 ax.grid(True)
 
 #%% Compare L* for August 2018 storm
@@ -136,8 +140,11 @@ fig, ax = plt.subplots(figsize=(14, 6))
 for satellite, sat_data in storm_data_TS04.items():
     lstar_mask = (sat_data['Lstar'][:,0] > -1e31) & (storm_data_complete[satellite]['Lstar'][:,0] > -1e31)
     ax.scatter(storm_data_complete[satellite]['Lstar'][lstar_mask,0], sat_data['Lstar'][lstar_mask,0])
+ax.plot(np.linspace(0,8,1000),np.linspace(0,8,1000), color='black', linestyle = '--')
+ax.set(xlim=(4.7,5.6),ylim=(4.7,5.2))
 ax.set_xlabel(r"L* T89", fontsize=textsize)
 ax.set_ylabel(r"L* TS04", fontsize=textsize)
 ax.tick_params(axis='both', which='major', labelsize=textsize)
+ax.set_aspect('equal')
 ax.grid(True)
 # %%
