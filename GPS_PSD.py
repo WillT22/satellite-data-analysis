@@ -99,24 +99,6 @@ if __name__ == '__main__':
     # storm_data_load.close()
     # del storm_data_load
 
-    local90PA_list = [] # Initialize as a Python list
-    for satellite, sat_data in storm_data.items():
-        local90PA_list.extend(sat_data['local90PA'])
-    local90PA_combined = np.array(local90PA_list)
-    bin_width = 1 # degrees
-    bins = np.arange(0, 90+bin_width, bin_width)
-    plt.figure(figsize=(8, 6))
-    plt.hist(local90PA_combined, bins=bins, edgecolor='black', alpha=0.7)
-    # Add labels and title
-    plt.xlabel('Equitorial Pitch Angle Corresponding to Local 90-degree Pitch Angle (degrees)')
-    plt.ylabel('Count')
-    plt.title('Distribution of Local 90-degree Pitch Angle')
-    plt.xticks(np.arange(0, 95, 5)) # Example: ticks every 5 degrees
-    plt.xlim(0,90)
-    plt.grid(axis='y', linestyle=':', alpha=0.7)
-    plt.tight_layout()
-    plt.show()
-
     
 ### Find Pitch Angles ###
     # Find pitch angle corresponding to set K
@@ -259,8 +241,8 @@ REPTB_load = np.load('/mnt/box/Multipoint_Box/REPT_Data/plot_data2.npz', allow_p
 REPTB_data = load_data(REPTB_load)
 REPTB_load.close()
 
-time_start  = dt.datetime(2017, 4, 23, 19, 30, 0)
-time_stop   = dt.datetime(2017, 4, 23, 23, 00, 0)
+# time_start  = dt.datetime(2017, 4, 23, 19, 30, 0)
+# time_stop   = dt.datetime(2017, 4, 23, 23, 00, 0)
     
 #time_start  = dt.datetime(2017, 4, 24, 17, 7, 0)
 #time_stop   = dt.datetime(2017, 4, 24, 21, 35, 0)
@@ -271,8 +253,8 @@ time_stop   = dt.datetime(2017, 4, 23, 23, 00, 0)
 #time_start  = dt.datetime(2017, 4, 21, 10, 16, 0)
 #time_stop   = dt.datetime(2017, 4, 21, 13, 46, 0)
 
-#time_start = start_date
-#time_stop = stop_date
+time_start = start_date
+time_stop = stop_date
 
 #time_start  = dt.datetime(2017, 4, 21, 0, 0, 0)
 #time_stop   = dt.datetime(2017, 4, 26, 0, 0, 0)
@@ -445,49 +427,35 @@ for item, item_data in REPTB_data.items():
         continue
     REPTB_test[item] = item_data[nearest_time]
 
-REPTB_test['Blocal_B'] = REPTB_test['Blocal_B'] * 1e-5
-REPTB_test['alpha_ratio'] = REPTB_test['Blocal_B']/np.sin(np.deg2rad(REPTB_test['alpha_B_set']))**2
-
 struct_temp = {}
-struct_temp['REPT_B'] = {}
 from spacepy.time import Ticktock
-struct_temp['REPT_B']['Epoch'] = Ticktock(REPTB_test['Epoch_B_averaged'])
 from spacepy import coordinates as Coords
-position_init = Coords.Coords(REPTB_test['Position_B_averaged'], 'GEO', 'car')
-position_init.ticks = struct_temp['REPT_B']['Epoch']
-struct_temp['REPT_B']['Position'] = position_init.convert('GSM','car')
-'''
-aofK_REPTB = AlphaOfK(struct_temp,K_set)['REPT_B']
-
-diff = storm_time_data['alpha'] - REPTB_test['alpha_B_set']
-
-import spacepy.irbempy as irbem
-alpha_B_test = np.zeros(len(struct_temp['REPT_B']['Epoch']))
-for i_epoch, epoch in enumerate(struct_temp['REPT_B']['Epoch']):
-    position_epoch = Coords.Coords(REPTB_test['Position_B_averaged'][i_epoch], 'GEO', 'car')
-    alpha_B_test[i_epoch] = irbem.AlphaOfK(epoch,position_epoch,0.1,extMag='T89')
-'''
-
 # Calculate L* Using LGM and compare to IRBEM
-struct_temp['REPT_B']['Epoch'] = Ticktock(REPTB_data['Epoch_B_averaged'])
+struct_temp['Epoch'] = Ticktock(REPTB_data['Epoch_B_averaged'])
 position_init = Coords.Coords(REPTB_data['Position_B_averaged'], 'GEO', 'car')
-position_init.ticks = struct_temp['REPT_B']['Epoch']
-struct_temp['REPT_B']['Position'] = position_init.convert('GSM','car')
+position_init.ticks = struct_temp['Epoch']
+struct_temp['Position'] = position_init.convert('GSM','car')
 
 alpha_struct = {}
 epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in REPTB_data['Epoch_B_averaged']]
-alpha_struct['REPT_B'] = pd.DataFrame(REPTB_data['alpha_B_set'], index=epoch_str, columns=[0.1])
+alpha_struct = pd.DataFrame(REPTB_data['alpha_B_set'], index=epoch_str, columns=[0.1])
 REPTB_Lstar = find_Lstar(struct_temp, alpha_struct, extMag='T89c')
 
-fig, ax = plt.subplots(figsize=(6, 6))
-lstar_mask = (REPTB_Lstar['REPT_B']['Lstar'] > -1e31).flatten()
-ax.scatter(REPTB_data['Lstar_B_set'][lstar_mask], REPTB_Lstar['REPT_B']['Lstar'][lstar_mask])
+fig, ax = plt.subplots(figsize=(7, 6))
+lstar_mask = (REPTB_Lstar['Lstar'] > -1e31).flatten()
+ax.scatter(REPTB_data['Lstar_B_set'][lstar_mask], REPTB_Lstar['Lstar'][lstar_mask])
+# plt.scatter(REPTB_data['Epoch_B_averaged'][lstar_mask],REPTB_data['Lstar_B_set'][lstar_mask]) # IRBEM
+# plt.scatter(REPTB_Lstar['Epoch'].UTC[lstar_mask],REPTB_Lstar['Lstar'][lstar_mask])            # LGM
 ax.plot(np.linspace(0,8,1000),np.linspace(0,8,1000), color='black', linestyle = '--')
 ax.set_xlim(0, 8)
 ax.set_ylim(0, 8)
+major_ticks = np.arange(0, 9, 1)
+ax.set_xticks(major_ticks)
+ax.set_yticks(major_ticks)
 ax.set_xlabel('IRBEM get_Lstar', fontsize=textsize)
 ax.set_ylabel('LGM find_Lstar', fontsize=textsize)
 ax.tick_params(axis='both', which='major', labelsize=textsize)
+ax.set_aspect('equal', 'box')
 ax.grid(True)
 
 #%% Plot PSD
@@ -537,6 +505,4 @@ plt.xticks(fontsize=textsize)
 plt.subplots_adjust(top=0.82, right=0.95)
 
 plt.show()
-
-# %% Plot Energy/mu contours
 
