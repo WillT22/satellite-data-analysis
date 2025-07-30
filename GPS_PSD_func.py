@@ -539,7 +539,6 @@ def find_psd(j_CXD, energyofMuAlpha):
             E_rel = energy_data[mask, i_Mu]**2 + 2 * energy_data[mask, i_Mu] * E0
             psd[K_val][mask, i_Mu] = K_data.values[mask,i_Mu] / E_rel * 1.66e-10 * 1e-3 * 200.3
         psd[K_val] = pd.DataFrame(psd[K_val], index=epoch_list, columns=Mu_set)
-    print('PSD Calculated\n')
     return psd
 
 #%% Calculate L_star
@@ -565,6 +564,4 @@ def find_Lstar(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
             #LstarInfo.contents.mInfo.contents.Bm = c_double(sat_data['b_footpoint'][i_epoch])
             lgm_lib.Lstar(pointer(current_vec), LstarInfo)
             sat_data['Lstar'][i_epoch,i_K] = LstarInfo.contents.LS
-    print('L* Found')
-
     return sat_data

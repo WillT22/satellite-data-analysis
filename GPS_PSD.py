@@ -397,67 +397,6 @@ ax.set_title(title_str, fontsize = textsize)
 
 plt.show()
 
-# %% Let's see why PSD is different:
-satellite = 'ns67'
-sat_data = storm_data[satellite]
-time_mask = (sat_data['Epoch'].UTC >= time_start) & (sat_data['Epoch'].UTC < time_stop)
-
-storm_time_data = {}
-for item, item_data in storm_data[satellite].items():
-    if item == 'Epoch':
-        storm_time_data[item] = item_data.UTC[time_mask]
-    elif item == 'Energy_Channels':
-        storm_time_data[item] = item_data[0]
-    else:
-        storm_time_data[item] = item_data[time_mask]
-
-storm_time_data['alpha'] = alphaofK[satellite][0.1][time_mask]
-storm_time_data['alpha_local'] = np.rad2deg(np.arcsin(np.sqrt(sat_data['b_equator'][time_mask]/sat_data['b_satellite'][time_mask])*np.sin(np.deg2rad(storm_time_data['alpha']))))
-storm_time_data['alpha_ratio'] = storm_time_data['b_equator']/np.sin(np.deg2rad(alphaofK[satellite][0.1][time_mask]))**2
-storm_time_data['Flux'] = flux[satellite][0.1].values[time_mask]
-
-
-nearest_time = np.zeros(sum(time_mask),dtype=int)
-for i_epoch, epoch in enumerate(sat_data['Epoch'].UTC[time_mask]):
-    nearest_time[i_epoch] = np.argmin(np.abs(REPTB_data['Epoch_B_averaged']-epoch))
-
-REPTB_test = {}
-for item, item_data in REPTB_data.items():
-    if item == 'alpha_B_unique':
-        continue
-    REPTB_test[item] = item_data[nearest_time]
-
-struct_temp = {}
-from spacepy.time import Ticktock
-from spacepy import coordinates as Coords
-# Calculate L* Using LGM and compare to IRBEM
-struct_temp['Epoch'] = Ticktock(REPTB_data['Epoch_B_averaged'])
-position_init = Coords.Coords(REPTB_data['Position_B_averaged'], 'GEO', 'car')
-position_init.ticks = struct_temp['Epoch']
-struct_temp['Position'] = position_init.convert('GSM','car')
-
-alpha_struct = {}
-epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in REPTB_data['Epoch_B_averaged']]
-alpha_struct = pd.DataFrame(REPTB_data['alpha_B_set'], index=epoch_str, columns=[0.1])
-REPTB_Lstar = find_Lstar(struct_temp, alpha_struct, extMag='T89c')
-
-fig, ax = plt.subplots(figsize=(7, 6))
-lstar_mask = (REPTB_Lstar['Lstar'] > -1e31).flatten()
-ax.scatter(REPTB_data['Lstar_B_set'][lstar_mask], REPTB_Lstar['Lstar'][lstar_mask])
-# plt.scatter(REPTB_data['Epoch_B_averaged'][lstar_mask],REPTB_data['Lstar_B_set'][lstar_mask]) # IRBEM
-# plt.scatter(REPTB_Lstar['Epoch'].UTC[lstar_mask],REPTB_Lstar['Lstar'][lstar_mask])            # LGM
-ax.plot(np.linspace(0,8,1000),np.linspace(0,8,1000), color='black', linestyle = '--')
-ax.set_xlim(0, 8)
-ax.set_ylim(0, 8)
-major_ticks = np.arange(0, 9, 1)
-ax.set_xticks(major_ticks)
-ax.set_yticks(major_ticks)
-ax.set_xlabel('IRBEM get_Lstar', fontsize=textsize)
-ax.set_ylabel('LGM find_Lstar', fontsize=textsize)
-ax.tick_params(axis='both', which='major', labelsize=textsize)
-ax.set_aspect('equal', 'box')
-ax.grid(True)
-
 #%% Plot PSD
 k = 0.1
 i_K = np.where(K_set == k)[0]
