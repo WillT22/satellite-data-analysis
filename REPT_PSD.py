@@ -34,11 +34,11 @@ E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6) # this is m_0*c^2
 base_save_folder = "/home/will/REPT_data/april2017storm/"
 extMag = 'T89c'
 
-# start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
-# stop_date   = dt.datetime(2017, 4, 26, 00, 00, 0)
+start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
+stop_date   = dt.datetime(2017, 4, 26, 00, 00, 0)
 
-start_date  = dt.datetime(2017, 4, 23, 19, 30, 0)
-stop_date    = dt.datetime(2017, 4, 23, 23, 00, 0)
+#start_date  = dt.datetime(2017, 4, 23, 19, 30, 0)
+#stop_date    = dt.datetime(2017, 4, 23, 23, 00, 0)
 
 QD_storm_data = QinDenton_period(start_date, stop_date)
 
@@ -53,7 +53,7 @@ if __name__ == '__main__':
     
     # Get all CDF file paths in the folder
     # file_paths_l3_A = glob.glob(input_folder + "rbspa*[!r]*.cdf") 
-    # file_paths_l3_B = glob.glob(input_folder + "rbspb*[!r]*.cdf") 
+    # file_paths_l3_B = glob.glob(input_folder + "rbspb*[!r]*.cdf")
     
     # REPT_data_raw = {}
     # REPT_data_raw['rbspa'] = process_l3_data(file_paths_l3_A)
@@ -75,7 +75,7 @@ if __name__ == '__main__':
 ### Restric Time Period ###
     REPT_data = {}
     for satellite, sat_data in REPT_data_raw.items():
-        print(f'Restricting Time Period for satellite {satellite}')
+        print(f'Restricting Time Period for satellite {satellite}...')
         REPT_data[satellite] = data_period(sat_data, start_date, stop_date)
     del REPT_data_raw
 
@@ -83,7 +83,6 @@ if __name__ == '__main__':
     for satellite, sat_data in REPT_data.items():
         print(f"Extracting Magnetic Field Data for satellite {satellite}...")
         REPT_data[satellite] = find_mag(sat_data, satellite)
-
 
 ### Average fluxes with the same pitch angles (assume symmetry about 90 degrees) ###
     for satellite, sat_data in REPT_data.items():
@@ -102,6 +101,22 @@ if __name__ == '__main__':
     for satellite, sat_data in REPT_data.items():
         print(f"Calculating Pitch Angle for satellite {satellite}...")
         alphaofK[satellite] = AlphaOfK(sat_data, K_set, extMag)
+
+    alphaofK_filename = f"alphaofK_{extMag}.npz"
+    alphaofK_save_path = os.path.join(base_save_folder, alphaofK_filename)
+    # Save Data for later recall:
+    print("Saving AlphaofK Data...")
+    np.savez(alphaofK_save_path, **alphaofK)
+    print("Data Saved \n")
+
+    # Load data from previous save
+    alphaofK_load = np.load(alphaofK_save_path, allow_pickle=True)
+    alphaofK = load_data(alphaofK_load)
+    for satellite, sat_data in REPT_data.items():
+        epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
+        alphaofK[satellite] = pd.DataFrame(alphaofK[satellite], index=epoch_str, columns=K_set)
+    alphaofK_load.close()
+    del alphaofK_load
 
 ### Find Loss Cone and Equatorial B ###
     for satellite, sat_data in REPT_data.items():
@@ -129,7 +144,67 @@ if __name__ == '__main__':
 
 ### Calculate L* ####
     for satellite, sat_data in REPT_data.items():
-        print(f"Calculating L* for satellite {satellite}")
+        print(f"Calculating L* for satellite {satellite}...")
         REPT_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag='T89c')
+
+    save_path = os.path.join(base_save_folder, 'rept_data.npz')
+    # Save Data for later recall:
+    print("Saving REPT Data...")
+    np.savez(save_path, **REPT_data)
+    print("Data Saved \n")
+    # Read in data from previous save
+    # complete_load = np.load(complete_save_path, allow_pickle=True)
+    # REPT_data = load_data(complete_load)
+    # complete_load.close()
+    # del complete_load
+
+#%% Plot PSD
+from matplotlib import colors
+k = 0.1
+i_K = np.where(K_set == k)[0]
+mu = 8000
+i_mu = np.where(Mu_set == mu)[0]
+
+fig, ax = plt.subplots(figsize=(16, 4))
+
+colorscheme = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))
+cmap = colors.ListedColormap(colorscheme)
+
+# Logarithmic colorbar setup
+min_val = np.nanmin(np.log10(1e-12))
+max_val = np.nanmax(np.log10(1e-7))
+
+for satellite, sat_data in REPT_data.items():
+    psd_plot = psd[satellite][k].values[:,i_mu].copy().flatten()
+    psd_mask = (psd_plot > 0) & (psd_plot != np.nan)
+
+    # Plotting, ignoring NaN values in the color
+    scatter_A = ax.scatter(sat_data['Epoch'].UTC[psd_mask], sat_data['Lstar'][psd_mask,0],
+                        c=np.log10(psd_plot[psd_mask]), cmap=cmap, vmin=min_val, vmax=max_val)
+
+
+ax.set_title(f"RBSP A&B REPT, K={k:.1f} $G^{{1/2}}R_E$, $\\mu$={mu:.0f} $MeV/G$", fontsize=textsize + 2)
+ax.set_ylabel(r"L*", fontsize=textsize)
+ax.tick_params(axis='both', labelsize=textsize, pad=10)
+ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+# Force labels for first and last x-axis tick marks 
+min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+ax.set_xlim(min_epoch, max_epoch)
+ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
+ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+#ax.set_ylim(2, 7)
+ax.grid(True)
+
+cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
+tick_locations = np.arange(min_val, max_val + 1)
+cbar.set_ticks(tick_locations)
+cbar.set_label(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize)
+cbar.ax.tick_params(labelsize=textsize)
+
+plt.xticks(fontsize=textsize)
+plt.subplots_adjust(top=0.82, right=0.95)
+
+plt.show()
 
 # %%

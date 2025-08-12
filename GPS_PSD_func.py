@@ -128,7 +128,6 @@ def data_period(sat_data, start_date, stop_date):
     
     if ('Epoch' in sat_data) == False:
         sat_data = convert_time(sat_data)
-    print("Identifying Relevant Time Period...")
     time_restricted_data = {}
     # Iterate through each satellite's data again.
     # Create a boolean mask for the 'Epoch' data (which is a Ticktock object) between the date bounds
@@ -149,7 +148,7 @@ def data_period(sat_data, start_date, stop_date):
             item_data = np.array(item_data)
         time_restricted_data[item] = item_data[time_mask]
     
-    print("Relevant Time Period Identified \n")
+    print("Relevant Time Period Identified")
     return time_restricted_data
 
 #%% Extract QinDenton data for the time period
@@ -526,7 +525,6 @@ def energy_spectra(gps_data, energyofMuAlpha):
 E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6)
 
 def find_psd(j_CXD, energyofMuAlpha):
-    print('Calculating PSD for set Mus and Ks...')
     psd = {}
     for K_val, K_data in j_CXD.items():
         Mu_set = np.array(K_data.columns.tolist(), dtype=float)
@@ -543,7 +541,6 @@ def find_psd(j_CXD, energyofMuAlpha):
 
 #%% Calculate L_star
 def find_Lstar(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
-    print(f'Finding L* for set Ks using model {extMag}...')
     #MagEphemInfo = lgm_lib.Lgm_InitMagEphemInfo(1,1)
     LstarInfo = lgm_lib.InitLstarInfo(0)
     IntMagModel = c_int(lgm_lib.__dict__[f"LGM_IGRF"])

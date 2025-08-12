@@ -104,30 +104,40 @@ def Average_FluxbyPA(sat_data, sat_name):
     Returns:
         numpy.ndarray: Averaged fluxes array (time, unique pitch angle, energy).
     """
-    FEDU = sat_data['FEDU']
-    Energy_Channels = sat_data['Energy_Channels']
-    alpha_unique = np.array(sorted(list(set(np.round(sat_data['Pitch_Angles'][sat_data['Pitch_Angles']<=90], 4)))))
+    FEDU = sat_data['FEDU'] # Shape: (time, measured_pitch_angle, energy)
+    Energy_Channels = sat_data['Energy_Channels'] # Shape: (energy,)
+    
+    # Ensure Pitch_Angles is a NumPy array for consistent indexing
+    pitch_angles = np.asarray(sat_data['Pitch_Angles'])
 
-    FEDU_averaged = np.zeros((FEDU.shape[0], len(alpha_unique), len(Energy_Channels)))
+    alpha_unique = np.array(sorted(list(set(np.round(pitch_angles[pitch_angles <= 90], 4)))))
 
-    for time_index in range(FEDU.shape[0]):
-        for energy_index in range(len(Energy_Channels)):
-            for pitch_angle_index in range(len(alpha_unique)):
-                mirrored_pitch_angle_index = 16 - pitch_angle_index
-                
-                value1 = FEDU[time_index, pitch_angle_index, energy_index]
-                value2 = FEDU[time_index, mirrored_pitch_angle_index, energy_index]
+    FEDU_averaged = np.full((FEDU.shape[0], len(alpha_unique), FEDU.shape[2]), np.nan, dtype=np.float64)
+    # Shape: (time, unique_pitch_angle, energy)
 
-                is_nan1 = np.isnan(value1)
-                is_nan2 = np.isnan(value2)
+    for pitch_angle_idx_unique, alpha_val in enumerate(alpha_unique):
 
-                if is_nan1 and is_nan2:
-                    FEDU_averaged[time_index, pitch_angle_index, energy_index] = np.nan
-                else:
-                    FEDU_averaged[time_index, pitch_angle_index, energy_index] = np.nanmean([value1, value2])
+        PA_mask = (np.round(pitch_angles, 4) == np.round(alpha_val, 4))
+        if np.round(alpha_val, 4) == 90.0:
+            mirror_mask = PA_mask # 90 degrees mirrors to itself
+        else:
+            mirror_mask = (np.round(pitch_angles, 4) == np.round(180 - alpha_val, 4))
+
+        # Combine masks to get all data points for this symmetric pair
+        combined_alpha_mask = PA_mask | mirror_mask
+
+        # If there are any data points for this symmetric pair
+        if np.sum(combined_alpha_mask) > 0:
+            # Extract flux values for the current symmetric pitch angle pair
+            # Shape: (time, num_matched_raw_pitch_angles, energy)
+            flux_values_for_pair = FEDU[:, combined_alpha_mask, :]
+            averaged_flux_slice = np.nanmean(flux_values_for_pair, axis=1)
+            FEDU_averaged[:, pitch_angle_idx_unique, :] = averaged_flux_slice
+        # else: if no data for this unique alpha, it remains NaN (from initialization)
+
     sat_data['FEDU_averaged'] = FEDU_averaged
-    sat_data['Pitch_Angles'] = alpha_unique
-    print('Pitch Angle Fluxes Averaged')
+    sat_data['Pitch_Angles'] = alpha_unique # Update Pitch_Angles to be the unique, averaged ones
+    print(f'Pitch Angle Fluxes Averaged')
     return sat_data
 
 
@@ -201,7 +211,7 @@ def Interp_Flux(sat_data, alphaofK, energyofMuAlpha):
                             # Interpolate the logarithm of the flux.
                             log_flux_interp = np.interp(
                                 energy_set[time_index, i_Mu],
-                                energy_channels[energy_mask],
+                                valid_energies,
                                 np.log(FEDU_interp_alpha[K][time_index, energy_mask])
                             )
                             # Exponentiate the result to get the interpolated flux.
@@ -213,5 +223,5 @@ def Interp_Flux(sat_data, alphaofK, energyofMuAlpha):
                     else:
                         # Store NaN if there are fewer than two valid data points.
                         FEDU_interp[K][time_index, i_Mu] = np.nan
-        FEDU_interp = pd.DataFrame(FEDU_interp, index=epoch_list, columns=Mu_set)
+        FEDU_interp[K] = pd.DataFrame(FEDU_interp[K], index=epoch_list, columns=Mu_set)
     return FEDU_interp, FEDU_interp_alpha

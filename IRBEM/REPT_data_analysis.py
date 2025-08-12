@@ -1,6 +1,5 @@
 #%% Import and Initialize
 import numpy as np
-np.set_printoptions(threshold=sys.maxsize)
 import os
 import glob
 import scipy.constants as sc
@@ -187,7 +186,7 @@ if __name__ == '__main__':
     # Use IRBEM get_Lstar function  ***COMPUTATIONALLY EXPENSIVE***
     #results_B = irbem.get_Lstar(time_B, position_B, alpha=alpha_B_unique, extMag=extMag, omnivals=omnivals_refined_B)
     # Separate dictionary ino variables
-    Bmin_B, Bmirr_B, Lm_B, Lstar_B, MLT_B = results_B["Bmin"], results_B["Bmirr"], results_B["Lm"], results_B["Lstar"], results_B["MLT"]
+    Bmin_B, Bmirr_B, Lm_B, Lstar_B, MLT_B, Xj_B = results_B["Bmin"], results_B["Bmirr"], results_B["Lm"], results_B["Lstar"], results_B["MLT"], results_B["Xj"]
     Lstar_B[Lstar_B < 0] = np.nan
     
 #% Save chosen data
@@ -203,7 +202,7 @@ if __name__ == '__main__':
     '''
 #% Calculate alpha of set K
     
-    def find_alpha(K_set, K, alpha):
+    def find_alpha(K_set, K, alpha, Blocal, Bmin):
      """
      Finds the alpha value corresponding to a given K_set by interpolating within a matrix of K values.
  
@@ -216,7 +215,7 @@ if __name__ == '__main__':
          numpy.ndarray: A 1D NumPy array of alpha values, one for each time point in K, corresponding to K_set.
                         NaN is returned for time points where K_set cannot be interpolated.
      """
- 
+
      # Check if the number of columns in K matches the length of alpha.
      if K.shape[1] != len(alpha):
          raise ValueError("Number of columns in K must match length of alpha.")
@@ -226,23 +225,24 @@ if __name__ == '__main__':
  
      # Iterate through each time point (row) in the K matrix.
      for time_index in range(K.shape[0]):
-         # Extract the K values for the current time point.
-         row_k = K[time_index, :]
+        alpha_time = np.rad2deg(np.arcsin(np.sqrt(Bmin[time_index]/Blocal[time_index])*np.sin(np.deg2rad(alpha))))
+        # Extract the K values for the current time point.
+        row_k = K[time_index, :]
  
-         # Create a mask to identify NaN values in the K row.
-         nan_mask = np.isnan(row_k)
+        # Create a mask to identify NaN values in the K row.
+        nan_mask = np.isnan(row_k)
  
-         # Create a mask to identify K values that are less than or equal to 1.
-         valid_mask = row_k <= 1
+        # Create a mask to identify K values that are less than or equal to 1.
+        valid_mask = row_k <= 1
  
-         # Combine the masks to exclude NaN values and values greater than 1.
-         combined_mask = ~nan_mask & valid_mask
+        # Combine the masks to exclude NaN values and values greater than 1.
+        combined_mask = ~nan_mask & valid_mask
  
-         # Check if there are any valid K values for the current time point.
-         if np.any(combined_mask):
+        # Check if there are any valid K values for the current time point.
+        if np.any(combined_mask):
              # Extract the valid K values and corresponding alpha values.
              valid_k = row_k[combined_mask]
-             valid_alpha = alpha[combined_mask]
+             valid_alpha = alpha_time[combined_mask]
  
              # Sort the valid K values and corresponding alpha values in ascending order of K.
              sort_indices = np.argsort(valid_k)
@@ -260,14 +260,19 @@ if __name__ == '__main__':
     print("Calculating K (RBSP-A)")
     K_A = Xj_A * np.sqrt(Bmirr_A*1e-5) # R_E*G^(1/2)
     # Find alpha at each time point given a set K
-    alpha_A_set = find_alpha(K_set, K_A, alpha_A_unique) 
+    alpha_A_set = find_alpha(K_set, K_A, alpha_A_unique, Blocal_A, Bmin_A) 
+
+    print("Calculating K (RBSP-B)")
+    K_B = Xj_B * np.sqrt(Bmirr_B*1e-5) # R_E*G^(1/2)
+    # Find alpha at each time point given a set K
+    alpha_B_set = find_alpha(K_set, K_B, alpha_B_unique, Blocal_B, Bmin_B)
     
     # print("Loading Saved Data")
-    loaded_data = np.load('/mnt/box/Multipoint_Box/REPT_Data/alphaofK_B.npz', allow_pickle=True)
+    loaded_data = np.load('/mnt/box/Multipoint_Box/REPT_Data/alphaofK.npz', allow_pickle=True)
     
-    # # Access the loaded variables
-    # alpha_A_set = loaded_data['alpha_A_set'].item()
-    alpha_B_set = loaded_data['alpha_B_set'].item()
+    # Access the loaded variables
+    alpha_A_set2 = loaded_data['alpha_A_set']
+    alpha_B_set2 = loaded_data['alpha_B_set']
     
     # print("Calculating Alpha of K (RBSP-A)")
     # # Find alpha at each time point given a set K
@@ -280,15 +285,15 @@ if __name__ == '__main__':
     # alpha_B_set = np.zeros(len(Epoch_B_averaged))
     # for i in range(len(Epoch_B_averaged)):
     #     alpha_B_set[i] = irbem.AlphaOfK(Ticktock(Epoch_B_averaged[i]),position_B[i],K_set,extMag=extMag)
-
     
     # print("Saving Data")
     # # Create a dictionary to store the variables
     # data_to_save = {
-    #     'alpha_B_set': alpha_B_set,
+    #     'alpha_A_set': alpha_A_set,
+    #     'alpha_B_set': alpha_B_set
     # }
     # # Save the dictionary to a .npz file (NumPy zip archive)
-    # np.savez('/mnt/box/Multipoint_Box/REPT_Data/alphaofK_B.npz', **data_to_save)
+    # np.savez('/mnt/box/Multipoint_Box/REPT_Data/alphaofK.npz', **data_to_save)
     
     
 #% Find L* for calculated alpha values from set K
@@ -512,4 +517,32 @@ ax.set_title(title_str)
 
 plt.tight_layout()
 plt.show()
+# %%
+convert_alphaB = np.rad2deg(np.arcsin(np.sqrt(Blocal_B/Bmin_B)*np.sin(np.deg2rad(alpha_B_set))))
+fig, ax = plt.subplots(figsize=(14, 2))
+ax.scatter(Epoch_B_averaged, alpha_B_set)
+ax.set_ylim(40,65)
+ax.set_xlabel('UTC', fontsize=textsize)
+ax.set_ylabel(r"Pitch Angle", fontsize=textsize)
+ax.tick_params(axis='both', which='major', labelsize=textsize)
+ax.set_title('Interpolated Pitch Angle for K=0.1',fontsize=textsize)
+ax.grid(True)
+
+fig, ax = plt.subplots(figsize=(14, 2))
+ax.scatter(Epoch_B_averaged, alpha_B_set2)
+ax.set_ylim(40,65)
+ax.set_xlabel('UTC', fontsize=textsize)
+ax.set_ylabel(r"Pitch Angle", fontsize=textsize)
+ax.tick_params(axis='both', which='major', labelsize=textsize)
+ax.set_title('Calculated Pitch Angle (IRBEM AlphaOfK) for K=0.1',fontsize=textsize)
+ax.grid(True)
+
+fig, ax = plt.subplots(figsize=(14, 6))
+ax.scatter(alpha_B_set, alpha_B_set2)
+ax.set_xlim(40,65)
+ax.set_ylim(40,65)
+ax.set_xlabel(r"PA (Interpolated)", fontsize=textsize)
+ax.set_ylabel(r"PA (AlphaOfK)", fontsize=textsize)
+ax.tick_params(axis='both', which='major', labelsize=textsize)
+ax.grid(True)
 # %%
