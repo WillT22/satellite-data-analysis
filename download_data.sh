@@ -12,7 +12,7 @@ mkdir -p "$OUTPUT_DIR"
 
 # Loop through satellite numbers
 # 'seq -w # #' generates numbers between the two numbers
-for i in $(seq -w 40 80); do
+for i in $(seq -w 50 80); do
     SAT_DIR="ns${i}" # Constructs the directory name, e.g., "ns01", "ns02"
     FULL_SAT_URL="${BASE_URL}${SAT_DIR}/" # Constructs the full URL for this satellite's directory
     
