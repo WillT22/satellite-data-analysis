@@ -56,15 +56,13 @@ if __name__ == '__main__':
 ### Load in data ###
     input_folder = "/home/will/GPS_data/april2017storm/"
     # Be mindful of ns60 and ns69 data as they have poorer fits and more noise
-    #loaded_data = import_GPS(input_folder)
+    # loaded_data = import_GPS(input_folder)
 
     raw_save_path = os.path.join(base_save_folder, 'raw_gps.npz')
-    '''
     # Save Data for later recall:
-    print("Saving Raw GPS Data...")
-    np.savez(raw_save_path, **loaded_data)
-    print("Data Saved \n")
-    '''
+    # print("Saving Raw GPS Data...")
+    # np.savez(raw_save_path, **loaded_data)
+    # print("Data Saved \n")
     
     # Read in data from previous save
     raw_data_load = np.load(raw_save_path, allow_pickle=True)
@@ -74,56 +72,53 @@ if __name__ == '__main__':
     
 ### Preprocessing ###    
     # Restrict to time period
-    storm_data_raw = {}
-    for satellite, sat_data in loaded_data.items():
-        print(f'Restricting Time Period for satellite {satellite}')
-        storm_data_raw[satellite] = data_period(sat_data, start_date, stop_date)
-    del loaded_data
+    # storm_data_raw = {}
+    # for satellite, sat_data in loaded_data.items():
+    #     print(f'Restricting Time Period for satellite {satellite}')
+    #     storm_data_raw[satellite] = data_period(sat_data, start_date, stop_date)
+    # del loaded_data
 
     # Limit to relevant Lshells, convert satellite position from spherical GEO to GSM and extract relevant data
     # (Takes a few minutes)
-    storm_data = data_from_gps(storm_data_raw, Lshell=6)
-    del storm_data_raw
+    # storm_data = data_from_gps(storm_data_raw, Lshell=6)
+    # del storm_data_raw
     
     processed_save_path = os.path.join(base_save_folder, 'processed_gps.npz')
-    '''
     # Save Data for later recall:
-    print("Saving Processed GPS Data...")
-    np.savez(processed_save_path, **storm_data)
-    print("Data Saved \n")
-    '''
+    # print("Saving Processed GPS Data...")
+    # np.savez(processed_save_path, **storm_data)
+    # print("Data Saved \n")
     
     # Read in data from previous save
-    # storm_data_load = np.load(processed_save_path, allow_pickle=True)
-    # storm_data = load_data(storm_data_load)
-    # storm_data_load.close()
-    # del storm_data_load
+    storm_data_load = np.load(processed_save_path, allow_pickle=True)
+    storm_data = load_data(storm_data_load)
+    storm_data_load.close()
+    del storm_data_load
 
     
 ### Find Pitch Angles ###
     # Find pitch angle corresponding to set K
-    alphaofK = {}
-    for satellite, sat_data in storm_data.items():
-        print(f"Calculating Pitch Angle for satellite {satellite}")
-        alphaofK[satellite] = AlphaOfK(sat_data, K_set, extMag)
+    # alphaofK = {}
+    # for satellite, sat_data in storm_data.items():
+    #     print(f"Calculating Pitch Angle for satellite {satellite}")
+    #     alphaofK[satellite] = AlphaOfK(sat_data, K_set, extMag)
 
     alphaofK_filename = f"alphaofK_{extMag}.npz"
     alphaofK_save_path = os.path.join(base_save_folder, alphaofK_filename)
-    '''
+    
     # Save Data for later recall:
-    print("Saving AlphaofK Data...")
-    np.savez(alphaofK_save_path, **alphaofK)
-    print("Data Saved \n")
-    '''
+    # print("Saving AlphaofK Data...")
+    # np.savez(alphaofK_save_path, **alphaofK)
+    # print("Data Saved \n")
     
     # Load data from previous save
-    # alphaofK_load = np.load(alphaofK_save_path, allow_pickle=True)
-    # alphaofK = load_data(alphaofK_load)
-    # for satellite, sat_data in storm_data.items():
-    #     epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-    #     alphaofK[satellite] = pd.DataFrame(alphaofK[satellite], index=epoch_str, columns=K_set)
-    # alphaofK_load.close()
-    # del alphaofK_load
+    alphaofK_load = np.load(alphaofK_save_path, allow_pickle=True)
+    alphaofK = load_data(alphaofK_load)
+    for satellite, sat_data in storm_data.items():
+        epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
+        alphaofK[satellite] = pd.DataFrame(alphaofK[satellite], index=epoch_str, columns=K_set)
+    alphaofK_load.close()
+    del alphaofK_load
     
 ### Find Energies from Mu and AlphaofK ###
     # Find Mu spread of energy channels
@@ -146,22 +141,21 @@ if __name__ == '__main__':
 
 ### Find Flux at Set Pitch Angle ####
     #--- Extract Zhao Coefficients at each Epoch ---
-    Zhao_epoch_coeffs = find_Zhao_PAD_coeffs(storm_data, QD_storm_data, energyofmualpha)
+    # Zhao_epoch_coeffs = find_Zhao_PAD_coeffs(storm_data, QD_storm_data, energyofmualpha)
 
     Zhao_epoch_coeffs_filename = f"Zhao_epoch_coeffs.npz"
     Zhao_epoch_coeffs_save_path = os.path.join(base_save_folder, Zhao_epoch_coeffs_filename)
-    '''
+    
     # Save Data for later recall:
-    print("Saving Zhao coefficients for each Epoch...")
-    np.savez(Zhao_epoch_coeffs_save_path, **Zhao_epoch_coeffs)
-    print("Data Saved \n")
-    '''
+    # print("Saving Zhao coefficients for each Epoch...")
+    # np.savez(Zhao_epoch_coeffs_save_path, **Zhao_epoch_coeffs)
+    # print("Data Saved \n")
     
     # Load data from previous save
-    # Zhao_epoch_coeffs_load = np.load(Zhao_epoch_coeffs_save_path, allow_pickle=True)
-    # Zhao_epoch_coeffs = load_data(Zhao_epoch_coeffs_load)
-    # Zhao_epoch_coeffs_load.close()
-    # del Zhao_epoch_coeffs_load
+    Zhao_epoch_coeffs_load = np.load(Zhao_epoch_coeffs_save_path, allow_pickle=True)
+    Zhao_epoch_coeffs = load_data(Zhao_epoch_coeffs_load)
+    Zhao_epoch_coeffs_load.close()
+    del Zhao_epoch_coeffs_load
     
     #--- Create Pitch Angle Distribution (PAD) from Coefficients ---
     '''
@@ -200,28 +194,24 @@ if __name__ == '__main__':
         print(f"Calculating PSD for satellite {satellite}")
         psd[satellite] = find_psd(flux[satellite], energyofmualpha[satellite])
 
-### Calculate Lstar ###
-    #storm_data = find_Lstar(storm_data,alphaofK, extMag='T89c')
-    #storm_data_TS04 = find_Lstar(storm_data,alphaofK,extMag = 'TS04')
-    for satellite, sat_data in storm_data.items():
-        print(f"Calculating L* for satellite {satellite}")
-        storm_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag='T89c')
-    
+### Calculate Lstar ###)
+    # for satellite, sat_data in storm_data.items():
+    #     print(f"Calculating L* for satellite {satellite}")
+    #     storm_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag='T89c')
 
     complete_filename = f"storm_data_T89c.npz"
     complete_save_path = os.path.join(base_save_folder, complete_filename)
-    '''
+    
     # Save Data for later recall:
-    print("Saving Processed GPS Data...")
-    np.savez(complete_save_path, **storm_data )
-    print("Data Saved \n")
-    '''
+    # print("Saving Processed GPS Data...")
+    # np.savez(complete_save_path, **storm_data )
+    # print("Data Saved \n")
     
     # Read in data from previous save
-    # complete_load = np.load(complete_save_path, allow_pickle=True)
-    # storm_data = load_data(complete_load)
-    # complete_load.close()
-    # del complete_load
+    complete_load = np.load(complete_save_path, allow_pickle=True)
+    storm_data = load_data(complete_load)
+    complete_load.close()
+    del complete_load
     '''
     complete_filename = f"storm_data_TS04.npz"
     complete_save_path = os.path.join(base_save_folder, complete_filename)
@@ -234,45 +224,40 @@ if __name__ == '__main__':
 #%% Plot PSD lineplots
 k = 0.1
 i_K = np.where(K_set == k)[0]
-mu = 6000
+mu = 8000
 i_mu = np.where(Mu_set == mu)[0]
 
-REPTB_load = np.load('/mnt/box/Multipoint_Box/REPT_Data/plot_data2.npz', allow_pickle=True)
-REPTB_data = load_data(REPTB_load)
-REPTB_load.close()
+save_path = os.path.join('/home/will/REPT_data/april2017storm/', 'rept_data.npz')
+complete_load = np.load(save_path, allow_pickle=True)
+REPT_data = load_data(complete_load)
+complete_load.close()
+del complete_load
 
 # time_start  = dt.datetime(2017, 4, 23, 19, 30, 0)
 # time_stop   = dt.datetime(2017, 4, 23, 23, 00, 0)
     
-#time_start  = dt.datetime(2017, 4, 24, 17, 7, 0)
-#time_stop   = dt.datetime(2017, 4, 24, 21, 35, 0)
+# time_start  = dt.datetime(2017, 4, 24, 17, 7, 0)
+# time_stop   = dt.datetime(2017, 4, 24, 21, 35, 0)
    
-#time_start  = dt.datetime(2017, 4, 25, 15, 30, 0)
-#time_stop   = dt.datetime(2017, 4, 25, 19, 50, 0)
+# time_start  = dt.datetime(2017, 4, 25, 15, 30, 0)
+# time_stop   = dt.datetime(2017, 4, 25, 19, 50, 0)
 
 #time_start  = dt.datetime(2017, 4, 21, 10, 16, 0)
 #time_stop   = dt.datetime(2017, 4, 21, 13, 46, 0)
 
-time_start = start_date
-time_stop = stop_date
-
-#time_start  = dt.datetime(2017, 4, 21, 0, 0, 0)
-#time_stop   = dt.datetime(2017, 4, 26, 0, 0, 0)
+time_start  = dt.datetime(2017, 4, 21, 0, 0, 0)
+time_stop   = dt.datetime(2017, 4, 26, 0, 0, 0)
 
 # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
-Epoch_B_np = np.array(REPTB_data['Epoch_B_averaged'])
+Epoch_B_np = np.array(REPT_data['rbspb']['Epoch'].UTC)
 
 # Define Lstar delta
 lstar_delta = 0.1
 
 # Generate Lstar interval boundaries within the time range.
 time_range = Epoch_B_np[(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
-lstar_range = REPTB_data['Lstar_B_set'][(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
-psd_range = REPTB_data['psd_B'][(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
-
-energy_range = REPTB_data['energy_B_set'][(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
-interpa_range = REPTB_data['FEDU_B_interpa'][(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
-interpaE_range = REPTB_data['FEDU_B_interpaE'][(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
+lstar_range = REPT_data['rbspb']['Lstar'][(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
+psd_range = REPT_data['rbspb']['PSD'][k].values[:,i_mu][(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
 
 fig, ax = plt.subplots(figsize=(12, 8))
 colormap_name = 'viridis_r' # Good choice for continuous data
@@ -290,7 +275,7 @@ norm = colors.Normalize(vmin=vmin,
 # Apply the mask to both averaged_lstar and averaged_psd
 scatter_plot = ax.scatter(
     lstar_range,
-    psd_range[:, i_mu],
+    psd_range,
     c=time_range_timestamps, # Color by Epoch datetime objects
     cmap=cmap,
     norm=norm,
@@ -330,10 +315,10 @@ for i_hh, half_hour in enumerate(half_hours):
 
         nearest_time = np.zeros(sum(time_mask),dtype=int)
         for i_epoch, epoch in enumerate(sat_data['Epoch'].UTC[time_mask]):
-            nearest_time[i_epoch] = np.argmin(np.abs(REPTB_data['Epoch_B_averaged']-epoch))
+            nearest_time[i_epoch] = np.argmin(np.abs(REPT_data['rbspb']['Epoch'].UTC-epoch))
 
-        MLT_mask = ((sat_data['MLT'][time_mask] >= (REPTB_data['MLT_B'][nearest_time]-3)) 
-                    & (sat_data['MLT'][time_mask] < (REPTB_data['MLT_B'][nearest_time]+3)))
+        MLT_mask = ((sat_data['MLT'][time_mask] >= (REPT_data['rbspb']['MLT'][nearest_time]-3)) 
+                    & (sat_data['MLT'][time_mask] < (REPT_data['rbspb']['MLT'][nearest_time]+3)))
         valid_mask = MLT_mask
         
         if np.sum(valid_mask)>0:
@@ -379,7 +364,6 @@ legend1 = ax.legend(handles=[handle_rbspb, handle_gps],
                     fontsize=textsize-4)
 # Add the first legend to the axes
 ax.add_artist(legend1)
-
 # Add legend
 ax.legend(
     title=r"Time",
@@ -390,17 +374,15 @@ ax.legend(
     handlelength=1,
     fontsize=textsize-4
 )
-
 # Set the plot title to the time interval
 title_str = f"Time Interval: {time_start.strftime('%Y-%m-%d %H:%M')} to {time_stop.strftime('%Y-%m-%d %H:%M')}"
 ax.set_title(title_str, fontsize = textsize)
-
 plt.show()
 
 #%% Plot PSD
 k = 0.1
 i_K = np.where(K_set == k)[0]
-mu = 6000
+mu = 8000
 i_mu = np.where(Mu_set == mu)[0]
 
 fig, ax = plt.subplots(figsize=(16, 4))
@@ -415,7 +397,6 @@ max_val = np.nanmax(np.log10(1e-7))
 for satellite, sat_data in storm_data.items():
     psd_plot = psd[satellite][k].values[:,i_mu].copy().flatten()
     psd_mask = (psd_plot > 0) & (psd_plot != np.nan)
-
     # Plotting, ignoring NaN values in the color
     scatter_A = ax.scatter(sat_data['Epoch'].UTC[psd_mask], sat_data['Lstar'][psd_mask,0],
                         c=np.log10(psd_plot[psd_mask]), cmap=cmap, vmin=min_val, vmax=max_val)

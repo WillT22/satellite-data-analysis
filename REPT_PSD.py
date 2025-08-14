@@ -144,21 +144,20 @@ if __name__ == '__main__':
         flux[satellite], flux_alpha[satellite] = Interp_Flux(sat_data, alphaofK[satellite], energyofmualpha[satellite])
 
 ### Calculate PSD ###
-    psd = {}
     for satellite, sat_data in REPT_data.items():
         print(f"Calculating PSD for satellite {satellite}")
-        psd[satellite] = find_psd(flux[satellite], energyofmualpha[satellite])
+        REPT_data[satellite]['PSD'] = find_psd(flux[satellite], energyofmualpha[satellite])
 
 ### Calculate L* ####
     for satellite, sat_data in REPT_data.items():
         print(f"Calculating L* for satellite {satellite}...")
         REPT_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag='T89c')
 
-    new_save_path = os.path.join(base_save_folder, 'rept_data_TS04.npz')
+    new_save_path = os.path.join(base_save_folder, 'rept_data.npz')
     # Save Data for later recall:
-    # print("Saving REPT Data...")
-    # np.savez(new_save_path, **REPT_data)
-    # print("Data Saved \n")
+    print("Saving REPT Data...")
+    np.savez(new_save_path, **REPT_data)
+    print("Data Saved \n")
 
 #%% Plot PSD
 from matplotlib import colors
