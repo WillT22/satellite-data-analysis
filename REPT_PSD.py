@@ -97,31 +97,38 @@ if __name__ == '__main__':
     del energy_grid, alpha_grid, blocal_grid
 
 ### Find Alpha at each time point for given K ###
-    alphaofK = {}
-    for satellite, sat_data in REPT_data.items():
-        print(f"Calculating Pitch Angle for satellite {satellite}...")
-        alphaofK[satellite] = AlphaOfK(sat_data, K_set, extMag)
+    # alphaofK = {}
+    # for satellite, sat_data in REPT_data.items():
+    #     print(f"Calculating Pitch Angle for satellite {satellite}...")
+    #     alphaofK[satellite] = AlphaOfK(sat_data, K_set, extMag)
 
     alphaofK_filename = f"alphaofK_{extMag}.npz"
     alphaofK_save_path = os.path.join(base_save_folder, alphaofK_filename)
     # Save Data for later recall:
-    print("Saving AlphaofK Data...")
-    np.savez(alphaofK_save_path, **alphaofK)
-    print("Data Saved \n")
+    # print("Saving AlphaofK Data...")
+    # np.savez(alphaofK_save_path, **alphaofK)
+    # print("Data Saved \n")
 
     # Load data from previous save
     alphaofK_load = np.load(alphaofK_save_path, allow_pickle=True)
     alphaofK = load_data(alphaofK_load)
     for satellite, sat_data in REPT_data.items():
         epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-        alphaofK[satellite] = pd.DataFrame(alphaofK[satellite], index=epoch_str, columns=K_set)
+        alphaofK[satellite] = pd.DataFrame(alphaofK[satellite], index=epoch_str, columns=np.atleast_1d(K_set))
     alphaofK_load.close()
     del alphaofK_load
 
+    # Read in data from previous save
+    save_path = os.path.join(base_save_folder, 'rept_data.npz')
+    complete_load = np.load(save_path, allow_pickle=True)
+    REPT_data = load_data(complete_load)
+    complete_load.close()
+    del complete_load
+
 ### Find Loss Cone and Equatorial B ###
-    for satellite, sat_data in REPT_data.items():
-        print(f"Calculating Equatorial B-field for satellite {satellite}...")
-        REPT_data[satellite]['b_min'], REPT_data[satellite]['b_footpoint'], _ = find_Loss_Cone(sat_data, extMag=extMag)
+    # for satellite, sat_data in REPT_data.items():
+    #     print(f"Calculating Equatorial B-field for satellite {satellite}...")
+    #     REPT_data[satellite]['b_min'], REPT_data[satellite]['b_footpoint'], _ = find_Loss_Cone(sat_data, extMag=extMag)
  
 ### Find Energy for set Mu and Alpha ###
     energyofmualpha = {}
@@ -147,16 +154,11 @@ if __name__ == '__main__':
         print(f"Calculating L* for satellite {satellite}...")
         REPT_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag='T89c')
 
-    save_path = os.path.join(base_save_folder, 'rept_data.npz')
+    new_save_path = os.path.join(base_save_folder, 'rept_data_TS04.npz')
     # Save Data for later recall:
-    print("Saving REPT Data...")
-    np.savez(save_path, **REPT_data)
-    print("Data Saved \n")
-    # Read in data from previous save
-    # complete_load = np.load(complete_save_path, allow_pickle=True)
-    # REPT_data = load_data(complete_load)
-    # complete_load.close()
-    # del complete_load
+    # print("Saving REPT Data...")
+    # np.savez(new_save_path, **REPT_data)
+    # print("Data Saved \n")
 
 #%% Plot PSD
 from matplotlib import colors
@@ -177,10 +179,12 @@ max_val = np.nanmax(np.log10(1e-7))
 for satellite, sat_data in REPT_data.items():
     psd_plot = psd[satellite][k].values[:,i_mu].copy().flatten()
     psd_mask = (psd_plot > 0) & (psd_plot != np.nan)
+    lstar_mask = sat_data['Lstar'][:,0]>0
+    combined_mask = psd_mask & lstar_mask
 
     # Plotting, ignoring NaN values in the color
-    scatter_A = ax.scatter(sat_data['Epoch'].UTC[psd_mask], sat_data['Lstar'][psd_mask,0],
-                        c=np.log10(psd_plot[psd_mask]), cmap=cmap, vmin=min_val, vmax=max_val)
+    scatter_A = ax.scatter(sat_data['Epoch'].UTC[combined_mask], sat_data['Lstar'][combined_mask,0],
+                        c=np.log10(psd_plot[combined_mask]), cmap=cmap, vmin=min_val, vmax=max_val)
 
 
 ax.set_title(f"RBSP A&B REPT, K={k:.1f} $G^{{1/2}}R_E$, $\\mu$={mu:.0f} $MeV/G$", fontsize=textsize + 2)
@@ -193,7 +197,7 @@ max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((stop_date - 
 ax.set_xlim(min_epoch, max_epoch)
 ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
 ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-#ax.set_ylim(2, 7)
+ax.set_ylim(2, 8)
 ax.grid(True)
 
 cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
@@ -208,3 +212,49 @@ plt.subplots_adjust(top=0.82, right=0.95)
 plt.show()
 
 # %%
+
+fig, ax = plt.subplots(figsize=(16, 3))
+for satellite, sat_data in REPT_data.items():
+    lstar_mask = sat_data['Lstar'][:,0]>0
+    scatter_A = ax.scatter(sat_data['Epoch'].UTC[lstar_mask], sat_data['Lstar'][lstar_mask,0])
+ax.set_ylabel(r"L*", fontsize=textsize)
+ax.tick_params(axis='both', labelsize=textsize, pad=10)
+ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+# Force labels for first and last x-axis tick marks 
+min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+ax.set_xlim(min_epoch, max_epoch)
+ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
+ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+ax.set_ylim(2, 8)
+ax.grid(True)
+plt.show()
+
+fig, ax = plt.subplots(figsize=(16, 3))
+for satellite, sat_data in REPT_data.items():
+    scatter_A = ax.scatter(sat_data['Epoch'].UTC, sat_data['MLT'])
+ax.set_ylabel(r"MLT", fontsize=textsize)
+ax.tick_params(axis='both', labelsize=textsize, pad=10)
+ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(6))
+# Force labels for first and last x-axis tick marks 
+min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+ax.set_xlim(min_epoch, max_epoch)
+ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
+ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+ax.set_ylim(0, 24)
+ax.grid(True)
+plt.show()
+
+fig, ax = plt.subplots(figsize=(10, 6))
+for satellite, sat_data in REPT_data.items():
+    lstar_mask = sat_data['Lstar'][:,0]>0
+    ax.scatter(sat_data['MLT'][lstar_mask], sat_data['Lstar'][lstar_mask,0])
+ax.set_xlim(0, 24)
+ax.set_ylim(0, 8)
+ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(6))
+ax.set_xlabel('MLT', fontsize=textsize)
+ax.set_ylabel('L*', fontsize=textsize)
+ax.tick_params(axis='both', which='major', labelsize=textsize)
+ax.set_aspect('equal', 'box')
+ax.grid(True)

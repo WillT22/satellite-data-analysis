@@ -546,6 +546,7 @@ def find_Lstar(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
     IntMagModel = c_int(lgm_lib.__dict__[f"LGM_IGRF"])
     ExtMagModel = c_int(lgm_lib.__dict__[f"LGM_EXTMODEL_{extMag}"])
     lgm_lib.Lgm_Set_MagModel(IntMagModel, ExtMagModel, LstarInfo.contents.mInfo)
+    lgm_lib.Lgm_SetLstarTolerances(0, 10, LstarInfo) #3, 24     tolerance, N Field lines
     
         
     sat_data['Lstar'] = np.zeros_like(alphaofK.values)
@@ -557,8 +558,63 @@ def find_Lstar(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
             lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, LstarInfo.contents.mInfo.contents.c)
             current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
             QD_inform_MagInfo(epoch, LstarInfo.contents.mInfo)
-            LstarInfo.contents.PitchAngle = c_double(alphaofK.values[i_epoch,i_K])
+            pitch_angle = alphaofK.values[i_epoch,i_K] # this is equitorial pitch angle
+            LstarInfo.contents.PitchAngle = c_double(pitch_angle)
             #LstarInfo.contents.mInfo.contents.Bm = c_double(sat_data['b_footpoint'][i_epoch])
             lgm_lib.Lstar(pointer(current_vec), LstarInfo)
             sat_data['Lstar'][i_epoch,i_K] = LstarInfo.contents.LS
     return sat_data
+
+#%%
+'''
+LstarInfo = lgm_lib.InitLstarInfo(0)
+IntMagModel = c_int(lgm_lib.__dict__[f"LGM_IGRF"])
+ExtMagModel = c_int(lgm_lib.__dict__[f"LGM_EXTMODEL_{extMag}"])
+lgm_lib.Lgm_Set_MagModel(IntMagModel, ExtMagModel, LstarInfo.contents.mInfo)
+lgm_lib.Lgm_SetLstarTolerances( 3, 24, LstarInfo )
+
+Date       = 19991122
+UTC        = 19.0
+year = Date // 10000
+month = (Date % 10000) // 100
+day = Date % 100
+total_seconds_in_day = UTC * 3600.0
+hours = int(total_seconds_in_day // 3600)
+minutes = int((total_seconds_in_day % 3600) // 60)
+seconds = int(total_seconds_in_day % 60)
+microseconds = int((total_seconds_in_day - int(total_seconds_in_day)) * 1e6)
+datetime_obj = dt.datetime(year, month, day, hours, minutes, seconds, microseconds)
+epoch = spt.Ticktock([datetime_obj], 'UTC')
+current_time = ticktock_to_Lgm_DateTime(epoch, LstarInfo.contents.mInfo.contents.c)
+lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, LstarInfo.contents.mInfo.contents.c)
+
+current_pos = Coords((0,6.6,0),'SM','car')
+print(current_pos)
+current_pos.ticks = epoch
+current_pos_gsm = current_pos.convert('GSM','car')
+print(current_pos_gsm)
+current_vec = Lgm_Vector.Lgm_Vector(*current_pos_gsm.data[0])
+print(current_vec)
+
+LstarInfo.contents.PitchAngle = c_double(87.5)
+LstarInfo.contents.mInfo.contents.Kp = c_int(4)
+lgm_lib.Lstar(pointer(current_vec), LstarInfo)
+print(LstarInfo.contents.LS)
+
+
+Date       = 19991122
+UTC        = 19.0
+lgm_lib.Lgm_Set_Coord_Transforms(Date, UTC, LstarInfo.contents.mInfo.contents.c)
+
+Psm = Lgm_Vector.Lgm_Vector()
+P = Lgm_Vector.Lgm_Vector()
+Psm.x = 0.0; Psm.y = 6.6; Psm.z = 0.0
+lgm_lib.Lgm_Convert_Coords(pointer(Psm), pointer(P), c_int(lgm_lib.__dict__[f"SM_TO_GSM"]), LstarInfo.contents.mInfo.contents.c)
+
+lgm_lib.Lgm_SetLstarTolerances( 3, 24, LstarInfo )
+LstarInfo.contents.PitchAngle = c_double(87.5)
+LstarInfo.contents.mInfo.contents.Kp = c_int(4)
+lgm_lib.Lstar(pointer(P), LstarInfo)
+print(LstarInfo.contents.LS)
+'''
+# %%

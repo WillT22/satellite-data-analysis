@@ -361,7 +361,7 @@ scatter_B = ax.scatter(Epoch_B_np, Lstar_B_set,
                     c=np.log10(psd_B_plot[:, mu_select]), cmap=cmap, vmin=min_val, vmax=max_val)
 
 
-ax.set_title("RBSP-A & RBSP-B", fontsize=textsize)
+ax.set_title(f"RBSP A&B REPT, K={K_set:.1f} $G^{{1/2}}R_E$, $\\mu$={Mu_set[mu_select]:.0f} $MeV/G$", fontsize=textsize + 2)
 ax.set_ylabel(r"L*", fontsize=textsize)
 ax.tick_params(axis='both', labelsize=textsize)
 ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
@@ -380,7 +380,6 @@ cbar.set_ticks(tick_locations)
 cbar.set_label(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize)
 cbar.ax.tick_params(labelsize=textsize)
 
-fig.suptitle(f"K={K_set:.1f} $G^{{1/2}}R_E$, $\\mu$={Mu_set[mu_select]:.0f} $MeV/G$", fontsize=textsize + 2)
 plt.xticks(fontsize=textsize)
 plt.subplots_adjust(top=0.82, right=0.95)
 
@@ -545,4 +544,53 @@ ax.set_xlabel(r"PA (Interpolated)", fontsize=textsize)
 ax.set_ylabel(r"PA (AlphaOfK)", fontsize=textsize)
 ax.tick_params(axis='both', which='major', labelsize=textsize)
 ax.grid(True)
+
 # %%
+base_save_folder = "/home/will/REPT_data/april2017storm/"
+save_path = os.path.join(base_save_folder, 'rept_data.npz')
+complete_load = np.load(save_path, allow_pickle=True)
+REPT_data = load_data(complete_load)
+complete_load.close()
+del complete_load
+
+# Average Lstar by minute A
+minute_bins = np.array([dt_obj.replace(second=0, microsecond=0) for dt_obj in REPT_data['rbspa']['Epoch'].UTC], dtype=object)
+unique_minutes, indices = np.unique(minute_bins, return_inverse=True)
+valid_mask = ~np.isnan(REPT_data['rbspa']['Lstar']).flatten()
+lstar_valid = REPT_data['rbspa']['Lstar'][valid_mask].flatten()
+indices_valid = indices[valid_mask]
+sum_lstar = np.bincount(indices_valid, weights=lstar_valid, minlength=len(unique_minutes))
+count_lstar = np.bincount(indices_valid, minlength=len(unique_minutes))
+count_lstar = np.where(count_lstar == 0, np.nan, count_lstar)
+averaged_lstar_a = sum_lstar / count_lstar
+
+# Average Lstar by minute B
+minute_bins = np.array([dt_obj.replace(second=0, microsecond=0) for dt_obj in REPT_data['rbspb']['Epoch'].UTC], dtype=object)
+unique_minutes, indices = np.unique(minute_bins, return_inverse=True)
+valid_mask = ~np.isnan(REPT_data['rbspb']['Lstar']).flatten()
+lstar_valid = REPT_data['rbspb']['Lstar'][valid_mask].flatten()
+indices_valid = indices[valid_mask]
+sum_lstar = np.bincount(indices_valid, weights=lstar_valid, minlength=len(unique_minutes))
+count_lstar = np.bincount(indices_valid, minlength=len(unique_minutes))
+count_lstar = np.where(count_lstar == 0, np.nan, count_lstar)
+averaged_lstar_b = sum_lstar / count_lstar
+
+LGM_lstar = np.concatenate((averaged_lstar_a, averaged_lstar_b))
+IRBEM_lstar = np.concatenate((Lstar_A_set[:-1], Lstar_B_set[:-1]))
+
+fig, ax = plt.subplots(figsize=(10, 6))
+lstar_mask = (IRBEM_lstar > 0).flatten() & (LGM_lstar > 0)
+ax.scatter(LGM_lstar[lstar_mask], IRBEM_lstar[lstar_mask])
+# plt.scatter(Epoch_B_averaged[lstar_mask],Lstar_B_set[lstar_mask]) # IRBEM
+# plt.scatter(REPT_data['rbspb']['Epoch'].UTC[lstar_mask],REPT_data['rbspb']['Lstar'][lstar_mask]) # LGM
+ax.plot(np.linspace(0,8,1000),np.linspace(0,8,1000), color='black', linestyle = '--')
+ax.set_xlim(0, 8)
+ax.set_ylim(0, 8)
+major_ticks = np.arange(0, 9, 1)
+ax.set_xticks(major_ticks)
+ax.set_yticks(major_ticks)
+ax.set_xlabel('LGM find_Lstar', fontsize=textsize)
+ax.set_ylabel('IRBEM get_Lstar', fontsize=textsize)
+ax.tick_params(axis='both', which='major', labelsize=textsize)
+ax.set_aspect('equal', 'box')
+ax.grid(True)
