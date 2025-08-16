@@ -149,15 +149,15 @@ if __name__ == '__main__':
         REPT_data[satellite]['PSD'] = find_psd(flux[satellite], energyofmualpha[satellite])
 
 ### Calculate L* ####
-    for satellite, sat_data in REPT_data.items():
-        print(f"Calculating L* for satellite {satellite}...")
-        REPT_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag='T89c')
+    # for satellite, sat_data in REPT_data.items():
+    #     print(f"Calculating L* for satellite {satellite}...")
+    #     REPT_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag='T89c')
 
     new_save_path = os.path.join(base_save_folder, 'rept_data.npz')
     # Save Data for later recall:
-    print("Saving REPT Data...")
-    np.savez(new_save_path, **REPT_data)
-    print("Data Saved \n")
+    # print("Saving REPT Data...")
+    # np.savez(new_save_path, **REPT_data)
+    # print("Data Saved \n")
 
 #%% Plot PSD
 from matplotlib import colors
@@ -176,7 +176,7 @@ min_val = np.nanmin(np.log10(1e-12))
 max_val = np.nanmax(np.log10(1e-7))
 
 for satellite, sat_data in REPT_data.items():
-    psd_plot = psd[satellite][k].values[:,i_mu].copy().flatten()
+    psd_plot = REPT_data[satellite]['PSD'][k].values[:,i_mu].copy().flatten()
     psd_mask = (psd_plot > 0) & (psd_plot != np.nan)
     lstar_mask = sat_data['Lstar'][:,0]>0
     combined_mask = psd_mask & lstar_mask
@@ -196,7 +196,7 @@ max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((stop_date - 
 ax.set_xlim(min_epoch, max_epoch)
 ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
 ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-ax.set_ylim(2, 8)
+ax.set_ylim(2, 7)
 ax.grid(True)
 
 cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
@@ -210,50 +210,87 @@ plt.subplots_adjust(top=0.82, right=0.95)
 
 plt.show()
 
-# %%
+#%% Create PSD Radial Profiles
+sat_select = 'rbspb'
+sat_data = REPT_data[sat_select]
+k = 0.1
+i_K = np.where(K_set == k)[0]
 
-fig, ax = plt.subplots(figsize=(16, 3))
-for satellite, sat_data in REPT_data.items():
-    lstar_mask = sat_data['Lstar'][:,0]>0
-    scatter_A = ax.scatter(sat_data['Epoch'].UTC[lstar_mask], sat_data['Lstar'][lstar_mask,0])
-ax.set_ylabel(r"L*", fontsize=textsize)
-ax.tick_params(axis='both', labelsize=textsize, pad=10)
-ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
-# Force labels for first and last x-axis tick marks 
-min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
-max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
-ax.set_xlim(min_epoch, max_epoch)
-ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
-ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-ax.set_ylim(2, 8)
+# time_start  = dt.datetime(2017, 4, 23, 18, 45, 0)
+# time_stop   = dt.datetime(2017, 4, 23, 22, 58, 0)
+
+# time_start  = dt.datetime(2017, 4, 24, 17, 7, 0)
+# time_stop   = dt.datetime(2017, 4, 24, 21, 35, 0)
+
+time_start  = dt.datetime(2017, 4, 25, 15, 30, 0)
+time_stop   = dt.datetime(2017, 4, 25, 19, 57, 0)
+
+time_mask = (sat_data['Epoch'] >= time_start) & (sat_data['Epoch'] <= time_stop)
+
+lstar_delta = 0.1
+lstar_mask = (sat_data['Lstar'][:,0][time_mask]>0)
+lstar_range = sat_data['Lstar'][:,0][time_mask][lstar_mask]
+lstar_min = np.min(lstar_range[~np.isnan(lstar_range)])
+lstar_max = np.max(lstar_range[~np.isnan(lstar_range)])
+lstar_intervals = np.arange(np.floor(lstar_min / lstar_delta) * lstar_delta, np.ceil(lstar_max / lstar_delta) * lstar_delta + lstar_delta, lstar_delta)
+
+# Initialize arrays to store averaged values.
+averaged_lstar = np.zeros(len(lstar_intervals))
+averaged_psd = np.zeros((len(lstar_intervals), len(sat_data['PSD'][k].values[:,0].flatten())))
+
+fig, ax = plt.subplots(figsize=(6, 4.5))
+color_set = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(Mu_set), dtype=int)]
+color_set[3] = [0, 1, 1, 1]  # Teal
+
+for mu_index in range(len(Mu_set)):
+    for i, lstar_val in enumerate(lstar_intervals):
+        # Find indices within the current Lstar interval and time range.
+        lstar_start = lstar_val - 1/2 * lstar_delta
+        lstar_end = lstar_val + 1/2 * lstar_delta
+        interval_indices = np.where(time_mask & (sat_data['Lstar'][:,0] >= lstar_start) & (sat_data['Lstar'][:,0] < lstar_end))[0]
+        
+        # Calculate averages for the current Lstar interval
+        averaged_psd[i, mu_index] = np.nanmean(sat_data['PSD'][k].values[interval_indices,mu_index].flatten())  # average along the first axis, ignoring NaNs.
+
+    
+    # Create a mask to filter out NaN values
+    psd_mask = (averaged_psd[:,mu_index] > 0) & (averaged_psd[:,mu_index] != np.nan)
+    
+    # Apply the mask to both averaged_lstar and averaged_psd
+    ax.plot(
+        lstar_intervals[psd_mask],
+        averaged_psd[psd_mask,mu_index],
+        color=color_set[mu_index],
+        linewidth=2,
+        marker='o',
+        markersize=4,
+        label=f"{Mu_set[mu_index]:.0f}"
+        )
+
+ax.set_xlim(3, 5.5)
+ax.set_xlabel(r"L*", fontsize=textsize - 2)
+ax.set_ylim(1e-13, 1e-5)
+ax.set_ylabel(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize - 2)
+plt.yscale('log')
 ax.grid(True)
+
+# Add legend
+ax.legend(
+    title=r"$\mu$ (MeV/G)",
+    loc='center right',
+    bbox_to_anchor=(1.25, 0.5),
+    fontsize='small', #adjust legend fontsize
+    title_fontsize='medium', #adjust legend title fontsize
+    markerscale=0.7,
+    handlelength=1
+)
+
+# Add K text to the plot
+ax.text(0.02, 0.98, r"K = " + f"{K_set:.1f} $G^{{1/2}}R_E$", transform=ax.transAxes, fontsize=textsize-4, verticalalignment='top') #add the text
+
+# Set the plot title to the time interval
+title_str = f"Time Interval: {time_start.strftime('%Y-%m-%d %H:%M')} to {time_stop.strftime('%Y-%m-%d %H:%M')}"
+ax.set_title(title_str)
+
+plt.tight_layout()
 plt.show()
-
-fig, ax = plt.subplots(figsize=(16, 3))
-for satellite, sat_data in REPT_data.items():
-    scatter_A = ax.scatter(sat_data['Epoch'].UTC, sat_data['MLT'])
-ax.set_ylabel(r"MLT", fontsize=textsize)
-ax.tick_params(axis='both', labelsize=textsize, pad=10)
-ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(6))
-# Force labels for first and last x-axis tick marks 
-min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
-max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
-ax.set_xlim(min_epoch, max_epoch)
-ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
-ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-ax.set_ylim(0, 24)
-ax.grid(True)
-plt.show()
-
-fig, ax = plt.subplots(figsize=(10, 6))
-for satellite, sat_data in REPT_data.items():
-    lstar_mask = sat_data['Lstar'][:,0]>0
-    ax.scatter(sat_data['MLT'][lstar_mask], sat_data['Lstar'][lstar_mask,0])
-ax.set_xlim(0, 24)
-ax.set_ylim(0, 8)
-ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(6))
-ax.set_xlabel('MLT', fontsize=textsize)
-ax.set_ylabel('L*', fontsize=textsize)
-ax.tick_params(axis='both', which='major', labelsize=textsize)
-ax.set_aspect('equal', 'box')
-ax.grid(True)
