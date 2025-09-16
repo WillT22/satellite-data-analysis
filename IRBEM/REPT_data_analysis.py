@@ -15,22 +15,39 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 
 # Add the directory containing the script to the Python path
+# This ensures Python can find modules in the same directory as the running script.
 import sys
-script_dir = os.path.dirname(__file__)
-print(script_dir)
+# Get the directory of the current script using __file__
+script_dir_raw = os.path.dirname(__file__)
+script_dir = "/mnt/" + script_dir_raw[0].lower() + script_dir_raw[2:].replace('\\', '/') if sys.platform.startswith('linux') and len(script_dir_raw) > 1 and script_dir_raw[1] == ':' else script_dir_raw
+
+print(f"DEBUG: Script directory is: {script_dir}")
+try:
+    print(f"DEBUG: Files in script directory: {os.listdir(script_dir)}") # List contents of this dir
+except FileNotFoundError as e:
+    print(f"ERROR: os.listdir failed on '{script_dir}': {e}")
+    print("Please ensure the path exists and is accessible within your WSL environment.")
+    sys.exit(1) # Exit if we can't even list the directory
+
 if script_dir not in sys.path:
     sys.path.insert(0, script_dir)
+    print(f"DEBUG: Added {script_dir} to sys.path")
+else:
+    print(f"DEBUG: {script_dir} already in sys.path")
 
 # Import functions
-import importlib
-import analysis_functions
-importlib.reload(analysis_functions)
-from analysis_functions import (process_l3_data, time_average_FEDU, get_Omni, 
-                                energy_from_mu_alpha, average_fluxes_by_pitch_angle, 
-                                interpolate_flux_by_energy, interpolate_flux_by_alpha, find_psd)
+from analysis_functions import process_l3_data
+from analysis_functions import time_average
+from analysis_functions import get_Omni
+from analysis_functions import find_alpha
+from analysis_functions import energy_from_mu_alpha
+from analysis_functions import average_fluxes_by_pitch_angle
+from analysis_functions import interpolate_flux_by_energy
+from analysis_functions import interpolate_flux_by_alpha
+from analysis_functions import find_psd
 
 # Import the latest version of OMNI data
-from spacepy import toolbox as tb
+#from spacepy import toolbox as tb
 #tb.update(omni2=True)
 
 # Initialize global variables
@@ -47,8 +64,7 @@ electron_E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6)
 #%% Start main class
 if __name__ == '__main__':
 #% Folder containing CDF files
-    #folder_path_l3 = "C:/Users/Will/Box/Multipoint_Box/REPT Data/April 2017 Storm/l3/"
-    folder_path_l3 = "/mnt/box/Multipoint_Box/REPT_Data/April 2017 Storm/l3/"
+    folder_path_l3 = "C:/Users/wzt0020/Box/Multipoint_Box/REPT_Data/April_2017_Storm/l3/"
     if not os.path.exists(folder_path_l3):
         raise FileNotFoundError(f"Error: Folder path not found: {folder_path_l3}")
     
@@ -60,9 +76,9 @@ if __name__ == '__main__':
 #% Function for reading in RBSP flux data
     # Read in data from RBSP CDF files
     print("Processing Flux Data:")
-    Epoch_A, Position_A, MLT_A, FEDU_A, energy_channels_A, alpha_A = process_l3_data(file_paths_l3_A)
+    Epoch_A, Position_A, FEDU_A, energy_channels_A, alpha_A = process_l3_data(file_paths_l3_A)
     FEDU_A = np.where(FEDU_A == -1e+31, 0, FEDU_A)
-    Epoch_B, Position_B, MLT_B, FEDU_B, energy_channels_B, alpha_B = process_l3_data(file_paths_l3_B)
+    Epoch_B, Position_B, FEDU_B, energy_channels_B, alpha_B = process_l3_data(file_paths_l3_B)
     FEDU_B = np.where(FEDU_B == -1e+31, 0, FEDU_B)
     
     # Handle cases where only A or B data is present (check which lists are not empty)
@@ -86,37 +102,11 @@ if __name__ == '__main__':
         
 #% Time average flux for 1 minute resolution
     print("Averaging over 1 minute (RBSP-A)")
-    #Epoch_A_averaged, Position_A_averaged, FEDU_A_averaged = time_average_FEDU(Epoch_A, Position_A, FEDU_A)
+    Epoch_A_averaged, Position_A_averaged, FEDU_A_averaged = time_average(Epoch_A, Position_A, FEDU_A)
     print("Averaging over 1 minute (RBSP-B)")
-    #Epoch_B_averaged, Position_B_averaged, FEDU_B_averaged = time_average_FEDU(Epoch_B, Position_B, FEDU_B)
-    '''
-    print("Saving Data")
-    # Create a dictionary to store the variables
-    data_to_save = {
-        'Epoch_A_averaged': Epoch_A_averaged,
-        'Position_A_averaged': Position_A_averaged,
-        'FEDU_A_averaged': FEDU_A_averaged,
-        'Epoch_B_averaged': Epoch_B_averaged,
-        'Position_B_averaged': Position_B_averaged,
-        'FEDU_B_averaged': FEDU_B_averaged,
-
-    }
-    # Save the dictionary to a .npz file (NumPy zip archive)
-    np.savez('/mnt/box/Multipoint_Box/REPT_Data/averaged_data.npz', **data_to_save)
-    '''
-    print("Loading Saved Data")
-    loaded_data = np.load('/mnt/box/Multipoint_Box/REPT_Data/averaged_data.npz', allow_pickle=True)
+    Epoch_B_averaged, Position_B_averaged, FEDU_B_averaged = time_average(Epoch_B, Position_B, FEDU_B)
     
-    # Access the loaded variables
-    Epoch_A_averaged = loaded_data['Epoch_A_averaged']
-    Position_A_averaged = loaded_data['Position_A_averaged']
-    FEDU_A_averaged = loaded_data['FEDU_A_averaged']
-    Epoch_B_averaged = loaded_data['Epoch_B_averaged']
-    Position_B_averaged = loaded_data['Position_B_averaged']
-    FEDU_B_averaged = loaded_data['FEDU_B_averaged']
-    
-
-#% Average fluxes with the same pitch angle
+#% Average fluxed with the same pitch angle
     # use only unique values of alpha
     alpha_A_unique = np.array(sorted(list(set(np.round(alpha_A, 4)))))
     alpha_B_unique = np.array(sorted(list(set(np.round(alpha_B, 4)))))    
@@ -124,7 +114,7 @@ if __name__ == '__main__':
     print("Averaging fluxes with the same pitch angle (RBSP-A)")
     FEDU_A_averaged2 = average_fluxes_by_pitch_angle(FEDU_A_averaged, alpha_A_unique, energy_channels_A)
     print("Averaging fluxes with the same pitch angle (RBSP-B)")
-    FEDU_B_averaged2 = average_fluxes_by_pitch_angle(FEDU_B_averaged, alpha_B_unique, energy_channels_B)
+    FEDU_B_averaged2 = average_fluxes_by_pitch_angle(FEDU_B_averaged, alpha_A_unique, energy_channels_B)
 
 #% Obtain Omni Information & prepare for calculating K and L*
     # Set up for IRBEM Calculations
@@ -166,7 +156,7 @@ if __name__ == '__main__':
 #% Load Computationally Intensive Saved Data
     
     print("Loading Saved Data")
-    loaded_data = np.load('/mnt/box/Multipoint_Box/REPT_Data/vital_data_2.npz', allow_pickle=True)
+    loaded_data = np.load('vital_data_2.npz', allow_pickle=True)
     
     # Access the loaded variables
     results_A = loaded_data['results_A'].item()
@@ -198,103 +188,20 @@ if __name__ == '__main__':
         'results_B': results_B,
     }
     # Save the dictionary to a .npz file (NumPy zip archive)
-    np.savez('/mnt/box/Multipoint_Box/REPT_Data/vital_data_2.npz', **data_to_save)
+    np.savez('vital_data_2.npz', **data_to_save)
     '''
-#% Calculate alpha of set K
-    
-    def find_alpha(K_set, K, alpha, Blocal, Bmin):
-     """
-     Finds the alpha value corresponding to a given K_set by interpolating within a matrix of K values.
- 
-     Args:
-         K_set (float): The target K value for which to find alpha.
-         K (numpy.ndarray): A 2D NumPy array of K values. Each row represents a time point, and each column corresponds to an alpha value.
-         alpha (numpy.ndarray): A 1D NumPy array of alpha values corresponding to the columns of K.
- 
-     Returns:
-         numpy.ndarray: A 1D NumPy array of alpha values, one for each time point in K, corresponding to K_set.
-                        NaN is returned for time points where K_set cannot be interpolated.
-     """
-
-     # Check if the number of columns in K matches the length of alpha.
-     if K.shape[1] != len(alpha):
-         raise ValueError("Number of columns in K must match length of alpha.")
- 
-     # Initialize an array to store the resulting alpha values, filled with NaN.
-     alpha_set = np.full(K.shape[0], np.nan)
- 
-     # Iterate through each time point (row) in the K matrix.
-     for time_index in range(K.shape[0]):
-        alpha_time = np.rad2deg(np.arcsin(np.sqrt(Bmin[time_index]/Blocal[time_index])*np.sin(np.deg2rad(alpha))))
-        # Extract the K values for the current time point.
-        row_k = K[time_index, :]
- 
-        # Create a mask to identify NaN values in the K row.
-        nan_mask = np.isnan(row_k)
- 
-        # Create a mask to identify K values that are less than or equal to 1.
-        valid_mask = row_k <= 1
- 
-        # Combine the masks to exclude NaN values and values greater than 1.
-        combined_mask = ~nan_mask & valid_mask
- 
-        # Check if there are any valid K values for the current time point.
-        if np.any(combined_mask):
-             # Extract the valid K values and corresponding alpha values.
-             valid_k = row_k[combined_mask]
-             valid_alpha = alpha_time[combined_mask]
- 
-             # Sort the valid K values and corresponding alpha values in ascending order of K.
-             sort_indices = np.argsort(valid_k)
-             valid_k = valid_k[sort_indices]
-             valid_alpha = valid_alpha[sort_indices]   
- 
-             # Check if K_set is within the range of valid K values.
-             if np.min(valid_k) <= K_set <= np.max(valid_k):
-                 # Interpolate the alpha value for K_set using the valid K and alpha values.
-                 alpha_set[time_index] = np.interp(K_set, valid_k, valid_alpha)
- 
-     return alpha_set
-    
+#% Calculate K
     # Calculate K from X_j: K = X_j * \sqrt(B_mirr)
     print("Calculating K (RBSP-A)")
     K_A = Xj_A * np.sqrt(Bmirr_A*1e-5) # R_E*G^(1/2)
     # Find alpha at each time point given a set K
-    alpha_A_set = find_alpha(K_set, K_A, alpha_A_unique, Blocal_A, Bmin_A) 
+    alpha_A_set = find_alpha(K_set, K_A, alpha_A_unique) 
 
+    # Calculate K from X_j: K = X_j * \sqrt(B_mirr)
     print("Calculating K (RBSP-B)")
     K_B = Xj_B * np.sqrt(Bmirr_B*1e-5) # R_E*G^(1/2)
     # Find alpha at each time point given a set K
-    alpha_B_set = find_alpha(K_set, K_B, alpha_B_unique, Blocal_B, Bmin_B)
-    
-    # print("Loading Saved Data")
-    loaded_data = np.load('/mnt/box/Multipoint_Box/REPT_Data/alphaofK.npz', allow_pickle=True)
-    
-    # Access the loaded variables
-    alpha_A_set2 = loaded_data['alpha_A_set']
-    alpha_B_set2 = loaded_data['alpha_B_set']
-    
-    # print("Calculating Alpha of K (RBSP-A)")
-    # # Find alpha at each time point given a set K
-    # alpha_A_set = np.zeros(len(Epoch_A_averaged))
-    # for i in range(len(Epoch_A_averaged)):
-    #     alpha_A_set[i] = irbem.AlphaOfK(Ticktock(Epoch_A_averaged[i]),position_A[i],K_set,extMag=extMag) 
-
-    # print("Calculating Alpha of K (RBSP-B)")
-    # # Find alpha at each time point given a set K (took 145 minutes)
-    # alpha_B_set = np.zeros(len(Epoch_B_averaged))
-    # for i in range(len(Epoch_B_averaged)):
-    #     alpha_B_set[i] = irbem.AlphaOfK(Ticktock(Epoch_B_averaged[i]),position_B[i],K_set,extMag=extMag)
-    
-    # print("Saving Data")
-    # # Create a dictionary to store the variables
-    # data_to_save = {
-    #     'alpha_A_set': alpha_A_set,
-    #     'alpha_B_set': alpha_B_set
-    # }
-    # # Save the dictionary to a .npz file (NumPy zip archive)
-    # np.savez('/mnt/box/Multipoint_Box/REPT_Data/alphaofK.npz', **data_to_save)
-    
+    alpha_B_set = find_alpha(K_set, K_B, alpha_B_unique) 
     
 #% Find L* for calculated alpha values from set K
     print("Calculating L* for set K values (RBSP-A)")
@@ -330,22 +237,67 @@ if __name__ == '__main__':
     psd_A = find_psd(FEDU_A_interpaE, energy_A_set)
     print("Calculating PSD (RBSP-B)") 
     psd_B = find_psd(FEDU_B_interpaE, energy_B_set)
-
-#%% Plot PSD
+    
+#%% Plot Flux
 fig, ax = plt.subplots(figsize=(16, 4))
-
-mu_select = 2
 
 # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
 Epoch_A_np = np.array(Epoch_A_averaged)
 Epoch_B_np = np.array(Epoch_B_averaged)
+
+# Filter data for Lstar > 2
+mask_A = Lstar_A_set > 2
+Epoch_A_filtered = Epoch_A_np[mask_A]
+Lstar_A_set_filtered = Lstar_A_set[mask_A]
+FEDU_A_interpaE_filtered = FEDU_A_interpaE[mask_A]
+
+mask_B = Lstar_B_set > 2
+Epoch_B_filtered = Epoch_B_np[mask_B]
+Lstar_B_set_filtered = Lstar_B_set[mask_B]
+FEDU_B_interpaE_filtered = FEDU_B_interpaE[mask_B]
+
+# Logarithmic colorbar setup
+min_val = np.nanmin(np.log10(1))
+max_val = np.nanmax(np.log10(10**6))
+
+mu = 16000
+mu_select = np.where(Mu_set == mu)[0]
+
+scatter_A = ax.scatter(Epoch_A_filtered, Lstar_A_set_filtered, c=np.log10(FEDU_A_interpaE_filtered[:,mu_select]), vmin=min_val, vmax=max_val)
+scatter_B = ax.scatter(Epoch_B_filtered, Lstar_B_set_filtered, c=np.log10(FEDU_B_interpaE_filtered[:,mu_select]), vmin=min_val, vmax=max_val)
+
+ax.set_title("RBSP-A & RBSP-B", fontsize=textsize)
+ax.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
+ax.tick_params(axis='both', labelsize=textsize)
+ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+# Force labels for first and last x-axis tick marks 
+min_epoch = datetime(1970, 1, 1) + timedelta(hours=math.floor((min_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+max_epoch = datetime(1970, 1, 1) + timedelta(hours=math.ceil((max_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+ax.set_xlim(min_epoch, max_epoch)
+ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
+ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+ax.grid(True)
+
+cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
+cbar.set_label(r"Flux ($cm^{-2} s^{-1} sr^{-1} MeV^{-1}$)", fontsize=textsize)
+cbar.ax.tick_params(labelsize=textsize)
+
+fig.suptitle(f"Flux of Electrons with K={K_set:.1f}, $\\mu$={mu:.0f}", fontsize=textsize + 2)
+plt.xticks(rotation=45, ha='right', fontsize=textsize)
+plt.subplots_adjust(top=0.82, right=0.95)
+
+plt.show()
+
+
+#%% Plot PSD
+fig, ax = plt.subplots(figsize=(16, 4))
 
 colorscheme = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))
 cmap = colors.ListedColormap(colorscheme)
 
 # Logarithmic colorbar setup
 min_val = np.nanmin(np.log10(1e-12))
-max_val = np.nanmax(np.log10(1e-7))
+max_val = np.nanmax(np.log10(1e-9))
 
 psd_A_plot = psd_A.copy()
 psd_A_plot[np.where(psd_A_plot == 0)] = 1e-12
@@ -361,17 +313,17 @@ scatter_B = ax.scatter(Epoch_B_np, Lstar_B_set,
                     c=np.log10(psd_B_plot[:, mu_select]), cmap=cmap, vmin=min_val, vmax=max_val)
 
 
-ax.set_title(f"RBSP A&B REPT, K={K_set:.1f} $G^{{1/2}}R_E$, $\\mu$={Mu_set[mu_select]:.0f} $MeV/G$", fontsize=textsize + 2)
-ax.set_ylabel(r"L*", fontsize=textsize)
+ax.set_title("RBSP-A & RBSP-B", fontsize=textsize)
+ax.set_ylabel(r"L* ($R_E$)", fontsize=textsize)
 ax.tick_params(axis='both', labelsize=textsize)
 ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
 # Force labels for first and last x-axis tick marks 
 min_epoch = datetime(1970, 1, 1) + timedelta(hours=math.floor((min_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
 max_epoch = datetime(1970, 1, 1) + timedelta(hours=math.ceil((max_epoch - datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
 ax.set_xlim(min_epoch, max_epoch)
-ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
+ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=6))
 ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-ax.set_ylim(2, 7)
+ax.set_ylim(3, 5.5)
 ax.grid(True)
 
 cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
@@ -380,52 +332,17 @@ cbar.set_ticks(tick_locations)
 cbar.set_label(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize)
 cbar.ax.tick_params(labelsize=textsize)
 
-plt.xticks(fontsize=textsize)
+fig.suptitle(f"Flux of Electrons with K={K_set:.1f} $G^{{1/2}}R_E$, $\\mu$={mu:.0f} $MeV/G$", fontsize=textsize + 2)
+plt.xticks(rotation=45, ha='right', fontsize=textsize)
 plt.subplots_adjust(top=0.82, right=0.95)
 
 plt.show()
 
-    
 #%% Plot PSD lineplots
 '''
-print("Saving Data")
-# Create a dictionary to store the variables
-data_to_save = {
-    'Position_B_averaged': Position_B_averaged,
-    'Epoch_B_averaged': Epoch_B_averaged,
-    'alpha_B_unique': alpha_B_unique,
-    'Blocal_B': Blocal_B,
-    'alpha_B_set': alpha_B_set,
-    'energy_B_set': energy_B_set,
-    'MLT_B': MLT_B,
-    'Lstar_B_set': Lstar_B_set,
-    'FEDU_B_interpa': FEDU_B_interpa,
-    'FEDU_B_interpaE': FEDU_B_interpaE,
-    'psd_B': psd_B        
-}
-# Save the dictionary to a .npz file (NumPy zip archive)
-np.savez('/mnt/box/Multipoint_Box/REPT_Data/plot_data2.npz', **data_to_save)
-'''
-def load_data(npzfile):
-    print(f"Loading {npzfile}")
-    loaded_data = {}
-    for satellite, sat_data in npzfile.items():
-        loaded_data[satellite] = {}
-        if isinstance(sat_data, np.ndarray):
-            if sat_data.ndim == 0 and sat_data.dtype == object:
-                temp_inner_dict = sat_data.item()
-                for item, item_data in temp_inner_dict.items():
-                    loaded_data[satellite][item] = item_data
-            elif sat_data.ndim > 0:
-                loaded_data[satellite] = sat_data
-        elif isinstance(sat_data, pd.DataFrame):
-            loaded_data[satellite] = sat_data
-    print("Data Loaded \n")
-    return loaded_data
-
-REPTB_load = np.load('/mnt/box/Multipoint_Box/REPT_Data/plot_data2.npz', allow_pickle=True)
-REPTB_data = load_data(REPTB_load)
-REPTB_load.close()
+fig, ax = plt.subplots(figsize=(6, 4.5))
+color_set = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(Mu_set), dtype=int)]
+color_set[3] = [0, 1, 1, 1]  # Teal
 
 time_start  = datetime(2017, 4, 23, 18, 45, 0)
 time_stop   = datetime(2017, 4, 23, 22, 58, 0)
@@ -458,11 +375,6 @@ interpaE_range = FEDU_B_interpaE[(Epoch_B_np >= time_start) & (Epoch_B_np <= tim
 # Initialize arrays to store averaged values.
 averaged_lstar = np.zeros(len(lstar_intervals))
 averaged_psd = np.zeros((len(lstar_intervals), psd_B.shape[1]))
-
-fig, ax = plt.subplots(figsize=(6, 4.5))
-color_set = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(Mu_set), dtype=int)]
-color_set[3] = [0, 1, 1, 1]  # Teal
-
 
 for mu_index in range(len(Mu_set)):
     # Iterate through each Lstar interval.
@@ -516,81 +428,4 @@ ax.set_title(title_str)
 
 plt.tight_layout()
 plt.show()
-# %%
-convert_alphaB = np.rad2deg(np.arcsin(np.sqrt(Blocal_B/Bmin_B)*np.sin(np.deg2rad(alpha_B_set))))
-fig, ax = plt.subplots(figsize=(14, 2))
-ax.scatter(Epoch_B_averaged, alpha_B_set)
-ax.set_ylim(40,65)
-ax.set_xlabel('UTC', fontsize=textsize)
-ax.set_ylabel(r"Pitch Angle", fontsize=textsize)
-ax.tick_params(axis='both', which='major', labelsize=textsize)
-ax.set_title('Interpolated Pitch Angle for K=0.1',fontsize=textsize)
-ax.grid(True)
-
-fig, ax = plt.subplots(figsize=(14, 2))
-ax.scatter(Epoch_B_averaged, alpha_B_set2)
-ax.set_ylim(40,65)
-ax.set_xlabel('UTC', fontsize=textsize)
-ax.set_ylabel(r"Pitch Angle", fontsize=textsize)
-ax.tick_params(axis='both', which='major', labelsize=textsize)
-ax.set_title('Calculated Pitch Angle (IRBEM AlphaOfK) for K=0.1',fontsize=textsize)
-ax.grid(True)
-
-fig, ax = plt.subplots(figsize=(14, 6))
-ax.scatter(alpha_B_set, alpha_B_set2)
-ax.set_xlim(40,65)
-ax.set_ylim(40,65)
-ax.set_xlabel(r"PA (Interpolated)", fontsize=textsize)
-ax.set_ylabel(r"PA (AlphaOfK)", fontsize=textsize)
-ax.tick_params(axis='both', which='major', labelsize=textsize)
-ax.grid(True)
-
-# %%
-base_save_folder = "/home/will/REPT_data/april2017storm/"
-save_path = os.path.join(base_save_folder, 'rept_data.npz')
-complete_load = np.load(save_path, allow_pickle=True)
-REPT_data = load_data(complete_load)
-complete_load.close()
-del complete_load
-
-# Average Lstar by minute A
-minute_bins = np.array([dt_obj.replace(second=0, microsecond=0) for dt_obj in REPT_data['rbspa']['Epoch'].UTC], dtype=object)
-unique_minutes, indices = np.unique(minute_bins, return_inverse=True)
-valid_mask = ~np.isnan(REPT_data['rbspa']['Lstar']).flatten()
-lstar_valid = REPT_data['rbspa']['Lstar'][valid_mask].flatten()
-indices_valid = indices[valid_mask]
-sum_lstar = np.bincount(indices_valid, weights=lstar_valid, minlength=len(unique_minutes))
-count_lstar = np.bincount(indices_valid, minlength=len(unique_minutes))
-count_lstar = np.where(count_lstar == 0, np.nan, count_lstar)
-averaged_lstar_a = sum_lstar / count_lstar
-
-# Average Lstar by minute B
-minute_bins = np.array([dt_obj.replace(second=0, microsecond=0) for dt_obj in REPT_data['rbspb']['Epoch'].UTC], dtype=object)
-unique_minutes, indices = np.unique(minute_bins, return_inverse=True)
-valid_mask = ~np.isnan(REPT_data['rbspb']['Lstar']).flatten()
-lstar_valid = REPT_data['rbspb']['Lstar'][valid_mask].flatten()
-indices_valid = indices[valid_mask]
-sum_lstar = np.bincount(indices_valid, weights=lstar_valid, minlength=len(unique_minutes))
-count_lstar = np.bincount(indices_valid, minlength=len(unique_minutes))
-count_lstar = np.where(count_lstar == 0, np.nan, count_lstar)
-averaged_lstar_b = sum_lstar / count_lstar
-
-LGM_lstar = np.concatenate((averaged_lstar_a, averaged_lstar_b))
-IRBEM_lstar = np.concatenate((Lstar_A_set[:-1], Lstar_B_set[:-1]))
-
-fig, ax = plt.subplots(figsize=(10, 6))
-lstar_mask = (IRBEM_lstar > 0).flatten() & (LGM_lstar > 0)
-ax.scatter(LGM_lstar[lstar_mask], IRBEM_lstar[lstar_mask])
-# plt.scatter(Epoch_B_averaged[lstar_mask],Lstar_B_set[lstar_mask]) # IRBEM
-# plt.scatter(REPT_data['rbspb']['Epoch'].UTC[lstar_mask],REPT_data['rbspb']['Lstar'][lstar_mask]) # LGM
-ax.plot(np.linspace(0,8,1000),np.linspace(0,8,1000), color='black', linestyle = '--')
-ax.set_xlim(0, 8)
-ax.set_ylim(0, 8)
-major_ticks = np.arange(0, 9, 1)
-ax.set_xticks(major_ticks)
-ax.set_yticks(major_ticks)
-ax.set_xlabel('LGM find_Lstar', fontsize=textsize)
-ax.set_ylabel('IRBEM get_Lstar', fontsize=textsize)
-ax.tick_params(axis='both', which='major', labelsize=textsize)
-ax.set_aspect('equal', 'box')
-ax.grid(True)
+'''

@@ -6,45 +6,10 @@ import spacepy.omni as omni
 import scipy.constants as sc
 
 #%% Proccess REPT CDF
-def process_l2_data(file_paths):
-    # Initialize varaibles to be read in
-    Epoch = []
-    Position = []
-    L_star = []
-    MLT = []
-    FESA = None
-    energy_channels = []
-    # Itterate over files in file path
-    for file_path in file_paths:
-        # Extract filename without path
-        file_name = os.path.basename(file_path)
-        print(f"Processing file: {file_name}")
-        # Load the CDF data
-        cdf_data = pycdf.CDF(file_path)
-        # Read in data
-        Epoch.extend(cdf_data["Epoch"][:])
-        Position.extend(cdf_data["Position"][:])
-        L_star.extend(cdf_data["L_star"][:])
-        MLT.extend(cdf_data["MLT"][:])
-        # Get energy channels from first file
-        if FESA is None:
-            FESA = cdf_data["FESA"][:]
-            energy_channels = cdf_data["FESA_Energy"][:]
-        else:
-            FESA = np.vstack((FESA, cdf_data["FESA"][:]))
-        cdf_data.close()
-    # Convert from km to R_E
-    Position = np.array(Position)
-    Re = 6378.137 # Earth's Radius
-    Position = Position / Re
-    # finish reading in data
-    return Epoch, Position, L_star, MLT, FESA, energy_channels
-
 def process_l3_data(file_paths):
     # Initialize varaibles to be read in
     Epoch = []
     Position = []
-    MLT = []
     FEDU = None
     energy_channels = []
     # Itterate over files in file path
@@ -57,7 +22,6 @@ def process_l3_data(file_paths):
         # Read in data
         Epoch.extend(cdf_data["Epoch"][:])
         Position.extend(cdf_data["Position"][:])
-        MLT.extend(cdf_data["MLT"][:])
         # Get energy channels from first file
         if FEDU is None:
             FEDU = cdf_data["FEDU"][:]
@@ -72,46 +36,11 @@ def process_l3_data(file_paths):
     Re = 6378.137 # Earth's Radius
     Position = Position / Re
     # finish reading in data
-    return Epoch, Position, MLT, FEDU, energy_channels, pitch_angle
+    return Epoch, Position, FEDU, energy_channels, pitch_angle
 
-#%% Time average for time period resolution for FESA data
-def time_average_FESA(epoch, position, FESA, MLT, time_delta = 1):
+#%% Time average for 1 minute resolution
+def time_average(epoch, position, FEDU):
     
-    if not isinstance(time_delta, int) or time_delta <= 0:
-        raise ValueError("time_delta must be a positive integer representing minutes.")
-
-    # Find minutes of whole period
-    start_time_period = epoch[0].replace(second=0, microsecond=0)
-    current_bin_start = start_time_period - datetime.timedelta(minutes=start_time_period.minute % time_delta)
-    
-    # Create time bounds within which data is averaged
-    averaged_epochs = []
-    
-    while current_bin_start <= epoch[-1]:
-        averaged_epochs.append(current_bin_start)
-        current_bin_start += datetime.timedelta(minutes=time_delta)
-            
-    # Find average position each minute
-    average_positions = []
-    average_MLT = []
-    average_FESA = []
-    for bin_start_time in averaged_epochs:
-        bin_end_time = bin_start_time + datetime.timedelta(minutes=time_delta)
-        minute_indices = np.where((np.array(epoch) >= bin_start_time) & (np.array(epoch) < bin_end_time))[0]
-        
-        if minute_indices.size > 0:
-            average_positions.append(np.mean(position[minute_indices], axis=0))
-            average_MLT.append(np.mean(MLT[minute_indices], axis=0))
-            average_FESA.append(np.mean(FESA[minute_indices], axis=0))
-        else:
-            average_positions.append(np.array([np.nan, np.nan, np.nan]))
-            average_MLT.append(np.mean(MLT[minute_indices], axis=0))
-            average_FESA.append(np.full(FESA.shape[1], np.nan))
-    
-    return averaged_epochs, np.array(average_positions), np.array(average_FESA)
-
-#%% Time average for time period resolution for FEDU data
-def time_average_FEDU(epoch, position, FEDU, time_delta = 1):
     # Find minutes of whole period
     epoch_minutes = [epoch[0].replace(second=0, microsecond=0)]
     for time_index in range(len(epoch[1:])):
@@ -123,7 +52,6 @@ def time_average_FEDU(epoch, position, FEDU, time_delta = 1):
     average_FEDU = []
     for minute_index in range(len(epoch_minutes)):
         minute_start = epoch_minutes[minute_index] - datetime.timedelta(seconds=30)
-        print(minute_start)
         minute_end =  epoch_minutes[minute_index] + datetime.timedelta(seconds=30)
         minute_indices = np.where((np.array(epoch) >= minute_start) & (np.array(epoch) < minute_end))[0]
         
@@ -218,6 +146,60 @@ def get_Omni(time, position):
             print(f"Warning: Key '{cdf_key}' not found in CDF data. Skipping.")
     
     return omnivals_refined
+        
+#%% Find alpha given K
+def find_alpha(K_set, K, alpha):
+     """
+     Finds the alpha value corresponding to a given K_set by interpolating within a matrix of K values.
+ 
+     Args:
+         K_set (float): The target K value for which to find alpha.
+         K (numpy.ndarray): A 2D NumPy array of K values. Each row represents a time point, and each column corresponds to an alpha value.
+         alpha (numpy.ndarray): A 1D NumPy array of alpha values corresponding to the columns of K.
+ 
+     Returns:
+         numpy.ndarray: A 1D NumPy array of alpha values, one for each time point in K, corresponding to K_set.
+                        NaN is returned for time points where K_set cannot be interpolated.
+     """
+ 
+     # Check if the number of columns in K matches the length of alpha.
+     if K.shape[1] != len(alpha):
+         raise ValueError("Number of columns in K must match length of alpha.")
+ 
+     # Initialize an array to store the resulting alpha values, filled with NaN.
+     alpha_set = np.full(K.shape[0], np.nan)
+ 
+     # Iterate through each time point (row) in the K matrix.
+     for time_index in range(K.shape[0]):
+         # Extract the K values for the current time point.
+         row_k = K[time_index, :]
+ 
+         # Create a mask to identify NaN values in the K row.
+         nan_mask = np.isnan(row_k)
+ 
+         # Create a mask to identify K values that are less than or equal to 1.
+         valid_mask = row_k <= 1
+ 
+         # Combine the masks to exclude NaN values and values greater than 1.
+         combined_mask = ~nan_mask & valid_mask
+ 
+         # Check if there are any valid K values for the current time point.
+         if np.any(combined_mask):
+             # Extract the valid K values and corresponding alpha values.
+             valid_k = row_k[combined_mask]
+             valid_alpha = alpha[combined_mask]
+ 
+             # Sort the valid K values and corresponding alpha values in ascending order of K.
+             sort_indices = np.argsort(valid_k)
+             valid_k = valid_k[sort_indices]
+             valid_alpha = valid_alpha[sort_indices]   
+ 
+             # Check if K_set is within the range of valid K values.
+             if np.min(valid_k) <= K_set <= np.max(valid_k):
+                 # Interpolate the alpha value for K_set using the valid K and alpha values.
+                 alpha_set[time_index] = np.interp(K_set, valid_k, valid_alpha)
+ 
+     return alpha_set
 
 
 #%% Calculate energy from set mu and alpha:
