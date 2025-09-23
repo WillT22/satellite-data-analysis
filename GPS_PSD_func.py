@@ -41,7 +41,7 @@ def import_GPS(input_folder):
     print(f"Starting to process files in: {input_folder}")
 
     # Use os.walk to traverse the directory tree.
-    # 'root' is the current directory path (e.g., "/home/will/GPS_data/april2017storm/").
+    # 'root' is the current directory path (e.g., "/home/wzt0020/GPS_data/april2017storm/").
     # 'dirnames' is a list of subdirectories in the current 'root' (e.g., ['ns60', 'ns63']).
     # '_' (underscore) is used as a throwaway variable for 'filenames' as it's not used directly here.
     for (root, satnames, _) in os.walk(input_folder):
@@ -147,14 +147,12 @@ def data_period(sat_data, start_date, stop_date):
         if isinstance(item_data, list):
             item_data = np.array(item_data)
         time_restricted_data[item] = item_data[time_mask]
-    
-    print("Relevant Time Period Identified")
     return time_restricted_data
 
 #%% Extract QinDenton data for the time period
 def QinDenton_period(start_date, stop_date): 
     print('Loading QinDenton Data...')
-    QD_folder = "/home/will/QinDenton/"
+    QD_folder = "/home/wzt0020/QinDenton/"
     QD_filenames = []
     current_date_object = start_date
     while current_date_object <= stop_date:
@@ -167,7 +165,6 @@ def QinDenton_period(start_date, stop_date):
     datetime_format = "%Y-%m-%dT%H:%M:%S"
     for dti, datetime in enumerate(QD_data['DateTime']):
         QD_data['DateTime'][dti] = dt.datetime.strptime(datetime, datetime_format)
-    print("QinDenton Data Loaded \n")
     return QD_data
 
 #%% Extract information for only relevant Lshells
@@ -181,9 +178,8 @@ def limit_Lshell(time_restricted_data, Lshell, intMag = 'IGRF', extMag = 'T89'):
 
 #%% Set magnetic field model coefficients to closest time of QinDenton data
 ## Someday, replace this with Lgm_QinDenton in LANLGeoMag...
-def QD_inform_MagInfo(time, MagInfo):
+def QD_inform_MagInfo(time_dt, MagInfo):
     # Round down to the nearest 5 minutes
-    time_dt = time.UTC[0] # Assumes time is a spacepy TickTock object
     minutes_to_subtract = time_dt.minute % 5
     rounded_dt = time_dt - dt.timedelta(
         minutes=minutes_to_subtract,
@@ -220,6 +216,12 @@ def find_local90PA(sat_data):
     local90PA[mask] = np.rad2deg(np.arcsin(np.sqrt(Beq[mask] / Bsat[mask])))
     return local90PA
 
+#%% Convert TickTock to Lgm_DateTime
+def ticktock_to_Lgm_DateTime(ticktock, c):
+    dt_obj = ticktock
+    lgm_dt = lgm_lib.Lgm_DateTime_Create(dt_obj.year, dt_obj.month, dt_obj.day, 
+                                dt_obj.hour+dt_obj.minute/60+dt_obj.second/3600, lgm_lib.LGM_TIME_SYS_UTC, c)
+    return lgm_dt 
 #%% Find Loss Cone
 def find_Loss_Cone(sat_data, height = 100, extMag='T89c'):
     
@@ -234,7 +236,7 @@ def find_Loss_Cone(sat_data, height = 100, extMag='T89c'):
     b_footpoint = np.zeros(len(sat_data['Epoch']))
     loss_cone = np.zeros(len(sat_data['Epoch']))
         
-    for i_epoch, epoch in enumerate(sat_data['Epoch']):
+    for i_epoch, epoch in enumerate(sat_data['Epoch'].UTC):
         current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
         lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
         current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
@@ -253,7 +255,6 @@ def find_Loss_Cone(sat_data, height = 100, extMag='T89c'):
             b_footpoint[i_epoch] = MagInfo.contents.Ellipsoid_Footprint_Bs * 1e-5
 
     loss_cone = np.rad2deg(np.arcsin(np.sqrt(b_min/b_footpoint)))
-    print(f'        Loss Cone Found')
     return b_min, b_footpoint, loss_cone
 
 #%% Extract relevant information from time processed data
@@ -299,22 +300,10 @@ def data_from_gps(time_restricted_data, Lshell = [], intMag = 'IGRF', extMag = '
 
         gps_data_out[satellite]['local90PA'] = find_local90PA(gps_data_out[satellite])
         gps_data_out[satellite]['b_min'], gps_data_out[satellite]['b_footpoint'], gps_data_out[satellite]['loss_cone'] = find_Loss_Cone(gps_data_out[satellite])
-        
-    print('Satellite Data Processed \n')
-
     return gps_data_out
-
-
-#%% Convert TickTock to Lgm_DateTime
-def ticktock_to_Lgm_DateTime(ticktock, c):
-    dt_obj = ticktock.UTC[0]
-    lgm_dt = lgm_lib.Lgm_DateTime_Create(dt_obj.year, dt_obj.month, dt_obj.day, 
-                                dt_obj.hour+dt_obj.minute/60+dt_obj.second/3600, lgm_lib.LGM_TIME_SYS_UTC, c)
-    return lgm_dt 
 
 #%% Find pitch angle corresponding to set K
 def AlphaOfK(sat_data, K_set, extMag = 'T89c'):
-    
     '''
     alphaofK is structured like:
         Satellite name
@@ -333,7 +322,9 @@ def AlphaOfK(sat_data, K_set, extMag = 'T89c'):
     alphaofK = np.zeros((len(sat_data['Epoch']),len(K_set)))
     alphaofK.fill(np.nan)
     for i_K, K in enumerate(K_set):
-        for i_epoch, epoch in enumerate(sat_data['Epoch']):
+        print(f"    K Index: {i_K+1}/{len(K_set)}", end='\r')
+        for i_epoch, epoch in enumerate(sat_data['Epoch'].UTC):
+            print(f"    Time Index: {i_epoch+1}/{len(sat_data['Epoch'])}", end='\r')
             current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
             lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
             current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
@@ -345,12 +336,10 @@ def AlphaOfK(sat_data, K_set, extMag = 'T89c'):
             lgm_lib.Lgm_TearDown_AlphaOfK(MagInfo)
     epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
     alphaofK = pd.DataFrame(alphaofK, index=epoch_str, columns=K_set)
-    print('Pitch Angles Calculated')
     return alphaofK
 
 #%% Calculate Mu from energy channels and set alpha:
 def MuofEnergyAlpha(gps_data, alphaofK):
-    
     '''
     muofenergyalpha is structured like:
         Satellite name
@@ -415,8 +404,6 @@ def MuofEnergyAlpha(gps_data, alphaofK):
     Mu_max_round = Mu_max_sci_round * (magnitude_max/10)
 
     Mu_bounds['Rounded'] = np.array((Mu_min_round, Mu_max_round))
-    
-    print('Mus Calculated \n')
     return muofenergyalpha, Mu_bounds
 
 #%% Calculate energy from set mu and alpha:
@@ -459,7 +446,6 @@ def EnergyofMuAlpha(sat_data, Mu_set, alphaofK):
             # Reminder, GPS Bfield data is in Gauss
             energyofmualpha[K][:,i_Mu] = np.sqrt(2 * E0 * mu * sat_data['b_min'] / sin_squared_alpha + E0**2) - E0
         energyofmualpha[K] = pd.DataFrame(energyofmualpha[K], index=epoch_str, columns=Mu_set)
-    print('Energies Calculated \n')
     return energyofmualpha
 
 #%% Calculate Energy Spectra
@@ -516,7 +502,6 @@ def energy_spectra(gps_data, energyofMuAlpha):
                 j_CXD[satellite][K_val][energy_mask,i_Mu] = j_MJ1[energy_mask] + j_MJ2[energy_mask] + j_MJ3[energy_mask] + j_G[energy_mask]
 
             j_CXD[satellite][K_val] = pd.DataFrame(j_CXD[satellite][K_val], index=epoch_list, columns=Mu_set) 
-    print('Energy Spectra Calculated\n')
     return j_CXD
 
 #%% Transform from flux to PSD
@@ -551,12 +536,13 @@ def find_Lstar(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
         
     sat_data['Lstar'] = np.zeros_like(alphaofK.values)
     K_set = np.array(list(alphaofK.columns.tolist()), dtype=float)
-    for i_epoch, epoch in enumerate(sat_data['Epoch']):
+    for i_epoch, epoch in enumerate(sat_data['Epoch'].UTC):
+        print(f"    Time Index: {i_epoch+1}/{len(sat_data['Epoch'])}", end='\r')
         for i_K, K in enumerate(K_set):
             # Could possibly speed up with NewTimeLstarInfo
             current_time = ticktock_to_Lgm_DateTime(epoch, LstarInfo.contents.mInfo.contents.c)
             lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, LstarInfo.contents.mInfo.contents.c)
-            current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
+            current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'].data[i_epoch])
             QD_inform_MagInfo(epoch, LstarInfo.contents.mInfo)
             pitch_angle = alphaofK.values[i_epoch,i_K] # this is equitorial pitch angle
             LstarInfo.contents.PitchAngle = c_double(pitch_angle)
@@ -564,57 +550,3 @@ def find_Lstar(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
             lgm_lib.Lstar(pointer(current_vec), LstarInfo)
             sat_data['Lstar'][i_epoch,i_K] = LstarInfo.contents.LS
     return sat_data
-
-#%%
-'''
-LstarInfo = lgm_lib.InitLstarInfo(0)
-IntMagModel = c_int(lgm_lib.__dict__[f"LGM_IGRF"])
-ExtMagModel = c_int(lgm_lib.__dict__[f"LGM_EXTMODEL_{extMag}"])
-lgm_lib.Lgm_Set_MagModel(IntMagModel, ExtMagModel, LstarInfo.contents.mInfo)
-lgm_lib.Lgm_SetLstarTolerances( 3, 24, LstarInfo )
-
-Date       = 19991122
-UTC        = 19.0
-year = Date // 10000
-month = (Date % 10000) // 100
-day = Date % 100
-total_seconds_in_day = UTC * 3600.0
-hours = int(total_seconds_in_day // 3600)
-minutes = int((total_seconds_in_day % 3600) // 60)
-seconds = int(total_seconds_in_day % 60)
-microseconds = int((total_seconds_in_day - int(total_seconds_in_day)) * 1e6)
-datetime_obj = dt.datetime(year, month, day, hours, minutes, seconds, microseconds)
-epoch = spt.Ticktock([datetime_obj], 'UTC')
-current_time = ticktock_to_Lgm_DateTime(epoch, LstarInfo.contents.mInfo.contents.c)
-lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, LstarInfo.contents.mInfo.contents.c)
-
-current_pos = Coords((0,6.6,0),'SM','car')
-print(current_pos)
-current_pos.ticks = epoch
-current_pos_gsm = current_pos.convert('GSM','car')
-print(current_pos_gsm)
-current_vec = Lgm_Vector.Lgm_Vector(*current_pos_gsm.data[0])
-print(current_vec)
-
-LstarInfo.contents.PitchAngle = c_double(87.5)
-LstarInfo.contents.mInfo.contents.Kp = c_int(4)
-lgm_lib.Lstar(pointer(current_vec), LstarInfo)
-print(LstarInfo.contents.LS)
-
-
-Date       = 19991122
-UTC        = 19.0
-lgm_lib.Lgm_Set_Coord_Transforms(Date, UTC, LstarInfo.contents.mInfo.contents.c)
-
-Psm = Lgm_Vector.Lgm_Vector()
-P = Lgm_Vector.Lgm_Vector()
-Psm.x = 0.0; Psm.y = 6.6; Psm.z = 0.0
-lgm_lib.Lgm_Convert_Coords(pointer(Psm), pointer(P), c_int(lgm_lib.__dict__[f"SM_TO_GSM"]), LstarInfo.contents.mInfo.contents.c)
-
-lgm_lib.Lgm_SetLstarTolerances( 3, 24, LstarInfo )
-LstarInfo.contents.PitchAngle = c_double(87.5)
-LstarInfo.contents.mInfo.contents.Kp = c_int(4)
-lgm_lib.Lstar(pointer(P), LstarInfo)
-print(LstarInfo.contents.LS)
-'''
-# %%

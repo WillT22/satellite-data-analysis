@@ -31,7 +31,8 @@ K_set = np.array((0.1,1)) # R_E*G^(1/2)
 E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6) # this is m_0*c^2
 # b_satellite and b_equator are in Gauss: 1 G = 10^5 nT
 
-base_save_folder = "/home/will/GPS_data/april2017storm/"
+input_folder = "/home/wzt0020/GPS_data/april2017storm/"
+base_save_folder = "/home/wzt0020/GPS_data/april2017storm/"
 extMag = 'T89c'
 
 start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
@@ -54,15 +55,14 @@ Zhao_coeffs = import_Zhao_coeffs()
 if __name__ == '__main__':
 
 ### Load in data ###
-    input_folder = "/home/will/GPS_data/april2017storm/"
     # Be mindful of ns60 and ns69 data as they have poorer fits and more noise
-    # loaded_data = import_GPS(input_folder)
+    loaded_data = import_GPS(input_folder)
 
     raw_save_path = os.path.join(base_save_folder, 'raw_gps.npz')
     # Save Data for later recall:
-    # print("Saving Raw GPS Data...")
-    # np.savez(raw_save_path, **loaded_data)
-    # print("Data Saved \n")
+    print("Saving Raw GPS Data...")
+    np.savez(raw_save_path, **loaded_data)
+    print("Data Saved \n")
     
     # Read in data from previous save
     raw_data_load = np.load(raw_save_path, allow_pickle=True)
@@ -72,22 +72,22 @@ if __name__ == '__main__':
     
 ### Preprocessing ###    
     # Restrict to time period
-    # storm_data_raw = {}
-    # for satellite, sat_data in loaded_data.items():
-    #     print(f'Restricting Time Period for satellite {satellite}')
-    #     storm_data_raw[satellite] = data_period(sat_data, start_date, stop_date)
-    # del loaded_data
+    storm_data_raw = {}
+    for satellite, sat_data in loaded_data.items():
+        print(f'Restricting Time Period for satellite {satellite}')
+        storm_data_raw[satellite] = data_period(sat_data, start_date, stop_date)
+    del loaded_data
 
     # Limit to relevant Lshells, convert satellite position from spherical GEO to GSM and extract relevant data
     # (Takes a few minutes)
-    # storm_data = data_from_gps(storm_data_raw, Lshell=6)
-    # del storm_data_raw
+    storm_data = data_from_gps(storm_data_raw, Lshell=[])
+    del storm_data_raw
     
     processed_save_path = os.path.join(base_save_folder, 'processed_gps.npz')
     # Save Data for later recall:
-    # print("Saving Processed GPS Data...")
-    # np.savez(processed_save_path, **storm_data)
-    # print("Data Saved \n")
+    print("Saving Processed GPS Data...")
+    np.savez(processed_save_path, **storm_data)
+    print("Data Saved \n")
     
     # Read in data from previous save
     storm_data_load = np.load(processed_save_path, allow_pickle=True)
@@ -98,27 +98,27 @@ if __name__ == '__main__':
     
 ### Find Pitch Angles ###
     # Find pitch angle corresponding to set K
-    # alphaofK = {}
-    # for satellite, sat_data in storm_data.items():
-    #     print(f"Calculating Pitch Angle for satellite {satellite}")
-    #     alphaofK[satellite] = AlphaOfK(sat_data, K_set, extMag)
+    alphaofK = {}
+    for satellite, sat_data in storm_data.items():
+        print(f"Calculating Pitch Angle for satellite {satellite}")
+        alphaofK[satellite] = AlphaOfK(sat_data, K_set, extMag)
 
     alphaofK_filename = f"alphaofK_{extMag}.npz"
     alphaofK_save_path = os.path.join(base_save_folder, alphaofK_filename)
     
     # Save Data for later recall:
-    # print("Saving AlphaofK Data...")
-    # np.savez(alphaofK_save_path, **alphaofK)
-    # print("Data Saved \n")
+    print("Saving AlphaofK Data...")
+    np.savez(alphaofK_save_path, **alphaofK)
+    print("Data Saved \n")
     
     # Load data from previous save
-    alphaofK_load = np.load(alphaofK_save_path, allow_pickle=True)
-    alphaofK = load_data(alphaofK_load)
-    for satellite, sat_data in storm_data.items():
-        epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-        alphaofK[satellite] = pd.DataFrame(alphaofK[satellite], index=epoch_str, columns=K_set)
-    alphaofK_load.close()
-    del alphaofK_load
+    # alphaofK_load = np.load(alphaofK_save_path, allow_pickle=True)
+    # alphaofK = load_data(alphaofK_load)
+    # for satellite, sat_data in storm_data.items():
+    #     epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
+    #     alphaofK[satellite] = pd.DataFrame(alphaofK[satellite], index=epoch_str, columns=K_set)
+    # alphaofK_load.close()
+    # del alphaofK_load
     
 ### Find Energies from Mu and AlphaofK ###
     # Find Mu spread of energy channels
@@ -141,24 +141,23 @@ if __name__ == '__main__':
 
 ### Find Flux at Set Pitch Angle ####
     #--- Extract Zhao Coefficients at each Epoch ---
-    # Zhao_epoch_coeffs = find_Zhao_PAD_coeffs(storm_data, QD_storm_data, energyofmualpha)
+    Zhao_epoch_coeffs = find_Zhao_PAD_coeffs(storm_data, QD_storm_data, energyofmualpha)
 
     Zhao_epoch_coeffs_filename = f"Zhao_epoch_coeffs.npz"
     Zhao_epoch_coeffs_save_path = os.path.join(base_save_folder, Zhao_epoch_coeffs_filename)
     
     # Save Data for later recall:
-    # print("Saving Zhao coefficients for each Epoch...")
-    # np.savez(Zhao_epoch_coeffs_save_path, **Zhao_epoch_coeffs)
-    # print("Data Saved \n")
+    print("Saving Zhao coefficients for each Epoch...")
+    np.savez(Zhao_epoch_coeffs_save_path, **Zhao_epoch_coeffs)
+    print("Data Saved \n")
     
     # Load data from previous save
-    Zhao_epoch_coeffs_load = np.load(Zhao_epoch_coeffs_save_path, allow_pickle=True)
-    Zhao_epoch_coeffs = load_data(Zhao_epoch_coeffs_load)
-    Zhao_epoch_coeffs_load.close()
-    del Zhao_epoch_coeffs_load
+    # Zhao_epoch_coeffs_load = np.load(Zhao_epoch_coeffs_save_path, allow_pickle=True)
+    # Zhao_epoch_coeffs = load_data(Zhao_epoch_coeffs_load)
+    # Zhao_epoch_coeffs_load.close()
+    # del Zhao_epoch_coeffs_load
     
     #--- Create Pitch Angle Distribution (PAD) from Coefficients ---
-    '''
     PAD_models = create_PAD(storm_data, Zhao_epoch_coeffs, alphaofK)
 
     PAD_models_filename = f"PAD_models.npz"
@@ -169,13 +168,12 @@ if __name__ == '__main__':
     np.savez(PAD_models_save_path, **PAD_models)
     print("Data Saved \n")
     
-    
     # Load data from previous save
-    PAD_models_load = np.load(PAD_models_save_path, allow_pickle=True)
-    PAD_models = load_data(PAD_models_load)
-    PAD_models_load.close()
-    del PAD_models_load
-    '''
+    # PAD_models_load = np.load(PAD_models_save_path, allow_pickle=True)
+    # PAD_models = load_data(PAD_models_load)
+    # PAD_models_load.close()
+    # del PAD_models_load
+    
     #--- Find Scale Factor from alphaofK and PAD Model ---#
     scale_factor = PAD_Scale_Factor(storm_data,Zhao_epoch_coeffs,alphaofK)
 
@@ -195,23 +193,23 @@ if __name__ == '__main__':
         psd[satellite] = find_psd(flux[satellite], energyofmualpha[satellite])
 
 ### Calculate Lstar ###)
-    # for satellite, sat_data in storm_data.items():
-    #     print(f"Calculating L* for satellite {satellite}")
-    #     storm_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag='T89c')
+    for satellite, sat_data in storm_data.items():
+        print(f"Calculating L* for satellite {satellite}")
+        storm_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag='T89c')
 
     complete_filename = f"storm_data_T89c.npz"
     complete_save_path = os.path.join(base_save_folder, complete_filename)
     
     # Save Data for later recall:
-    # print("Saving Processed GPS Data...")
-    # np.savez(complete_save_path, **storm_data )
-    # print("Data Saved \n")
+    print("Saving Processed GPS Data...")
+    np.savez(complete_save_path, **storm_data )
+    print("Data Saved \n")
     
     # Read in data from previous save
-    complete_load = np.load(complete_save_path, allow_pickle=True)
-    storm_data = load_data(complete_load)
-    complete_load.close()
-    del complete_load
+    # complete_load = np.load(complete_save_path, allow_pickle=True)
+    # storm_data = load_data(complete_load)
+    # complete_load.close()
+    # del complete_load
     '''
     complete_filename = f"storm_data_TS04.npz"
     complete_save_path = os.path.join(base_save_folder, complete_filename)
@@ -227,7 +225,7 @@ i_K = np.where(K_set == k)[0]
 mu = 8000
 i_mu = np.where(Mu_set == mu)[0]
 
-save_path = os.path.join('/home/will/REPT_data/april2017storm/', 'rept_data.npz')
+save_path = os.path.join('/home/wzt0020/REPT_data/april2017storm/', 'rept_data.npz')
 complete_load = np.load(save_path, allow_pickle=True)
 REPT_data = load_data(complete_load)
 complete_load.close()

@@ -12,7 +12,7 @@ from GPS_PSD_func import find_local90PA, find_Loss_Cone
 
 #%%
 global Zhao_median_filepath
-Zhao_median_filepath = '/home/will/Zhao_2018_model_files/PAD_model_coeff_median.txt'
+Zhao_median_filepath = '/home/wzt0020/Zhao_2018_model_files/PAD_model_coeff_median.txt'
 
 #%% Extract coefficients from Zhao_2018
 # NOTE: MLT and L are midpoints of the bin!
@@ -348,7 +348,6 @@ def PAD_Scale_Factor(gps_data, Zhao_epoch_coeffs, alphaofK):
 
         # Inputs for PAD model generation (and logic restriction)
         loss_cone = sat_data['loss_cone']
-        local90PA = sat_data['local90PA']
         alphaofK_data = alphaofK[satellite].values
         
         for K_val, K_data in coeff_data.items():
@@ -366,8 +365,8 @@ def PAD_Scale_Factor(gps_data, Zhao_epoch_coeffs, alphaofK):
                 
                 # Only calculate values where any coefficients are nonzero
                 coeff_mask = np.sum(coeffs,axis=1) != 0
-                # Only calculate if the desired angle is between LC and local90
-                alpha_mask = (alphaofK_data[:,i_K] > loss_cone) & (alphaofK_data[:,i_K] <= local90PA)
+                # Only calculate if the desired angle is larger than loss cone
+                alpha_mask = (alphaofK_data[:,i_K] > loss_cone)
                 # Combine masks
                 valid_mask = coeff_mask & alpha_mask
                 i_Mu = np.where(Mu_set == Mu_val)[0][0]

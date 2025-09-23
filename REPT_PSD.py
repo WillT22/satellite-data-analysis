@@ -18,7 +18,7 @@ importlib.reload(GPS_PSD_func)
 from GPS_PSD_func import (QinDenton_period, load_data, data_period, AlphaOfK, find_Loss_Cone, EnergyofMuAlpha, find_psd, find_Lstar)
 import REPT_PSD_func
 importlib.reload(REPT_PSD_func)
-from REPT_PSD_func import (process_l3_data, Average_FluxbyPA, find_mag, Interp_Flux)
+from REPT_PSD_func import (process_l3_data, time_average, find_mag, Average_FluxbyPA, Interp_Flux)
 
 #%% Global Variables
 textsize = 16
@@ -31,14 +31,15 @@ K_set = np.array(0.1) # R_E*G^(1/2)
 E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6) # this is m_0*c^2
 # b_satellite and b_equator are in Gauss: 1 G = 10^5 nT
 
-base_save_folder = "/home/will/REPT_data/april2017storm/"
+input_folder = "/home/wzt0020/REPT_data/april2017storm/"
+base_save_folder = "/home/wzt0020/REPT_data/april2017storm/"
 extMag = 'T89c'
 
 start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
 stop_date   = dt.datetime(2017, 4, 26, 00, 00, 0)
 
-#start_date  = dt.datetime(2017, 4, 23, 19, 30, 0)
-#stop_date    = dt.datetime(2017, 4, 23, 23, 00, 0)
+# start_date  = dt.datetime(2017, 4, 23, 19, 30, 0)
+# stop_date    = dt.datetime(2017, 4, 23, 23, 00, 0)
 
 QD_storm_data = QinDenton_period(start_date, stop_date)
 
@@ -46,8 +47,6 @@ QD_storm_data = QinDenton_period(start_date, stop_date)
 if __name__ == '__main__':
 
 ### Load in data ###
-    input_folder = "/home/will/REPT_data/april2017storm/"
-
     if not os.path.exists(input_folder):
         raise FileNotFoundError(f"Error: Folder path not found: {input_folder}")
     
@@ -79,6 +78,11 @@ if __name__ == '__main__':
         REPT_data[satellite] = data_period(sat_data, start_date, stop_date)
     del REPT_data_raw
 
+### Average fluxes within a minute ###
+    for satellite, sat_data in REPT_data.items():
+        print(f"Time Averaging Fluxes for satellite {satellite}...")
+        REPT_data[satellite] = time_average(sat_data, satellite)
+
 ### Extract Magnetometer Data ###
     for satellite, sat_data in REPT_data.items():
         print(f"Extracting Magnetic Field Data for satellite {satellite}...")
@@ -97,38 +101,38 @@ if __name__ == '__main__':
     del energy_grid, alpha_grid, blocal_grid
 
 ### Find Alpha at each time point for given K ###
-    # alphaofK = {}
-    # for satellite, sat_data in REPT_data.items():
-    #     print(f"Calculating Pitch Angle for satellite {satellite}...")
-    #     alphaofK[satellite] = AlphaOfK(sat_data, K_set, extMag)
+    alphaofK = {}
+    for satellite, sat_data in REPT_data.items():
+        print(f"Calculating Pitch Angle for satellite {satellite}...")
+        alphaofK[satellite] = AlphaOfK(sat_data, K_set, extMag)
 
     alphaofK_filename = f"alphaofK_{extMag}.npz"
     alphaofK_save_path = os.path.join(base_save_folder, alphaofK_filename)
     # Save Data for later recall:
-    # print("Saving AlphaofK Data...")
-    # np.savez(alphaofK_save_path, **alphaofK)
-    # print("Data Saved \n")
+    print("Saving AlphaofK Data...")
+    np.savez(alphaofK_save_path, **alphaofK)
+    print("Data Saved \n")
 
     # Load data from previous save
-    alphaofK_load = np.load(alphaofK_save_path, allow_pickle=True)
-    alphaofK = load_data(alphaofK_load)
-    for satellite, sat_data in REPT_data.items():
-        epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-        alphaofK[satellite] = pd.DataFrame(alphaofK[satellite], index=epoch_str, columns=np.atleast_1d(K_set))
-    alphaofK_load.close()
-    del alphaofK_load
+    # alphaofK_load = np.load(alphaofK_save_path, allow_pickle=True)
+    # alphaofK = load_data(alphaofK_load)
+    # for satellite, sat_data in REPT_data.items():
+    #     epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
+    #     alphaofK[satellite] = pd.DataFrame(alphaofK[satellite], index=epoch_str, columns=np.atleast_1d(K_set))
+    # alphaofK_load.close()
+    # del alphaofK_load
 
     # Read in data from previous save
-    save_path = os.path.join(base_save_folder, 'rept_data.npz')
-    complete_load = np.load(save_path, allow_pickle=True)
-    REPT_data = load_data(complete_load)
-    complete_load.close()
-    del complete_load
+    # save_path = os.path.join(base_save_folder, 'rept_data.npz')
+    # complete_load = np.load(save_path, allow_pickle=True)
+    # REPT_data = load_data(complete_load)
+    # complete_load.close()
+    # del complete_load
 
 ### Find Loss Cone and Equatorial B ###
-    # for satellite, sat_data in REPT_data.items():
-    #     print(f"Calculating Equatorial B-field for satellite {satellite}...")
-    #     REPT_data[satellite]['b_min'], REPT_data[satellite]['b_footpoint'], _ = find_Loss_Cone(sat_data, extMag=extMag)
+    for satellite, sat_data in REPT_data.items():
+        print(f"Calculating Equatorial B-field for satellite {satellite}...")
+        REPT_data[satellite]['b_min'], REPT_data[satellite]['b_footpoint'], _ = find_Loss_Cone(sat_data, extMag=extMag)
  
 ### Find Energy for set Mu and Alpha ###
     energyofmualpha = {}
@@ -149,20 +153,19 @@ if __name__ == '__main__':
         REPT_data[satellite]['PSD'] = find_psd(flux[satellite], energyofmualpha[satellite])
 
 ### Calculate L* ####
-    # for satellite, sat_data in REPT_data.items():
-    #     print(f"Calculating L* for satellite {satellite}...")
-    #     REPT_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag='T89c')
+    for satellite, sat_data in REPT_data.items():
+        print(f"Calculating L* for satellite {satellite}...")
+        REPT_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag='T89c')
 
     new_save_path = os.path.join(base_save_folder, 'rept_data.npz')
     # Save Data for later recall:
-    # print("Saving REPT Data...")
-    # np.savez(new_save_path, **REPT_data)
-    # print("Data Saved \n")
+    print("Saving REPT Data...")
+    np.savez(new_save_path, **REPT_data)
+    print("Data Saved \n")
 
 #%% Plot PSD
 from matplotlib import colors
 k = 0.1
-i_K = np.where(K_set == k)[0]
 mu = 8000
 i_mu = np.where(Mu_set == mu)[0]
 
@@ -196,7 +199,7 @@ max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((stop_date - 
 ax.set_xlim(min_epoch, max_epoch)
 ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
 ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-ax.set_ylim(2, 7)
+ax.set_ylim(3, 5.5)
 ax.grid(True)
 
 cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
@@ -214,16 +217,15 @@ plt.show()
 sat_select = 'rbspb'
 sat_data = REPT_data[sat_select]
 k = 0.1
-i_K = np.where(K_set == k)[0]
 
-# time_start  = dt.datetime(2017, 4, 23, 18, 45, 0)
-# time_stop   = dt.datetime(2017, 4, 23, 22, 58, 0)
+time_start  = dt.datetime(2017, 4, 23, 18, 45, 0)
+time_stop   = dt.datetime(2017, 4, 23, 22, 58, 0)
 
 # time_start  = dt.datetime(2017, 4, 24, 17, 7, 0)
 # time_stop   = dt.datetime(2017, 4, 24, 21, 35, 0)
 
-time_start  = dt.datetime(2017, 4, 25, 15, 30, 0)
-time_stop   = dt.datetime(2017, 4, 25, 19, 57, 0)
+# time_start  = dt.datetime(2017, 4, 25, 15, 30, 0)
+# time_stop   = dt.datetime(2017, 4, 25, 19, 57, 0)
 
 time_mask = (sat_data['Epoch'] >= time_start) & (sat_data['Epoch'] <= time_stop)
 

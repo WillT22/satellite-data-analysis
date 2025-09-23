@@ -2,7 +2,7 @@
 
 # --- Configuration ---
 BASE_REMOTE_URL="https://cdaweb.gsfc.nasa.gov/pub/data/rbsp"
-LOCAL_BASE_DIR="/home/will/REPT_data/MagData"
+LOCAL_BASE_DIR="REPT_data/MagData"
 
 SATELLITES=("rbspa" "rbspb")
 START_YEAR=2012
