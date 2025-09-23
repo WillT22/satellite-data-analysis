@@ -154,42 +154,70 @@ if __name__ == '__main__':
     Mu_B = (energy_grid**2 + 2 * energy_grid * electron_E0) * np.sin(alpha_grid)**2 / (2 * electron_E0 * blocal_grid)
 
 #% Load Computationally Intensive Saved Data
-    
-    print("Loading Saved Data")
-    loaded_data = np.load('vital_data_2.npz', allow_pickle=True)
-    
-    # Access the loaded variables
-    results_A = loaded_data['results_A'].item()
-    results_B = loaded_data['results_B'].item()
+    # print("Loading Saved Data")
+    # loaded_data = np.load('vital_data_2.npz', allow_pickle=True)
+    # # Access the loaded variables
+    # results_A = loaded_data['results_A'].item()
+    # results_B = loaded_data['results_B'].item()
     
 #% Calculate L*
     # Calculate L* for RBSP-A    
     print("Calculating L* (RBSP-A)")
     # Use IRBEM get_Lstar function  ***COMPUTATIONALLY EXPENSIVE***
-    #results_A = irbem.get_Lstar(time_A, position_A, alpha=alpha_A_unique, extMag=extMag, omnivals=omnivals_refined_A)
-    # Separate dictionary ino variables
-    Bmin_A, Bmirr_A, Lm_A, Lstar_A, MLT_A, Xj_A = results_A["Bmin"], results_A["Bmirr"], results_A["Lm"], results_A["Lstar"], results_A["MLT"], results_A["Xj"]
+    Bmin_A = np.zeros(len(time_A))
+    Bmirr_A = np.zeros((len(time_A), len(alpha_A_unique)))
+    Lm_A = np.zeros((len(time_A), len(alpha_A_unique)))
+    Lstar_A = np.zeros((len(time_A), len(alpha_A_unique)))
+    MLT_A = np.zeros(len(time_A))
+    Xj_A = np.zeros((len(time_A), len(alpha_A_unique)))
+    for i_time, time in enumerate(time_A):
+        print(f"RBSP-A Time Index: {i_time+1}/{len(time_A)}", end='\r')
+        position = position_A[i_time]
+        omnivals = get_Omni(time,position)
+        results_A = irbem.get_Lstar(time, position, alpha=alpha_A_unique, extMag=extMag, omnivals=omnivals)
+        # Separate dictionary ino variables
+        Bmin_A[i_time], Bmirr_A[i_time,:], Lm_A[i_time,:], Lstar_A[i_time,:], MLT_A[i_time], Xj_A[i_time,:] = results_A["Bmin"], results_A["Bmirr"], results_A["Lm"], results_A["Lstar"], results_A["MLT"], results_A["Xj"]
     Lstar_A[Lstar_A < 0] = np.nan
     
     # Calculate L* for RBSP-B  
     print("Calculating L* (RBSP-B)")
     # Use IRBEM get_Lstar function  ***COMPUTATIONALLY EXPENSIVE***
-    #results_B = irbem.get_Lstar(time_B, position_B, alpha=alpha_B_unique, extMag=extMag, omnivals=omnivals_refined_B)
-    # Separate dictionary ino variables
-    Bmin_B, Bmirr_B, Lm_B, Lstar_B, MLT_B, Xj_B = results_B["Bmin"], results_B["Bmirr"], results_B["Lm"], results_B["Lstar"], results_B["MLT"], results_B["Xj"]
+    Bmin_B = np.zeros(len(time_B))
+    Bmirr_B = np.zeros((len(time_B), len(alpha_B_unique)))
+    Lm_B = np.zeros((len(time_B), len(alpha_B_unique)))
+    Lstar_B = np.zeros((len(time_B), len(alpha_B_unique)))
+    MLT_B = np.zeros(len(time_B))
+    Xj_B = np.zeros((len(time_B), len(alpha_B_unique)))
+    for i_time, time in enumerate(time_B):
+        print(f"RBSP-B Time Index: {i_time+1}/{len(time_B)}", end='\r')
+        position = position_B[i_time]
+        omnivals = get_Omni(time,position)
+        results_B = irbem.get_Lstar(time, position, alpha=alpha_B_unique, extMag=extMag, omnivals=omnivals)
+        # Separate dictionary ino variables
+        Bmin_B[i_time], Bmirr_B[i_time,:], Lm_B[i_time,:], Lstar_B[i_time,:], MLT_B[i_time], Xj_B[i_time,:] = results_B["Bmin"], results_B["Bmirr"], results_B["Lm"], results_B["Lstar"], results_B["MLT"], results_B["Xj"]
     Lstar_B[Lstar_B < 0] = np.nan
     
 #% Save chosen data
-    '''
+    
     print("Saving Data")
     # Create a dictionary to store the variables
     data_to_save = {
-        'results_A': results_A,
-        'results_B': results_B,
+        'Bmin_A': Bmin_A,
+        'Bmirr_A': Bmirr_A,
+        'Lm_A': Lm_A,
+        'Lstar_A': Lstar_A,
+        'MLT_A': MLT_A,
+        'Xj_A': Xj_A,
+        'Bmin_B': Bmin_B,
+        'Bmirr_B': Bmirr_B,
+        'Lm_B': Lm_B,
+        'Lstar_B': Lstar_B,
+        'MLT_B': MLT_B,
+        'Xj_B': Xj_B,
     }
     # Save the dictionary to a .npz file (NumPy zip archive)
-    np.savez('vital_data_2.npz', **data_to_save)
-    '''
+    np.savez('vital_data_3.npz', **data_to_save)
+    
 #% Calculate K
     # Calculate K from X_j: K = X_j * \sqrt(B_mirr)
     print("Calculating K (RBSP-A)")
@@ -260,7 +288,7 @@ FEDU_B_interpaE_filtered = FEDU_B_interpaE[mask_B]
 min_val = np.nanmin(np.log10(1))
 max_val = np.nanmax(np.log10(10**6))
 
-mu = 16000
+mu = 8000
 mu_select = np.where(Mu_set == mu)[0]
 
 scatter_A = ax.scatter(Epoch_A_filtered, Lstar_A_set_filtered, c=np.log10(FEDU_A_interpaE_filtered[:,mu_select]), vmin=min_val, vmax=max_val)
@@ -297,7 +325,7 @@ cmap = colors.ListedColormap(colorscheme)
 
 # Logarithmic colorbar setup
 min_val = np.nanmin(np.log10(1e-12))
-max_val = np.nanmax(np.log10(1e-9))
+max_val = np.nanmax(np.log10(1e-7))
 
 psd_A_plot = psd_A.copy()
 psd_A_plot[np.where(psd_A_plot == 0)] = 1e-12
@@ -339,19 +367,19 @@ plt.subplots_adjust(top=0.82, right=0.95)
 plt.show()
 
 #%% Plot PSD lineplots
-'''
+
 fig, ax = plt.subplots(figsize=(6, 4.5))
 color_set = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(Mu_set), dtype=int)]
 color_set[3] = [0, 1, 1, 1]  # Teal
 
-time_start  = datetime(2017, 4, 23, 18, 45, 0)
-time_stop   = datetime(2017, 4, 23, 22, 58, 0)
+# time_start  = datetime(2017, 4, 23, 18, 45, 0)
+# time_stop   = datetime(2017, 4, 23, 22, 58, 0)
 
-#time_start  = datetime(2017, 4, 24, 17, 7, 0)
-#time_stop   = datetime(2017, 4, 24, 21, 35, 0)
+# time_start  = datetime(2017, 4, 24, 17, 7, 0)
+# time_stop   = datetime(2017, 4, 24, 21, 35, 0)
 
-#time_start  = datetime(2017, 4, 25, 15, 30, 0)
-#time_stop   = datetime(2017, 4, 25, 19, 57, 0)
+time_start  = datetime(2017, 4, 25, 15, 30, 0)
+time_stop   = datetime(2017, 4, 25, 19, 57, 0)
 
 # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
 Epoch_A_np = np.array(Epoch_A_averaged)
@@ -428,4 +456,3 @@ ax.set_title(title_str)
 
 plt.tight_layout()
 plt.show()
-'''
