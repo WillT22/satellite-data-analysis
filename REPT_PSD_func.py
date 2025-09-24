@@ -89,7 +89,7 @@ def time_average(sat_data, sat_name):
 
 #%% Extract Magentometer Data and match with nearest time point
 def find_mag(sat_data, sat_name):
-    mag_folder = '/home/wzt0020/REPT_data/MagData/'
+    mag_folder = '/home/will/REPT_data/MagData/'
 
     Epoch = sat_data['Epoch'].UTC
     date = min(Epoch).date()
@@ -108,7 +108,10 @@ def find_mag(sat_data, sat_name):
             filepath_matches = glob.glob(os.path.join(file_base, filename_pattern))
             file_path = filepath_matches[0]
             cdf_data = pycdf.CDF(file_path)
-            mag_data['Epoch'].extend(cdf_data['Epoch_centered'][:])
+            if 'Epoch_centered' in cdf_data:
+                mag_data['Epoch'].extend(cdf_data['Epoch_centered'][:])
+            else:
+                mag_data['Epoch'].extend(cdf_data['Epoch'][:])
             mag_data['b_satellite'].extend(cdf_data['Magnitude'][:])
             date += dt.timedelta(days=1)
         mag_data['Epoch'] = Ticktock(mag_data['Epoch'], dtype='UTC')

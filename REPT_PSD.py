@@ -31,12 +31,15 @@ K_set = np.array(0.1) # R_E*G^(1/2)
 E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6) # this is m_0*c^2
 # b_satellite and b_equator are in Gauss: 1 G = 10^5 nT
 
-input_folder = "/home/wzt0020/REPT_data/april2017storm/"
-base_save_folder = "/home/wzt0020/REPT_data/april2017storm/"
+input_folder = "/home/will/REPT_data/oct2012storm/"
+base_save_folder = "/home/will/REPT_data/oct2012storm/"
 extMag = 'T89c'
 
-start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
-stop_date   = dt.datetime(2017, 4, 26, 00, 00, 0)
+start_date  = dt.datetime(2012, 10, 7, 00, 00, 0)
+stop_date   = dt.datetime(2012, 10, 11, 00, 00, 0)
+
+# start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
+# stop_date   = dt.datetime(2017, 4, 26, 00, 00, 0)
 
 # start_date  = dt.datetime(2017, 4, 23, 19, 30, 0)
 # stop_date    = dt.datetime(2017, 4, 23, 23, 00, 0)
@@ -166,7 +169,7 @@ if __name__ == '__main__':
 #%% Plot PSD
 from matplotlib import colors
 k = 0.1
-mu = 8000
+mu = 16000
 i_mu = np.where(Mu_set == mu)[0]
 
 fig, ax = plt.subplots(figsize=(16, 4))
@@ -176,7 +179,7 @@ cmap = colors.ListedColormap(colorscheme)
 
 # Logarithmic colorbar setup
 min_val = np.nanmin(np.log10(1e-12))
-max_val = np.nanmax(np.log10(1e-7))
+max_val = np.nanmax(np.log10(1e-10))
 
 for satellite, sat_data in REPT_data.items():
     psd_plot = REPT_data[satellite]['PSD'][k].values[:,i_mu].copy().flatten()
@@ -218,8 +221,11 @@ sat_select = 'rbspb'
 sat_data = REPT_data[sat_select]
 k = 0.1
 
-time_start  = dt.datetime(2017, 4, 23, 18, 45, 0)
-time_stop   = dt.datetime(2017, 4, 23, 22, 58, 0)
+time_start  = dt.datetime(2012, 10, 9, 6, 00, 0)
+time_stop   = dt.datetime(2012, 10, 9, 10, 00, 0)
+
+# time_start  = dt.datetime(2017, 4, 23, 18, 45, 0)
+# time_stop   = dt.datetime(2017, 4, 23, 22, 58, 0)
 
 # time_start  = dt.datetime(2017, 4, 24, 17, 7, 0)
 # time_stop   = dt.datetime(2017, 4, 24, 21, 35, 0)
