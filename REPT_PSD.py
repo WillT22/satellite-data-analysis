@@ -212,7 +212,7 @@ cbar.set_label(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize)
 cbar.ax.tick_params(labelsize=textsize)
 
 plt.xticks(fontsize=textsize)
-plt.subplots_adjust(top=0.82, right=0.95)
+plt.subplots_adjust(top=0.82, right=0.95) 
 
 plt.show()
 

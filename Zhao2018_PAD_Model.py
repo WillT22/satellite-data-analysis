@@ -12,7 +12,7 @@ from GPS_PSD_func import find_local90PA, find_Loss_Cone
 
 #%%
 global Zhao_median_filepath
-Zhao_median_filepath = '/home/wzt0020/Zhao_2018_model_files/PAD_model_coeff_median.txt'
+Zhao_median_filepath = '/home/will/Zhao_2018_model_files/PAD_model_coeff_median.txt'
 
 #%% Extract coefficients from Zhao_2018
 # NOTE: MLT and L are midpoints of the bin!
@@ -169,7 +169,7 @@ def find_Zhao_PAD_coeffs(gps_data, QD_data, EnergyofMuAlpha):
     energy_bins = np.array(list(Zhao_coeffs.keys()), dtype=float)
     # --- Outer Loop: Iterate through each satellite in the GPS data ---
     for satellite, sat_data in gps_data.items():
-        print(f"    Extracting Coefficients for satellite {satellite}")
+        print(f"    Extracting Coefficients for satellite {satellite}", end='\r')
         Zhao_epoch_coeffs[satellite] = {}
         # Get the matrix of energy values for each Mu and Epoch for the current satellite.
         sat_energyofmualpha = EnergyofMuAlpha[satellite]
@@ -276,7 +276,7 @@ def create_PAD(gps_data, Zhao_epoch_coeffs, AlphaofK):
     alpha_init = np.linspace(0,180,361)
     PAD_models = {}
     for satellite, sat_data in Zhao_epoch_coeffs.items():
-        print(f"    Modeling PAD for satellite {satellite}")
+        print(f"    Modeling PAD for satellite {satellite}", end='\r')
         PAD_models[satellite] = {}
         K_set = np.array(list(sat_data.keys()), dtype=float)
         local90PA = gps_data[satellite]['local90PA']

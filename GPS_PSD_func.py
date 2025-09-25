@@ -41,7 +41,7 @@ def import_GPS(input_folder):
     print(f"Starting to process files in: {input_folder}")
 
     # Use os.walk to traverse the directory tree.
-    # 'root' is the current directory path (e.g., "/home/wzt0020/GPS_data/april2017storm/").
+    # 'root' is the current directory path (e.g., "/home/will/GPS_data/april2017storm/").
     # 'dirnames' is a list of subdirectories in the current 'root' (e.g., ['ns60', 'ns63']).
     # '_' (underscore) is used as a throwaway variable for 'filenames' as it's not used directly here.
     for (root, satnames, _) in os.walk(input_folder):
@@ -51,7 +51,7 @@ def import_GPS(input_folder):
         for satname in sorted_satnames:
             # Construct the full path to the current satellite's directory.
             sat_dir_path = os.path.join(root, satname)
-            print(f"    Reading in satellite {satname}")
+            print(f"    Reading in satellite {satname}", end='\r')
             # Use glob.glob to find all files matching "ns*.ascii" pattern
             # directly within the current satellite's directory.
             sat_filenames = glob.glob(sat_dir_path + "/ns*ascii")
@@ -110,7 +110,6 @@ def convert_time(sat_data):
     gpsseconds = [tt.total_seconds() for tt in gpsoffset]
     # Create a spacepy.time.Ticktock object using the GPS seconds.
     sat_data['Epoch'] = Ticktock(gpsseconds, dtype='GPS')
-    print('Satellite Times Converted \n')
     return sat_data
 
 #%% Limit data to selected time period
@@ -152,7 +151,7 @@ def data_period(sat_data, start_date, stop_date):
 #%% Extract QinDenton data for the time period
 def QinDenton_period(start_date, stop_date): 
     print('Loading QinDenton Data...')
-    QD_folder = "/home/wzt0020/QinDenton/"
+    QD_folder = "/home/will/QinDenton/"
     QD_filenames = []
     current_date_object = start_date
     while current_date_object <= stop_date:
@@ -269,7 +268,7 @@ def data_from_gps(time_restricted_data, Lshell = [], intMag = 'IGRF', extMag = '
     
     print('Processing Data for each Satellite...')
     for satellite, sat_data in time_restricted_data.items():
-        print(f"    Processing Data for satellite {satellite}")
+        print(f"    Processing Data for satellite {satellite}", end='\r')
         gps_data_out[satellite] = {}
         if isinstance(Lshell, (int, float)):
             Lmask = sat_data[model_var] < Lshell
