@@ -153,24 +153,6 @@ if __name__ == '__main__':
         Zhao_epoch_coeffs = load_data(Zhao_epoch_coeffs_load)
         Zhao_epoch_coeffs_load.close()
         del Zhao_epoch_coeffs_load
-        
-    #--- Create Pitch Angle Distribution (PAD) from Coefficients ---
-    PAD_models_filename = f"PAD_models.npz"
-    PAD_models_save_path = os.path.join(base_save_folder, PAD_models_filename)
-    
-    if mode == 'save':
-        PAD_models = create_PAD(storm_data, Zhao_epoch_coeffs, alphaofK)
-
-        # Save Data for later recall:
-        print("Saving PAD models ...")
-        np.savez(PAD_models_save_path, **PAD_models)
-        print("Data Saved \n")
-    elif mode == 'load': 
-        # Load data from previous save
-        PAD_models_load = np.load(PAD_models_save_path, allow_pickle=True)
-        PAD_models = load_data(PAD_models_load)
-        PAD_models_load.close()
-        del PAD_models_load
     
     #--- Find Scale Factor from alphaofK and PAD Model ---#
     scale_factor = PAD_Scale_Factor(storm_data,Zhao_epoch_coeffs,alphaofK)
@@ -230,18 +212,18 @@ cmap = colors.ListedColormap(colorscheme)
 
 # Logarithmic colorbar setup
 min_val = np.nanmin(np.log10(1e-12))
-max_val = np.nanmax(np.log10(1e-7))
+max_val = np.nanmax(np.log10(1e-9))
 
 for satellite, sat_data in storm_data.items():
     psd_plot = psd[satellite][k].values[:,i_mu].copy().flatten()
     psd_mask = (psd_plot > 0) & (psd_plot != np.nan)
     # Plotting, ignoring NaN values in the color
-    scatter_A = ax.scatter(sat_data['Epoch'].UTC[psd_mask], sat_data['Lstar'][psd_mask,i_K],
+    scatter_A = ax.scatter(sat_data['Epoch'].UTC[psd_mask], sat_data['L_LGM_T89IGRF'][psd_mask],
                         c=np.log10(psd_plot[psd_mask]), cmap=cmap, vmin=min_val, vmax=max_val)
 
 
 ax.set_title(f"GPS CXD, K={k:.1f} $G^{{1/2}}R_E$, $\\mu$={mu:.0f} $MeV/G$", fontsize=textsize + 2)
-ax.set_ylabel(r"L*", fontsize=textsize)
+ax.set_ylabel(r"L Shell", fontsize=textsize)
 ax.tick_params(axis='both', labelsize=textsize, pad=10)
 ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
 # Force labels for first and last x-axis tick marks 
@@ -436,57 +418,6 @@ ax.tick_params(axis='both', labelsize=textsize, pad=10)
 ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
 ax.set_ylim(2, 7)
 ax.grid(True)
-
-plt.xticks(fontsize=textsize)
-plt.subplots_adjust(top=0.82, right=0.95)
-
-plt.show()
-
-#%% Show Lshell
-fig, ax = plt.subplots(figsize=(16, 4))
-
-for satellite, sat_data in storm_data.items():
-    time_mask = (sat_data['Epoch'].UTC >= time_start) & (sat_data['Epoch'].UTC < time_stop)
-    scatter_A = ax.scatter(sat_data['Epoch'].UTC[time_mask], sat_data['L_LGM_T89IGRF'][time_mask])
-
-ax.set_ylabel(r"L*", fontsize=textsize)
-ax.tick_params(axis='both', labelsize=textsize, pad=10)
-ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
-ax.set_ylim(2, 7)
-ax.grid(True)
-
-plt.xticks(fontsize=textsize)
-plt.subplots_adjust(top=0.82, right=0.95)
-
-plt.show()
-
-#%% Show AlphaofK
-fig, ax = plt.subplots(figsize=(16, 4))
-
-for satellite, sat_data in storm_data.items():
-    time_mask = (sat_data['Epoch'].UTC >= time_start) & (sat_data['Epoch'].UTC < time_stop)
-    scatter_A = ax.scatter(sat_data['Epoch'].UTC[time_mask], alphaofK[satellite].values[time_mask,i_K])
-
-ax.set_ylabel(r"Equatorial Pitch Angle", fontsize=textsize)
-ax.tick_params(axis='both', labelsize=textsize, pad=10)
-ax.grid(True)
-
-plt.xticks(fontsize=textsize)
-plt.subplots_adjust(top=0.82, right=0.95)
-
-plt.show()
-
-#%% Show Local90
-fig, ax = plt.subplots(figsize=(16, 4))
-
-for satellite, sat_data in storm_data.items():
-    time_mask = (sat_data['Epoch'].UTC >= time_start) & (sat_data['Epoch'].UTC < time_stop)
-    scatter_A = ax.scatter(alphaofK[satellite].values[time_mask,i_K], sat_data['L_LGM_T89IGRF'][time_mask])
-
-#ax.set_ylabel(r"Equatorial Pitch Angle", fontsize=textsize)
-ax.tick_params(axis='both', labelsize=textsize, pad=10)
-ax.grid(True)
-ax.set_ylim(4, 7)
 
 plt.xticks(fontsize=textsize)
 plt.subplots_adjust(top=0.82, right=0.95)
