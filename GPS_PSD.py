@@ -24,12 +24,12 @@ from Zhao2018_PAD_Model import (import_Zhao_coeffs, find_Zhao_PAD_coeffs, create
 #%% Global Variables
 textsize = 16
 Re = 6378.137 #Earth's Radius
-Mu_set = np.array((4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
-K_set = np.array((0.1,1)) # R_E*G^(1/2)
-mode = 'load'
+Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
+K_set = np.array((0.1,1,2)) # R_E*G^(1/2)
+mode = 'save'
 
-input_folder = "/home/will/GPS_data/april2017storm/"
-base_save_folder = "/home/will/GPS_data/april2017storm/"
+input_folder = "/home/wzt0020/GPS_data/april2017storm/"
+base_save_folder = "/home/wzt0020/GPS_data/april2017storm/"
 extMag = 'T89c'
 
 start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
@@ -37,6 +37,9 @@ stop_date   = dt.datetime(2017, 4, 26, 00, 00, 0)
 
 # start_date = dt.datetime(2018, 8, 25, 0, 0, 0)
 # stop_date = dt.datetime(2018, 8, 28, 0, 0, 0)
+
+# start_date  = dt.datetime(2012, 10, 7, 00, 00, 0)
+# stop_date   = dt.datetime(2012, 10, 11, 00, 00, 0)
 
 # Conversions
 # electron mass in MeV is (m_e [kg] * c^2 [m^2/s^2]) [J] / (sc.eV [J/eV] * 10^6 [eV/MeV])
@@ -78,13 +81,15 @@ if __name__ == '__main__':
 
         # Limit to relevant Lshells, convert satellite position from spherical GEO to GSM and extract relevant data
         # (Takes a few minutes)
-        storm_data = data_from_gps(storm_data_raw, Lshell=[])
+        print('Processing Data for each Satellite...')
+        storm_data = data_from_gps(storm_data_raw, Lshell=6)
         del storm_data_raw
 
         # Save Data for later recall:
         print("Saving Processed GPS Data...")
         np.savez(processed_save_path, **storm_data)
         print("Data Saved \n")
+
     elif mode == 'load':
         # Read in data from previous save
         storm_data_load = np.load(processed_save_path, allow_pickle=True)
@@ -92,7 +97,6 @@ if __name__ == '__main__':
         storm_data_load.close()
         del storm_data_load
 
-    
 ### Find Pitch Angles ###
     alphaofK_filename = f"alphaofK_{extMag}.npz"
     alphaofK_save_path = os.path.join(base_save_folder, alphaofK_filename)
@@ -100,7 +104,7 @@ if __name__ == '__main__':
         # Find pitch angle corresponding to set K
         alphaofK = {}
         for satellite, sat_data in storm_data.items():
-            print(f"Calculating Pitch Angle for satellite {satellite}", end='\r')
+            print(f"Calculating Pitch Angle for satellite {satellite}")
             alphaofK[satellite] = AlphaOfK(sat_data, K_set, extMag)
 
         # Save Data for later recall:
@@ -119,7 +123,7 @@ if __name__ == '__main__':
     
 ### Find Energies from Mu and AlphaofK ###
     # Find Mu spread of energy channels
-    muofenergyalpha, Mu_bounds = MuofEnergyAlpha(storm_data, alphaofK)
+    # muofenergyalpha, Mu_bounds = MuofEnergyAlpha(storm_data, alphaofK)
     '''
     Mu_set = np.unique(np.sort(np.concatenate(([Mu_bounds['Rounded'][0]], 
                        np.logspace(np.log10(Mu_bounds['Rounded'][0]),
@@ -176,8 +180,9 @@ if __name__ == '__main__':
     complete_filename = f"storm_data_T89c.npz"
     complete_save_path = os.path.join(base_save_folder, complete_filename)
     if mode == 'save':
+        # ns57 has the first few values > Lshell = 6
         for satellite, sat_data in storm_data.items():
-            print(f"Calculating L* for satellite {satellite}", end='\r')
+            print(f"Calculating L* for satellite {satellite}")
             storm_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag='T89c')
 
         # Save Data for later recall:
@@ -218,12 +223,75 @@ for satellite, sat_data in storm_data.items():
     psd_plot = psd[satellite][k].values[:,i_mu].copy().flatten()
     psd_mask = (psd_plot > 0) & (psd_plot != np.nan)
     # Plotting, ignoring NaN values in the color
-    scatter_A = ax.scatter(sat_data['Epoch'].UTC[psd_mask], sat_data['L_LGM_T89IGRF'][psd_mask],
+    scatter_A = ax.scatter(sat_data['Epoch'].UTC[psd_mask], sat_data['Lstar'][psd_mask,i_K],
                         c=np.log10(psd_plot[psd_mask]), cmap=cmap, vmin=min_val, vmax=max_val)
 
 
 ax.set_title(f"GPS CXD, K={k:.1f} $G^{{1/2}}R_E$, $\\mu$={mu:.0f} $MeV/G$", fontsize=textsize + 2)
-ax.set_ylabel(r"L Shell", fontsize=textsize)
+ax.set_ylabel(r"L*", fontsize=textsize)
+ax.tick_params(axis='both', labelsize=textsize, pad=10)
+ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+# Force labels for first and last x-axis tick marks 
+min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+ax.set_xlim(min_epoch, max_epoch)
+ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
+ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+ax.set_ylim(3, 5.5)
+ax.grid(True)
+
+cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
+tick_locations = np.arange(min_val, max_val + 1)
+cbar.set_ticks(tick_locations)
+cbar.set_label(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize)
+cbar.ax.tick_params(labelsize=textsize)
+
+plt.xticks(fontsize=textsize)
+plt.subplots_adjust(top=0.82, right=0.95)
+
+plt.show()
+
+#%% Plot PSD with REPT data
+k = 1
+i_K = np.where(K_set == k)[0]
+mu = 2000
+i_mu = np.where(Mu_set == mu)[0]
+
+save_path = os.path.join('/home/wzt0020/REPT_data/april2017storm/', 'rept_data.npz')
+complete_load = np.load(save_path, allow_pickle=True)
+REPT_data = load_data(complete_load)
+complete_load.close()
+del complete_load
+
+fig, ax = plt.subplots(figsize=(16, 4))
+
+colorscheme = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))
+cmap = colors.ListedColormap(colorscheme)
+
+# Logarithmic colorbar setup
+min_val = np.nanmin(np.log10(1e-12))
+max_val = np.nanmax(np.log10(1e-8))
+
+for satellite, sat_data in storm_data.items():
+    psd_plot = psd[satellite][k].values[:,i_mu].copy().flatten()
+    psd_mask = (psd_plot > 0) & (psd_plot != np.nan)
+    # Plotting, ignoring NaN values in the color
+    scatter_A = ax.scatter(sat_data['Epoch'].UTC[psd_mask], sat_data['Lstar'][psd_mask,i_K],
+                        c=np.log10(psd_plot[psd_mask]), cmap=cmap, vmin=min_val, vmax=max_val)
+
+for satellite, sat_data in REPT_data.items():
+    psd_plot = REPT_data[satellite]['PSD'][k].values[:,i_mu].copy().flatten()
+    psd_mask = (psd_plot > 0) & (psd_plot != np.nan)
+    lstar_mask = sat_data['Lstar'][:,0]>0
+    combined_mask = psd_mask & lstar_mask
+    # Plotting, ignoring NaN values in the color
+    scatter_A = ax.scatter(sat_data['Epoch'].UTC[combined_mask], sat_data['Lstar'][combined_mask,i_K],
+                        c=np.log10(psd_plot[combined_mask]), cmap=cmap, vmin=min_val, vmax=max_val)
+
+
+
+ax.set_title(f"GPS CXD & RBSP REPT, K={k:.1f} $G^{{1/2}}R_E$, $\\mu$={mu:.0f} $MeV/G$", fontsize=textsize + 2)
+ax.set_ylabel(r"L*", fontsize=textsize)
 ax.tick_params(axis='both', labelsize=textsize, pad=10)
 ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
 # Force labels for first and last x-axis tick marks 
@@ -252,7 +320,7 @@ i_K = np.where(K_set == k)[0]
 mu = 8000
 i_mu = np.where(Mu_set == mu)[0]
 
-save_path = os.path.join('/home/will/REPT_data/april2017storm/', 'rept_data.npz')
+save_path = os.path.join('/home/wzt0020/REPT_data/april2017storm/', 'rept_data.npz')
 complete_load = np.load(save_path, allow_pickle=True)
 REPT_data = load_data(complete_load)
 complete_load.close()
@@ -267,9 +335,6 @@ time_stop   = dt.datetime(2017, 4, 23, 23, 00, 0)
 # time_start  = dt.datetime(2017, 4, 25, 15, 30, 0)
 # time_stop   = dt.datetime(2017, 4, 25, 19, 50, 0)
 
-#time_start  = dt.datetime(2017, 4, 21, 10, 16, 0)
-#time_stop   = dt.datetime(2017, 4, 21, 13, 46, 0)
-
 # time_start  = dt.datetime(2017, 4, 21, 0, 0, 0)
 # time_stop   = dt.datetime(2017, 4, 26, 0, 0, 0)
 
@@ -281,7 +346,7 @@ lstar_delta = 0.1
 
 # Generate Lstar interval boundaries within the time range.
 time_range = Epoch_B_np[(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
-lstar_range = REPT_data['rbspb']['Lstar'][(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
+lstar_range = REPT_data['rbspb']['Lstar'][(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop),i_K]
 psd_range = REPT_data['rbspb']['PSD'][k].values[:,i_mu][(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
 
 fig, ax = plt.subplots(figsize=(12, 8))
@@ -341,8 +406,8 @@ for i_hh, half_hour in enumerate(half_hours):
         for i_epoch, epoch in enumerate(sat_data['Epoch'].UTC[time_mask]):
             nearest_time[i_epoch] = np.argmin(np.abs(REPT_data['rbspb']['Epoch'].UTC-epoch))
 
-        MLT_mask = ((sat_data['MLT'][time_mask] >= (REPT_data['rbspb']['MLT'][nearest_time]-3)) 
-                    & (sat_data['MLT'][time_mask] < (REPT_data['rbspb']['MLT'][nearest_time]+3)))
+        MLT_mask = ((sat_data['MLT'][time_mask] >= (REPT_data['rbspb']['MLT'][nearest_time]-1)) 
+                    & (sat_data['MLT'][time_mask] < (REPT_data['rbspb']['MLT'][nearest_time]+1)))
         valid_mask = MLT_mask
         
         if np.sum(valid_mask)>0:
@@ -365,7 +430,7 @@ ax.tick_params(axis='both', labelsize=textsize, pad=10)
 
 ax.set_xlim(3, 5.5)
 ax.set_xlabel(r"L*", fontsize=textsize)
-ax.set_ylim(1e-13, 1e-5)
+ax.set_ylim(1e-12, 1e-7)
 ax.set_ylabel(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize)
 plt.yscale('log')
 ax.grid(True)
@@ -401,25 +466,4 @@ ax.legend(
 # Set the plot title to the time interval
 title_str = f"Time Interval: {time_start.strftime('%Y-%m-%d %H:%M')} to {time_stop.strftime('%Y-%m-%d %H:%M')}"
 ax.set_title(title_str, fontsize = textsize)
-plt.show()
-
-#%% Show Lstar
-time_start  = dt.datetime(2017, 4, 23, 19, 30, 0)
-time_stop   = dt.datetime(2017, 4, 23, 23, 00, 0)
-
-fig, ax = plt.subplots(figsize=(16, 4))
-
-for satellite, sat_data in storm_data.items():
-    time_mask = (sat_data['Epoch'].UTC >= time_start) & (sat_data['Epoch'].UTC < time_stop)
-    scatter_A = ax.scatter(sat_data['Epoch'].UTC[time_mask], sat_data['Lstar'][time_mask,i_K])
-
-ax.set_ylabel(r"L*", fontsize=textsize)
-ax.tick_params(axis='both', labelsize=textsize, pad=10)
-ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
-ax.set_ylim(2, 7)
-ax.grid(True)
-
-plt.xticks(fontsize=textsize)
-plt.subplots_adjust(top=0.82, right=0.95)
-
 plt.show()

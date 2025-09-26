@@ -41,7 +41,7 @@ def import_GPS(input_folder):
     print(f"Starting to process files in: {input_folder}")
 
     # Use os.walk to traverse the directory tree.
-    # 'root' is the current directory path (e.g., "/home/will/GPS_data/april2017storm/").
+    # 'root' is the current directory path (e.g., "/home/wzt0020/GPS_data/april2017storm/").
     # 'dirnames' is a list of subdirectories in the current 'root' (e.g., ['ns60', 'ns63']).
     # '_' (underscore) is used as a throwaway variable for 'filenames' as it's not used directly here.
     for (root, satnames, _) in os.walk(input_folder):
@@ -88,7 +88,6 @@ def load_data(npzfile):
 def convert_time(sat_data):
     # --- Phase 1: Convert Year/Decimal_Day to SpacePy Ticktock Epoch ---
     # Modified from Steve's date conversion function
-    print('Converting Time for each Satellite...')
 
     # Iterate through each satellite and its associated data in the input 'data' dictionary.
     # 'data' is modified in-place to add the 'Epoch' key.
@@ -151,7 +150,7 @@ def data_period(sat_data, start_date, stop_date):
 #%% Extract QinDenton data for the time period
 def QinDenton_period(start_date, stop_date): 
     print('Loading QinDenton Data...')
-    QD_folder = "/home/will/QinDenton/"
+    QD_folder = "/home/wzt0020/QinDenton/"
     QD_filenames = []
     current_date_object = start_date
     while current_date_object <= stop_date:
@@ -223,9 +222,6 @@ def ticktock_to_Lgm_DateTime(ticktock, c):
     return lgm_dt 
 #%% Find Loss Cone
 def find_Loss_Cone(sat_data, height = 100, extMag='T89c'):
-    
-    print(f'        Finding Loss Cone...')
-    
     MagInfo = lgm_lib.Lgm_InitMagInfo()
     IntMagModel = c_int(lgm_lib.__dict__[f"LGM_IGRF"])
     ExtMagModel = c_int(lgm_lib.__dict__[f"LGM_EXTMODEL_{extMag}"])
@@ -266,12 +262,11 @@ def data_from_gps(time_restricted_data, Lshell = [], intMag = 'IGRF', extMag = '
                    'L_LGM_T89IGRF', 'L_LGM_TS04IGRF',
                    'electron_diff_flux_energy','electron_diff_flux', 'efitpars']
     
-    print('Processing Data for each Satellite...')
     for satellite, sat_data in time_restricted_data.items():
         print(f"    Processing Data for satellite {satellite}", end='\r')
         gps_data_out[satellite] = {}
         if isinstance(Lshell, (int, float)):
-            Lmask = sat_data[model_var] < Lshell
+            Lmask = sat_data[model_var] <= Lshell
         elif not Lshell:
             Lmask = np.full(sat_data[model_var].shape, True, dtype=bool)
         else:
@@ -282,10 +277,10 @@ def data_from_gps(time_restricted_data, Lshell = [], intMag = 'IGRF', extMag = '
         mask = Lmask & efit_mask
 
         R = sat_data['Rad_Re'][mask]
-        Lat = np.deg2rad(sat_data['Geographic_Latitude'][mask])
-        Lon = np.deg2rad(sat_data['Geographic_Longitude'][mask])
+        Lat = sat_data['Geographic_Latitude'][mask]
+        Lon = sat_data['Geographic_Longitude'][mask]
 
-        position_init = Coords(np.column_stack((R,np.pi-Lat,Lon)),'GEO','sph')
+        position_init = Coords(np.column_stack((R,Lat,Lon)),'GEO','sph')
         position_init.ticks = sat_data['Epoch'][mask]
         gps_data_out[satellite]['Position'] = position_init.convert('GSM','car')
 
@@ -320,18 +315,20 @@ def AlphaOfK(sat_data, K_set, extMag = 'T89c'):
 
     alphaofK = np.zeros((len(sat_data['Epoch']),len(K_set)))
     alphaofK.fill(np.nan)
-    for i_K, K in enumerate(K_set):
-        print(f"    K Index: {i_K+1}/{len(K_set)}", end='\r')
-        for i_epoch, epoch in enumerate(sat_data['Epoch'].UTC):
-            print(f"    Time Index: {i_epoch+1}/{len(sat_data['Epoch'])}", end='\r')
-            current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
-            lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
-            current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
-            QD_inform_MagInfo(epoch, MagInfo)
-            lgm_lib.Lgm_Setup_AlphaOfK(current_time, current_vec, MagInfo)
-            alphaofK[i_epoch,i_K] = lgm_lib.Lgm_AlphaOfK(K, MagInfo)
-            #KofAlpha = lgm_lib.Lgm_KofAlpha(alphaofK[i_epoch,i_K], MagInfo)
-            #print(KofAlpha)
+    for i_epoch, epoch in enumerate(sat_data['Epoch'].UTC):
+        print(f"    Time Index: {i_epoch+1}/{len(sat_data['Epoch'])}", end='\r')
+        current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
+        lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
+        current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
+        QD_inform_MagInfo(epoch, MagInfo)
+        for i_K, K in enumerate(K_set):    
+            setup_val = lgm_lib.Lgm_Setup_AlphaOfK(current_time, current_vec, MagInfo)
+            if setup_val != -5:
+                alphaofK[i_epoch,i_K] = lgm_lib.Lgm_AlphaOfK(K, MagInfo)
+                #KofAlpha = lgm_lib.Lgm_KofAlpha(alphaofK[i_epoch,i_K], MagInfo)
+                #print(KofAlpha)
+            else:
+                alphaofK[i_epoch,i_K] = np.nan
             lgm_lib.Lgm_TearDown_AlphaOfK(MagInfo)
     epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
     alphaofK = pd.DataFrame(alphaofK, index=epoch_str, columns=K_set)
@@ -549,3 +546,85 @@ def find_Lstar(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
             lgm_lib.Lstar(pointer(current_vec), LstarInfo)
             sat_data['Lstar'][i_epoch,i_K] = LstarInfo.contents.LS
     return sat_data
+
+#%% AlphaOfK Diagnostic tests
+'''
+QD_data = QD_storm_data
+sat_data = storm_data['ns53']
+i_epoch = 0
+epoch = sat_data['Epoch'].UTC[i_epoch]
+
+K_set = np.atleast_1d(K_set)
+
+MagInfo = lgm_lib.Lgm_InitMagInfo()
+IntMagModel = c_int(lgm_lib.__dict__[f"LGM_IGRF"])
+ExtMagModel = c_int(lgm_lib.__dict__[f"LGM_EXTMODEL_{extMag}"])
+lgm_lib.Lgm_Set_MagModel(IntMagModel, ExtMagModel, MagInfo)
+
+alphaofK = np.zeros((len(sat_data['Epoch']),len(K_set)))
+alphaofK.fill(np.nan)
+
+current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
+lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
+current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
+print(f"Position: {sat_data['Position'][i_epoch]}")
+QD_inform_MagInfo(epoch, MagInfo)
+
+v1 = Lgm_Vector.Lgm_Vector()
+v2 = Lgm_Vector.Lgm_Vector()
+v3 = Lgm_Vector.Lgm_Vector()
+v4 = Lgm_Vector.Lgm_Vector()
+Bvec = Lgm_Vector.Lgm_Vector()
+MagInfo.contents.Bfield(pointer(current_vec), pointer(Bvec), MagInfo)
+MagInfo.contents.Blocal = lgm_lib.Lgm_Magnitude(pointer(Bvec))
+TRACE_TOL=1e-7
+TraceFlag = lgm_lib.Lgm_Trace( pointer(current_vec), pointer(v1), pointer(v2), pointer(v3), MagInfo.contents.Lgm_LossConeHeight, TRACE_TOL, TRACE_TOL, MagInfo )
+setup_val = lgm_lib.Lgm_Setup_AlphaOfK(current_time, current_vec, MagInfo)
+print(f"Setup Value: {setup_val}")
+'''
+#%% Lstar Diagnostic tests
+'''
+QD_data = QD_storm_data
+LstarInfo = lgm_lib.InitLstarInfo(0)
+IntMagModel = c_int(lgm_lib.__dict__[f"LGM_IGRF"])
+ExtMagModel = c_int(lgm_lib.__dict__[f"LGM_EXTMODEL_T89c"])
+lgm_lib.Lgm_Set_MagModel(IntMagModel, ExtMagModel, LstarInfo.contents.mInfo)
+
+satellite = 'ns57'
+row_indices = np.where((storm_data[satellite]['L_LGM_T89IGRF']>10))
+i_epoch = row_indices[0][0]
+epoch = storm_data[satellite]['Epoch'].UTC[i_epoch]
+print(f"Time: {epoch}")
+
+# P = Lgm_Vector.Lgm_Vector()
+# P.x = 0.0; P.y = 6.6; P.z = 0.0
+# P.x = -3.983063273319404; P.y = -0.5551073498982312; P.z = 1.0919563176808282
+# print(P)
+current_vec = Lgm_Vector.Lgm_Vector(*storm_data[satellite]['Position'].data[i_epoch])
+print(f"Position: {current_vec}")
+
+#LstarInfo.contents.PitchAngle = 87.5
+LstarInfo.contents.PitchAngle = alphaofK[satellite].values[i_epoch,0]
+lgm_lib.Lgm_SetLstarTolerances(3, 24, LstarInfo)
+#LstarInfo.contents.mInfo.contents.Kp = 4
+QD_inform_MagInfo(epoch, LstarInfo.contents.mInfo)
+
+# Date       = 19991122
+# UTC        = 19.0
+# epoch = dt.datetime(1999,11,22,19,0,0)
+# lgm_lib.Lgm_Set_Coord_Transforms(Date, UTC, LstarInfo.contents.mInfo.contents.c)
+current_time = ticktock_to_Lgm_DateTime(epoch, LstarInfo.contents.mInfo.contents.c)
+lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, LstarInfo.contents.mInfo.contents.c)
+
+lgm_lib.Lstar( pointer(P), LstarInfo )
+print(f"L* = {LstarInfo.contents.LS}")
+
+print(f"Lshell = {storm_data[satellite]['L_LGM_T89IGRF'][i_epoch]}")
+
+import spacepy.irbempy as irbem
+import spacepy.omni as omni
+omnivals = get_Omni(epoch,storm_data[satellite]['Position'])
+results = irbem.get_Lstar(ticks=storm_data[satellite]['Epoch'][i_epoch], loci=storm_data[satellite]['Position'][i_epoch], alpha=alphaofK[satellite].values[i_epoch,0], extMag='T89', omnivals=omnivals)
+
+print(f"L* from IRBEM = {results['Lstar'][0][0]}")
+'''

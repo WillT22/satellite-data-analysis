@@ -23,56 +23,58 @@ from REPT_PSD_func import (process_l3_data, time_average, find_mag, Average_Flux
 #%% Global Variables
 textsize = 16
 Re = 6378.137 #Earth's Radius
-Mu_set = np.array((4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
-K_set = np.array(0.1) # R_E*G^(1/2)
+Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
+K_set = np.array((0.1,1,2)) # R_E*G^(1/2)
+mode = 'save' # 'save' or 'load'
+
+input_folder = "/home/wzt0020/REPT_data/april2017storm/"
+base_save_folder = "/home/wzt0020/REPT_data/april2017storm/"
+extMag = 'T89c'
+
+start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
+stop_date   = dt.datetime(2017, 4, 26, 00, 00, 0)
+
+# start_date = dt.datetime(2018, 8, 25, 0, 0, 0)
+# stop_date = dt.datetime(2018, 8, 28, 0, 0, 0)
+
+# start_date  = dt.datetime(2012, 10, 7, 00, 00, 0)
+# stop_date   = dt.datetime(2012, 10, 11, 00, 00, 0)
 
 # Conversions
 # electron mass in MeV is (m_e [kg] * c^2 [m^2/s^2]) [J] / (sc.eV [J/eV] * 10^6 [eV/MeV])
 E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6) # this is m_0*c^2
 # b_satellite and b_equator are in Gauss: 1 G = 10^5 nT
 
-input_folder = "/home/will/REPT_data/oct2012storm/"
-base_save_folder = "/home/will/REPT_data/oct2012storm/"
-extMag = 'T89c'
-
-start_date  = dt.datetime(2012, 10, 7, 00, 00, 0)
-stop_date   = dt.datetime(2012, 10, 11, 00, 00, 0)
-
-# start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
-# stop_date   = dt.datetime(2017, 4, 26, 00, 00, 0)
-
-# start_date  = dt.datetime(2017, 4, 23, 19, 30, 0)
-# stop_date    = dt.datetime(2017, 4, 23, 23, 00, 0)
-
+# Import
 QD_storm_data = QinDenton_period(start_date, stop_date)
 
 #%% Main
 if __name__ == '__main__':
 
 ### Load in data ###
-    if not os.path.exists(input_folder):
-        raise FileNotFoundError(f"Error: Folder path not found: {input_folder}")
-    
-    # Get all CDF file paths in the folder
-    # file_paths_l3_A = glob.glob(input_folder + "rbspa*[!r]*.cdf") 
-    # file_paths_l3_B = glob.glob(input_folder + "rbspb*[!r]*.cdf")
-    
-    # REPT_data_raw = {}
-    # REPT_data_raw['rbspa'] = process_l3_data(file_paths_l3_A)
-    # REPT_data_raw['rbspb'] = process_l3_data(file_paths_l3_B)
-
     raw_save_path = os.path.join(base_save_folder, 'raw_rept.npz')
+    if mode == 'save':
+        if not os.path.exists(input_folder):
+            raise FileNotFoundError(f"Error: Folder path not found: {input_folder}")
+        
+        # Get all CDF file paths in the folder
+        file_paths_l3_A = glob.glob(input_folder + "rbspa*[!r]*.cdf") 
+        file_paths_l3_B = glob.glob(input_folder + "rbspb*[!r]*.cdf")
+        
+        REPT_data_raw = {}
+        REPT_data_raw['rbspa'] = process_l3_data(file_paths_l3_A)
+        REPT_data_raw['rbspb'] = process_l3_data(file_paths_l3_B)
     
-    #Save Data for later recall:
-    # print("Saving Raw REPT Data...")
-    # np.savez(raw_save_path, **REPT_data_raw)
-    # print("Data Saved \n")
-    
-    # Read in data from previous save
-    raw_data_load = np.load(raw_save_path, allow_pickle=True)
-    REPT_data_raw = load_data(raw_data_load)
-    raw_data_load.close()
-    del raw_data_load
+        #Save Data for later recall:
+        print("Saving Raw REPT Data...")
+        np.savez(raw_save_path, **REPT_data_raw)
+        print("Data Saved \n")
+    elif mode == 'load':
+        # Read in data from previous save
+        raw_data_load = np.load(raw_save_path, allow_pickle=True)
+        REPT_data_raw = load_data(raw_data_load)
+        raw_data_load.close()
+        del raw_data_load
 
 ### Restric Time Period ###
     REPT_data = {}
@@ -104,33 +106,35 @@ if __name__ == '__main__':
     del energy_grid, alpha_grid, blocal_grid
 
 ### Find Alpha at each time point for given K ###
-    alphaofK = {}
-    for satellite, sat_data in REPT_data.items():
-        print(f"Calculating Pitch Angle for satellite {satellite}...")
-        alphaofK[satellite] = AlphaOfK(sat_data, K_set, extMag)
-
     alphaofK_filename = f"alphaofK_{extMag}.npz"
     alphaofK_save_path = os.path.join(base_save_folder, alphaofK_filename)
-    # Save Data for later recall:
-    print("Saving AlphaofK Data...")
-    np.savez(alphaofK_save_path, **alphaofK)
-    print("Data Saved \n")
+    if mode == 'save':
+        alphaofK = {}
+        for satellite, sat_data in REPT_data.items():
+            print(f"Calculating Pitch Angle for satellite {satellite}...")
+            alphaofK[satellite] = AlphaOfK(sat_data, K_set, extMag)
 
-    # Load data from previous save
-    # alphaofK_load = np.load(alphaofK_save_path, allow_pickle=True)
-    # alphaofK = load_data(alphaofK_load)
-    # for satellite, sat_data in REPT_data.items():
-    #     epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-    #     alphaofK[satellite] = pd.DataFrame(alphaofK[satellite], index=epoch_str, columns=np.atleast_1d(K_set))
-    # alphaofK_load.close()
-    # del alphaofK_load
+        # Save Data for later recall:
+        print("Saving AlphaofK Data...")
+        np.savez(alphaofK_save_path, **alphaofK)
+        print("Data Saved \n")
+    elif mode == 'load':
+        # Load data from previous save
+        alphaofK_load = np.load(alphaofK_save_path, allow_pickle=True)
+        alphaofK = load_data(alphaofK_load)
+        for satellite, sat_data in REPT_data.items():
+            epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
+            alphaofK[satellite] = pd.DataFrame(alphaofK[satellite], index=epoch_str, columns=np.atleast_1d(K_set))
+        alphaofK_load.close()
+        del alphaofK_load
 
     # Read in data from previous save
-    # save_path = os.path.join(base_save_folder, 'rept_data.npz')
-    # complete_load = np.load(save_path, allow_pickle=True)
-    # REPT_data = load_data(complete_load)
-    # complete_load.close()
-    # del complete_load
+    save_path = os.path.join(base_save_folder, 'rept_data.npz')
+    if mode == 'load':
+        complete_load = np.load(save_path, allow_pickle=True)
+        REPT_data = load_data(complete_load)
+        complete_load.close()
+        del complete_load
 
 ### Find Loss Cone and Equatorial B ###
     for satellite, sat_data in REPT_data.items():
@@ -156,20 +160,22 @@ if __name__ == '__main__':
         REPT_data[satellite]['PSD'] = find_psd(flux[satellite], energyofmualpha[satellite])
 
 ### Calculate L* ####
-    for satellite, sat_data in REPT_data.items():
-        print(f"Calculating L* for satellite {satellite}...")
-        REPT_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag='T89c')
-
     new_save_path = os.path.join(base_save_folder, 'rept_data.npz')
-    # Save Data for later recall:
-    print("Saving REPT Data...")
-    np.savez(new_save_path, **REPT_data)
-    print("Data Saved \n")
+    if mode == 'save':
+        for satellite, sat_data in REPT_data.items():
+            print(f"Calculating L* for satellite {satellite}...")
+            REPT_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag='T89c')
+
+        # Save Data for later recall:
+        print("Saving REPT Data...")
+        np.savez(new_save_path, **REPT_data)
+        print("Data Saved \n")
 
 #%% Plot PSD
 from matplotlib import colors
 k = 0.1
-mu = 16000
+i_K = np.where(K_set == k)[0]
+mu = 8000
 i_mu = np.where(Mu_set == mu)[0]
 
 fig, ax = plt.subplots(figsize=(16, 4))
@@ -179,7 +185,7 @@ cmap = colors.ListedColormap(colorscheme)
 
 # Logarithmic colorbar setup
 min_val = np.nanmin(np.log10(1e-12))
-max_val = np.nanmax(np.log10(1e-10))
+max_val = np.nanmax(np.log10(1e-7))
 
 for satellite, sat_data in REPT_data.items():
     psd_plot = REPT_data[satellite]['PSD'][k].values[:,i_mu].copy().flatten()
@@ -188,7 +194,7 @@ for satellite, sat_data in REPT_data.items():
     combined_mask = psd_mask & lstar_mask
 
     # Plotting, ignoring NaN values in the color
-    scatter_A = ax.scatter(sat_data['Epoch'].UTC[combined_mask], sat_data['Lstar'][combined_mask,0],
+    scatter_A = ax.scatter(sat_data['Epoch'].UTC[combined_mask], sat_data['Lstar'][combined_mask,i_K],
                         c=np.log10(psd_plot[combined_mask]), cmap=cmap, vmin=min_val, vmax=max_val)
 
 

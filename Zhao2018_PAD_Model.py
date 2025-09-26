@@ -12,7 +12,7 @@ from GPS_PSD_func import find_local90PA, find_Loss_Cone
 
 #%%
 global Zhao_median_filepath
-Zhao_median_filepath = '/home/will/Zhao_2018_model_files/PAD_model_coeff_median.txt'
+Zhao_median_filepath = '/home/wzt0020/Zhao_2018_model_files/PAD_model_coeff_median.txt'
 
 #%% Extract coefficients from Zhao_2018
 # NOTE: MLT and L are midpoints of the bin!
@@ -256,7 +256,7 @@ def find_Zhao_PAD_coeffs(gps_data, QD_data, EnergyofMuAlpha):
                                         Zhao_epoch_coeffs[satellite][K_val][Mu_value][i_epoch,i_c] = coeff_data_temp[i_MLT,i_L]
                                     else:
                                         # Lshell < 3 for E >= 1 MeV is outside the defined range for non-zero coeffs.
-                                        # Coefficients for these points will remain 0.0 (from initialization).
+                                        # Coefficients for these points remain 0.0 (from initialization).
                                         pass 
                 # After processing all coefficients for a specific (satellite, Mu_value) combination and all epochs, 
                 # convert the accumulated NumPy array into a Pandas DataFrame. 

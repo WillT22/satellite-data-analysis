@@ -49,8 +49,6 @@ def process_l3_data(file_paths):
     sat_data['Position'] = Coords(sat_data['Position'] / Re, 'GEO', 'car')
     sat_data['Position'].ticks = sat_data['Epoch']
     sat_data['Position'] = sat_data['Position'].convert('GSM','car')
-
-    print("Data Loaded \n") 
     return sat_data
 
 #%% Time average for 1 minute resolution
@@ -89,7 +87,7 @@ def time_average(sat_data, sat_name):
 
 #%% Extract Magentometer Data and match with nearest time point
 def find_mag(sat_data, sat_name):
-    mag_folder = '/home/will/REPT_data/MagData/'
+    mag_folder = '/home/wzt0020/REPT_data/MagData/'
 
     Epoch = sat_data['Epoch'].UTC
     date = min(Epoch).date()
