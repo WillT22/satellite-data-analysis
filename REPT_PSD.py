@@ -15,27 +15,34 @@ import pandas as pd
 import importlib
 import GPS_PSD_func
 importlib.reload(GPS_PSD_func)
-from GPS_PSD_func import (QinDenton_period, load_data, data_period, AlphaOfK, find_Loss_Cone, EnergyofMuAlpha, find_psd, find_Lstar)
+from GPS_PSD_func import (QinDenton_period, load_data, data_period, AlphaOfK, find_Loss_Cone, EnergyofMuAlpha, find_psd, find_McIlwain_L, find_Lstar)
 import REPT_PSD_func
 importlib.reload(REPT_PSD_func)
 from REPT_PSD_func import (process_l3_data, time_average, find_mag, Average_FluxbyPA, Interp_Flux)
+
+import time
 
 #%% Global Variables
 textsize = 16
 Re = 6378.137 #Earth's Radius
 Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
 K_set = np.array((0.1,1,2)) # R_E*G^(1/2)
-mode = 'save' # 'save' or 'load'
+mode = 'load' # 'save' or 'load'
+storm_name = 'aug2018storm'
+plot_flux = True
+plot_psd = True
+plot_radial = True
 
-input_folder = "/home/wzt0020/REPT_data/april2017storm/"
-base_save_folder = "/home/wzt0020/REPT_data/april2017storm/"
-extMag = 'T89c'
+REPT_data_root = '/home/wzt0020/REPT_data/'
+input_folder = os.path.join(REPT_data_root, storm_name)
+base_save_folder = os.path.join(REPT_data_root, storm_name)
+extMag = 'TS04'
 
-start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
-stop_date   = dt.datetime(2017, 4, 26, 00, 00, 0)
+# start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
+# stop_date   = dt.datetime(2017, 4, 26, 00, 00, 0)
 
-# start_date = dt.datetime(2018, 8, 25, 0, 0, 0)
-# stop_date = dt.datetime(2018, 8, 28, 0, 0, 0)
+start_date = dt.datetime(2018, 8, 25, 0, 0, 0)
+stop_date = dt.datetime(2018, 8, 28, 0, 0, 0)
 
 # start_date  = dt.datetime(2012, 10, 7, 00, 00, 0)
 # stop_date   = dt.datetime(2012, 10, 11, 00, 00, 0)
@@ -45,12 +52,14 @@ stop_date   = dt.datetime(2017, 4, 26, 00, 00, 0)
 E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6) # this is m_0*c^2
 # b_satellite and b_equator are in Gauss: 1 G = 10^5 nT
 
+start_time = time.perf_counter()
+
 # Import
 QD_storm_data = QinDenton_period(start_date, stop_date)
 
 #%% Main
 if __name__ == '__main__':
-
+    
 ### Load in data ###
     raw_save_path = os.path.join(base_save_folder, 'raw_rept.npz')
     if mode == 'save':
@@ -58,8 +67,8 @@ if __name__ == '__main__':
             raise FileNotFoundError(f"Error: Folder path not found: {input_folder}")
         
         # Get all CDF file paths in the folder
-        file_paths_l3_A = glob.glob(input_folder + "rbspa*[!r]*.cdf") 
-        file_paths_l3_B = glob.glob(input_folder + "rbspb*[!r]*.cdf")
+        file_paths_l3_A = glob.glob(input_folder + "/rbspa*[!r]*.cdf") 
+        file_paths_l3_B = glob.glob(input_folder + "/rbspb*[!r]*.cdf")
         
         REPT_data_raw = {}
         REPT_data_raw['rbspa'] = process_l3_data(file_paths_l3_A)
@@ -118,6 +127,11 @@ if __name__ == '__main__':
         print("Saving AlphaofK Data...")
         np.savez(alphaofK_save_path, **alphaofK)
         print("Data Saved \n")
+
+        ### Find Loss Cone and Equatorial B ###
+        for satellite, sat_data in REPT_data.items():
+            print(f"Calculating Equatorial B-field for satellite {satellite}...")
+            REPT_data[satellite]['b_min'], REPT_data[satellite]['b_footpoint'], _ = find_Loss_Cone(sat_data, extMag=extMag)
     elif mode == 'load':
         # Load data from previous save
         alphaofK_load = np.load(alphaofK_save_path, allow_pickle=True)
@@ -129,17 +143,12 @@ if __name__ == '__main__':
         del alphaofK_load
 
     # Read in data from previous save
-    save_path = os.path.join(base_save_folder, 'rept_data.npz')
+    save_path = os.path.join(base_save_folder, f'rept_data_{extMag}.npz')
     if mode == 'load':
         complete_load = np.load(save_path, allow_pickle=True)
         REPT_data = load_data(complete_load)
         complete_load.close()
         del complete_load
-
-### Find Loss Cone and Equatorial B ###
-    for satellite, sat_data in REPT_data.items():
-        print(f"Calculating Equatorial B-field for satellite {satellite}...")
-        REPT_data[satellite]['b_min'], REPT_data[satellite]['b_footpoint'], _ = find_Loss_Cone(sat_data, extMag=extMag)
  
 ### Find Energy for set Mu and Alpha ###
     energyofmualpha = {}
@@ -159,152 +168,222 @@ if __name__ == '__main__':
         print(f"Calculating PSD for satellite {satellite}")
         REPT_data[satellite]['PSD'] = find_psd(flux[satellite], energyofmualpha[satellite])
 
-### Calculate L* ####
-    new_save_path = os.path.join(base_save_folder, 'rept_data.npz')
+### Calculate L ####
     if mode == 'save':
         for satellite, sat_data in REPT_data.items():
-            print(f"Calculating L* for satellite {satellite}...")
-            REPT_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag='T89c')
+            print(f"Calculating L for satellite {satellite}...")
+            REPT_data[satellite] = find_McIlwain_L(sat_data, alphaofK[satellite], extMag=extMag)
 
         # Save Data for later recall:
         print("Saving REPT Data...")
-        np.savez(new_save_path, **REPT_data)
+        np.savez(save_path, **REPT_data)
+        print("Data Saved \n")
+        
+### Calculate L* ####
+    if mode == 'save':
+        for satellite, sat_data in REPT_data.items():
+            print(f"Calculating L* for satellite {satellite}...")
+            REPT_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag=extMag)
+
+        # Save Data for later recall:
+        print("Saving REPT Data...")
+        np.savez(save_path, **REPT_data)
         print("Data Saved \n")
 
+### Execution time
+    end_time = time.perf_counter()
+    elapsed_time = end_time - start_time
+
+    def format_runtime(elapsed_time):
+        # Calculate whole hours
+        hours = int(elapsed_time // 3600)
+        # Calculate remaining minutes
+        minutes = int((elapsed_time % 3600) // 60)
+        # Calculate remaining seconds (including decimals)
+        seconds = elapsed_time % 60
+        
+        return f"Script runtime: {hours}h {minutes}m {seconds:.2f}s"
+
+    print(format_runtime(elapsed_time))
+
+#%% Plot Flux
+if plot_flux==True:
+    energy = 5.2 # MeV
+    energy_channels = REPT_data['rbspa']['Energy_Channels']
+    i_energy = np.argmin(np.abs(energy_channels - energy))
+
+    # Logarithmic colorbar setup
+    min_val = np.nanmin(np.log10(1e2))
+    max_val = np.nanmax(np.log10(1e6))
+
+    fig, ax = plt.subplots(figsize=(16, 4))
+    for satellite, sat_data in REPT_data.items():
+        flux_slice = sat_data['FEDU_averaged'][:,i_energy,:]
+        flux_temp_mask = np.where(flux_slice >= 0, flux_slice, np.nan)
+        flux_plot = np.nanmean(flux_temp_mask, axis=1)/2
+        flux_mask = (flux_plot > 0) & (flux_plot != np.nan)
+        # Plotting, ignoring NaN values in the color
+        scatter_A = ax.scatter(sat_data['Epoch'].UTC[flux_mask], sat_data['L_LGM_T89cIGRF'][flux_mask],
+                            c=np.log10(flux_plot[flux_mask]), vmin=min_val, vmax=max_val)
+
+    ax.set_title(f"RBSP A&B REPT, {energy} $MeV$ Electron Differential Flux", fontsize=textsize + 2)
+    ax.set_ylabel(r"McIlwain L", fontsize=textsize)
+    ax.tick_params(axis='both', labelsize=textsize, pad=10)
+    ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    # Force labels for first and last x-axis tick marks 
+    min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+    max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+    ax.set_xlim(min_epoch, max_epoch)
+    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
+    ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+    ax.set_ylim(3, 5.5)
+    ax.grid(True)
+
+    cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
+    cbar.set_label(label = r'Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', fontsize=textsize)
+    cbar.ax.tick_params(labelsize=textsize)
+
+    plt.xticks(fontsize=textsize)
+    plt.subplots_adjust(top=0.82, right=0.95)
+
+    plt.show()
+
 #%% Plot PSD
-from matplotlib import colors
-k = 0.1
-i_K = np.where(K_set == k)[0]
-mu = 8000
-i_mu = np.where(Mu_set == mu)[0]
+if plot_psd==True:
+    from matplotlib import colors
+    k = 0.1
+    i_K = np.where(K_set == k)[0]
+    mu = 2000
+    i_mu = np.where(Mu_set == mu)[0]
 
-fig, ax = plt.subplots(figsize=(16, 4))
+    fig, ax = plt.subplots(figsize=(16, 4))
 
-colorscheme = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))
-cmap = colors.ListedColormap(colorscheme)
+    colorscheme = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))
+    cmap = colors.ListedColormap(colorscheme)
 
-# Logarithmic colorbar setup
-min_val = np.nanmin(np.log10(1e-12))
-max_val = np.nanmax(np.log10(1e-7))
+    # Logarithmic colorbar setup
+    min_val = np.nanmin(np.log10(1e-12))
+    max_val = np.nanmax(np.log10(1e-9))
 
-for satellite, sat_data in REPT_data.items():
-    psd_plot = REPT_data[satellite]['PSD'][k].values[:,i_mu].copy().flatten()
-    psd_mask = (psd_plot > 0) & (psd_plot != np.nan)
-    lstar_mask = sat_data['Lstar'][:,0]>0
-    combined_mask = psd_mask & lstar_mask
+    for satellite, sat_data in REPT_data.items():
+        psd_plot = REPT_data[satellite]['PSD'][k].values[:,i_mu].copy().flatten()
+        psd_mask = (psd_plot > 0) & (psd_plot != np.nan)
+        lstar_mask = sat_data['Lstar'][:,0]>0
+        combined_mask = psd_mask & lstar_mask
 
-    # Plotting, ignoring NaN values in the color
-    scatter_A = ax.scatter(sat_data['Epoch'].UTC[combined_mask], sat_data['Lstar'][combined_mask,i_K],
-                        c=np.log10(psd_plot[combined_mask]), cmap=cmap, vmin=min_val, vmax=max_val)
+        # Plotting, ignoring NaN values in the color
+        scatter_A = ax.scatter(sat_data['Epoch'].UTC[combined_mask], sat_data['Lstar'][combined_mask,i_K],
+                            c=np.log10(psd_plot[combined_mask]), cmap=cmap, vmin=min_val, vmax=max_val)
 
 
-ax.set_title(f"RBSP A&B REPT, K={k:.1f} $G^{{1/2}}R_E$, $\\mu$={mu:.0f} $MeV/G$", fontsize=textsize + 2)
-ax.set_ylabel(r"L*", fontsize=textsize)
-ax.tick_params(axis='both', labelsize=textsize, pad=10)
-ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
-# Force labels for first and last x-axis tick marks 
-min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
-max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
-ax.set_xlim(min_epoch, max_epoch)
-ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
-ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-ax.set_ylim(3, 5.5)
-ax.grid(True)
+    ax.set_title(f"RBSP A&B REPT, K={k:.1f} $G^{{1/2}}R_E$, $\\mu$={mu:.0f} $MeV/G$", fontsize=textsize + 2)
+    ax.set_ylabel(r"L*", fontsize=textsize)
+    ax.tick_params(axis='both', labelsize=textsize, pad=10)
+    ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    # Force labels for first and last x-axis tick marks 
+    min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+    max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+    ax.set_xlim(min_epoch, max_epoch)
+    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
+    ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+    ax.set_ylim(3, 6)
+    ax.grid(True)
 
-cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
-tick_locations = np.arange(min_val, max_val + 1)
-cbar.set_ticks(tick_locations)
-cbar.set_label(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize)
-cbar.ax.tick_params(labelsize=textsize)
+    cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
+    tick_locations = np.arange(min_val, max_val + 1)
+    cbar.set_ticks(tick_locations)
+    cbar.set_label(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize)
+    cbar.ax.tick_params(labelsize=textsize)
 
-plt.xticks(fontsize=textsize)
-plt.subplots_adjust(top=0.82, right=0.95) 
+    plt.xticks(fontsize=textsize)
+    plt.subplots_adjust(top=0.82, right=0.95) 
 
-plt.show()
+    plt.show()
 
 #%% Create PSD Radial Profiles
-sat_select = 'rbspb'
-sat_data = REPT_data[sat_select]
-k = 0.1
+if plot_radial==True:
+    sat_select = 'rbspb'
+    sat_data = REPT_data[sat_select]
+    k = 0.1
 
-time_start  = dt.datetime(2012, 10, 9, 6, 00, 0)
-time_stop   = dt.datetime(2012, 10, 9, 10, 00, 0)
+    time_start  = dt.datetime(2018, 8, 26, 18, 0, 0)
+    time_stop   = dt.datetime(2018, 8, 27, 8, 0, 0)
 
-# time_start  = dt.datetime(2017, 4, 23, 18, 45, 0)
-# time_stop   = dt.datetime(2017, 4, 23, 22, 58, 0)
+    # time_start  = dt.datetime(2017, 4, 23, 18, 45, 0)
+    # time_stop   = dt.datetime(2017, 4, 23, 22, 58, 0)
 
-# time_start  = dt.datetime(2017, 4, 24, 17, 7, 0)
-# time_stop   = dt.datetime(2017, 4, 24, 21, 35, 0)
+    # time_start  = dt.datetime(2017, 4, 24, 17, 7, 0)
+    # time_stop   = dt.datetime(2017, 4, 24, 21, 35, 0)
 
-# time_start  = dt.datetime(2017, 4, 25, 15, 30, 0)
-# time_stop   = dt.datetime(2017, 4, 25, 19, 57, 0)
+    # time_start  = dt.datetime(2017, 4, 25, 15, 30, 0)
+    # time_stop   = dt.datetime(2017, 4, 25, 19, 57, 0)
 
-time_mask = (sat_data['Epoch'] >= time_start) & (sat_data['Epoch'] <= time_stop)
+    time_mask = (sat_data['Epoch'] >= time_start) & (sat_data['Epoch'] <= time_stop)
 
-lstar_delta = 0.1
-lstar_mask = (sat_data['Lstar'][:,0][time_mask]>0)
-lstar_range = sat_data['Lstar'][:,0][time_mask][lstar_mask]
-lstar_min = np.min(lstar_range[~np.isnan(lstar_range)])
-lstar_max = np.max(lstar_range[~np.isnan(lstar_range)])
-lstar_intervals = np.arange(np.floor(lstar_min / lstar_delta) * lstar_delta, np.ceil(lstar_max / lstar_delta) * lstar_delta + lstar_delta, lstar_delta)
+    lstar_delta = 0.1
+    lstar_mask = (sat_data['Lstar'][:,0][time_mask]>0)
+    lstar_range = sat_data['Lstar'][:,0][time_mask][lstar_mask]
+    lstar_min = np.min(lstar_range[~np.isnan(lstar_range)])
+    lstar_max = np.max(lstar_range[~np.isnan(lstar_range)])
+    lstar_intervals = np.arange(np.floor(lstar_min / lstar_delta) * lstar_delta, np.ceil(lstar_max / lstar_delta) * lstar_delta + lstar_delta, lstar_delta)
 
-# Initialize arrays to store averaged values.
-averaged_lstar = np.zeros(len(lstar_intervals))
-averaged_psd = np.zeros((len(lstar_intervals), len(sat_data['PSD'][k].values[:,0].flatten())))
+    # Initialize arrays to store averaged values.
+    averaged_lstar = np.zeros(len(lstar_intervals))
+    averaged_psd = np.zeros((len(lstar_intervals), len(sat_data['PSD'][k].values[:,0].flatten())))
 
-fig, ax = plt.subplots(figsize=(6, 4.5))
-color_set = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(Mu_set), dtype=int)]
-color_set[3] = [0, 1, 1, 1]  # Teal
+    fig, ax = plt.subplots(figsize=(6, 4.5))
+    color_set = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))[np.linspace(0, 255, len(Mu_set), dtype=int)]
+    color_set[3] = [0, 1, 1, 1]  # Teal
 
-for mu_index in range(len(Mu_set)):
-    for i, lstar_val in enumerate(lstar_intervals):
-        # Find indices within the current Lstar interval and time range.
-        lstar_start = lstar_val - 1/2 * lstar_delta
-        lstar_end = lstar_val + 1/2 * lstar_delta
-        interval_indices = np.where(time_mask & (sat_data['Lstar'][:,0] >= lstar_start) & (sat_data['Lstar'][:,0] < lstar_end))[0]
+    for mu_index in range(len(Mu_set)):
+        for i, lstar_val in enumerate(lstar_intervals):
+            # Find indices within the current Lstar interval and time range.
+            lstar_start = lstar_val - 1/2 * lstar_delta
+            lstar_end = lstar_val + 1/2 * lstar_delta
+            interval_indices = np.where(time_mask & (sat_data['Lstar'][:,0] >= lstar_start) & (sat_data['Lstar'][:,0] < lstar_end))[0]
+            
+            # Calculate averages for the current Lstar interval
+            averaged_psd[i, mu_index] = np.nanmean(sat_data['PSD'][k].values[interval_indices,mu_index].flatten())  # average along the first axis, ignoring NaNs.
+
         
-        # Calculate averages for the current Lstar interval
-        averaged_psd[i, mu_index] = np.nanmean(sat_data['PSD'][k].values[interval_indices,mu_index].flatten())  # average along the first axis, ignoring NaNs.
+        # Create a mask to filter out NaN values
+        psd_mask = (averaged_psd[:,mu_index] > 0) & (averaged_psd[:,mu_index] != np.nan)
+        
+        # Apply the mask to both averaged_lstar and averaged_psd
+        ax.plot(
+            lstar_intervals[psd_mask],
+            averaged_psd[psd_mask,mu_index],
+            color=color_set[mu_index],
+            linewidth=2,
+            marker='o',
+            markersize=4,
+            label=f"{Mu_set[mu_index]:.0f}"
+            )
 
-    
-    # Create a mask to filter out NaN values
-    psd_mask = (averaged_psd[:,mu_index] > 0) & (averaged_psd[:,mu_index] != np.nan)
-    
-    # Apply the mask to both averaged_lstar and averaged_psd
-    ax.plot(
-        lstar_intervals[psd_mask],
-        averaged_psd[psd_mask,mu_index],
-        color=color_set[mu_index],
-        linewidth=2,
-        marker='o',
-        markersize=4,
-        label=f"{Mu_set[mu_index]:.0f}"
-        )
+    ax.set_xlim(3, 5.5)
+    ax.set_xlabel(r"L*", fontsize=textsize - 2)
+    ax.set_ylim(1e-13, 1e-5)
+    ax.set_ylabel(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize - 2)
+    plt.yscale('log')
+    ax.grid(True)
 
-ax.set_xlim(3, 5.5)
-ax.set_xlabel(r"L*", fontsize=textsize - 2)
-ax.set_ylim(1e-13, 1e-5)
-ax.set_ylabel(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize - 2)
-plt.yscale('log')
-ax.grid(True)
+    # Add legend
+    ax.legend(
+        title=r"$\mu$ (MeV/G)",
+        loc='center right',
+        bbox_to_anchor=(1.25, 0.5),
+        fontsize='small', #adjust legend fontsize
+        title_fontsize='medium', #adjust legend title fontsize
+        markerscale=0.7,
+        handlelength=1
+    )
 
-# Add legend
-ax.legend(
-    title=r"$\mu$ (MeV/G)",
-    loc='center right',
-    bbox_to_anchor=(1.25, 0.5),
-    fontsize='small', #adjust legend fontsize
-    title_fontsize='medium', #adjust legend title fontsize
-    markerscale=0.7,
-    handlelength=1
-)
+    # Add K text to the plot
+    ax.text(0.02, 0.98, r"K = " + f"{k:.1f} $G^{{1/2}}R_E$", transform=ax.transAxes, fontsize=textsize-4, verticalalignment='top') #add the text
 
-# Add K text to the plot
-ax.text(0.02, 0.98, r"K = " + f"{K_set:.1f} $G^{{1/2}}R_E$", transform=ax.transAxes, fontsize=textsize-4, verticalalignment='top') #add the text
+    # Set the plot title to the time interval
+    title_str = f"Time Interval: {time_start.strftime('%Y-%m-%d %H:%M')} to {time_stop.strftime('%Y-%m-%d %H:%M')}"
+    ax.set_title(title_str)
 
-# Set the plot title to the time interval
-title_str = f"Time Interval: {time_start.strftime('%Y-%m-%d %H:%M')} to {time_stop.strftime('%Y-%m-%d %H:%M')}"
-ax.set_title(title_str)
-
-plt.tight_layout()
-plt.show()
+    plt.tight_layout()
+    plt.show()

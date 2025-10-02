@@ -121,7 +121,6 @@ def find_mag(sat_data, sat_name):
     idx = np.clip(idx, 1, len(mag_epochs_nums) - 1)
     nearest_time = np.where(np.abs(mag_epochs_nums[idx - 1] - epoch_nums) <= np.abs(mag_epochs_nums[idx] - epoch_nums), idx - 1, idx)
     sat_data['b_satellite'] = mag_data['b_satellite'][nearest_time]
-    print('Magnetic Field Data Extracted')
     return sat_data
 
 
@@ -171,7 +170,6 @@ def Average_FluxbyPA(sat_data, sat_name):
 
     sat_data['FEDU_averaged'] = FEDU_averaged
     sat_data['Pitch_Angles'] = alpha_unique # Update Pitch_Angles to be the unique, averaged ones
-    print(f'Pitch Angle Fluxes Averaged')
     return sat_data
 
 

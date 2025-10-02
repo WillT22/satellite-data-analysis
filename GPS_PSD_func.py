@@ -81,7 +81,6 @@ def load_data(npzfile):
                 loaded_data[satellite] = sat_data
         elif isinstance(sat_data, pd.DataFrame):
             loaded_data[satellite] = sat_data
-    print("Data Loaded \n")
     return loaded_data
 
 #%% Convert Time for GPS satellites
@@ -164,15 +163,6 @@ def QinDenton_period(start_date, stop_date):
     for dti, datetime in enumerate(QD_data['DateTime']):
         QD_data['DateTime'][dti] = dt.datetime.strptime(datetime, datetime_format)
     return QD_data
-
-#%% Extract information for only relevant Lshells
-def limit_Lshell(time_restricted_data, Lshell, intMag = 'IGRF', extMag = 'T89'):
-    model_var = f"L_LGM_{extMag}{intMag}"
-    lshell_time_restricted_data = {}
-    for satellite, sat_data in time_restricted_data.items():
-        lshell_time_restricted_data[satellite] = {}
-        lshell_time_restricted_data[satellite] = sat_data[sat_data[model_var] <= Lshell]
-    return lshell_time_restricted_data
 
 #%% Set magnetic field model coefficients to closest time of QinDenton data
 ## Someday, replace this with Lgm_QinDenton in LANLGeoMag...
@@ -520,6 +510,28 @@ def find_psd(j_CXD, energyofMuAlpha):
         psd[K_val] = pd.DataFrame(psd[K_val], index=epoch_list, columns=Mu_set)
     return psd
 
+#%% Calculate McIlain L
+def find_McIlwain_L(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
+    MagInfo = lgm_lib.Lgm_InitMagInfo()
+    IntMagModel = c_int(lgm_lib.__dict__[f"LGM_IGRF"])
+    ExtMagModel = c_int(lgm_lib.__dict__[f"LGM_EXTMODEL_{extMag}"])
+    lgm_lib.Lgm_Set_MagModel(IntMagModel, ExtMagModel, MagInfo)
+
+    sat_data[f'L_LGM_{extMag}IGRF'] = np.zeros(alphaofK.values.shape[0])
+    I = c_double(0)
+    Bm = c_double(0)
+    M = c_double(0)
+
+    for i_epoch, epoch in enumerate(sat_data['Epoch'].UTC):
+        print(f"    Time Index: {i_epoch+1}/{len(sat_data['Epoch'])}", end='\r')
+        current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
+        lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
+        current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'].data[i_epoch])
+        QD_inform_MagInfo(epoch, MagInfo)
+        pitch_angle = alphaofK.values[i_epoch,0] # this is equitorial pitch angle
+        sat_data[f'L_LGM_{extMag}IGRF'][i_epoch] = lgm_lib.Lgm_McIlwain_L(current_time.contents.Date, current_time.contents.Time, current_vec, pitch_angle, 0, pointer(I), pointer(Bm), pointer(M), MagInfo)
+    return sat_data
+
 #%% Calculate L_star
 def find_Lstar(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
     #MagEphemInfo = lgm_lib.Lgm_InitMagEphemInfo(1,1)
@@ -546,85 +558,3 @@ def find_Lstar(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
             lgm_lib.Lstar(pointer(current_vec), LstarInfo)
             sat_data['Lstar'][i_epoch,i_K] = LstarInfo.contents.LS
     return sat_data
-
-#%% AlphaOfK Diagnostic tests
-'''
-QD_data = QD_storm_data
-sat_data = storm_data['ns53']
-i_epoch = 0
-epoch = sat_data['Epoch'].UTC[i_epoch]
-
-K_set = np.atleast_1d(K_set)
-
-MagInfo = lgm_lib.Lgm_InitMagInfo()
-IntMagModel = c_int(lgm_lib.__dict__[f"LGM_IGRF"])
-ExtMagModel = c_int(lgm_lib.__dict__[f"LGM_EXTMODEL_{extMag}"])
-lgm_lib.Lgm_Set_MagModel(IntMagModel, ExtMagModel, MagInfo)
-
-alphaofK = np.zeros((len(sat_data['Epoch']),len(K_set)))
-alphaofK.fill(np.nan)
-
-current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
-lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
-current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
-print(f"Position: {sat_data['Position'][i_epoch]}")
-QD_inform_MagInfo(epoch, MagInfo)
-
-v1 = Lgm_Vector.Lgm_Vector()
-v2 = Lgm_Vector.Lgm_Vector()
-v3 = Lgm_Vector.Lgm_Vector()
-v4 = Lgm_Vector.Lgm_Vector()
-Bvec = Lgm_Vector.Lgm_Vector()
-MagInfo.contents.Bfield(pointer(current_vec), pointer(Bvec), MagInfo)
-MagInfo.contents.Blocal = lgm_lib.Lgm_Magnitude(pointer(Bvec))
-TRACE_TOL=1e-7
-TraceFlag = lgm_lib.Lgm_Trace( pointer(current_vec), pointer(v1), pointer(v2), pointer(v3), MagInfo.contents.Lgm_LossConeHeight, TRACE_TOL, TRACE_TOL, MagInfo )
-setup_val = lgm_lib.Lgm_Setup_AlphaOfK(current_time, current_vec, MagInfo)
-print(f"Setup Value: {setup_val}")
-'''
-#%% Lstar Diagnostic tests
-'''
-QD_data = QD_storm_data
-LstarInfo = lgm_lib.InitLstarInfo(0)
-IntMagModel = c_int(lgm_lib.__dict__[f"LGM_IGRF"])
-ExtMagModel = c_int(lgm_lib.__dict__[f"LGM_EXTMODEL_T89c"])
-lgm_lib.Lgm_Set_MagModel(IntMagModel, ExtMagModel, LstarInfo.contents.mInfo)
-
-satellite = 'ns57'
-row_indices = np.where((storm_data[satellite]['L_LGM_T89IGRF']>10))
-i_epoch = row_indices[0][0]
-epoch = storm_data[satellite]['Epoch'].UTC[i_epoch]
-print(f"Time: {epoch}")
-
-# P = Lgm_Vector.Lgm_Vector()
-# P.x = 0.0; P.y = 6.6; P.z = 0.0
-# P.x = -3.983063273319404; P.y = -0.5551073498982312; P.z = 1.0919563176808282
-# print(P)
-current_vec = Lgm_Vector.Lgm_Vector(*storm_data[satellite]['Position'].data[i_epoch])
-print(f"Position: {current_vec}")
-
-#LstarInfo.contents.PitchAngle = 87.5
-LstarInfo.contents.PitchAngle = alphaofK[satellite].values[i_epoch,0]
-lgm_lib.Lgm_SetLstarTolerances(3, 24, LstarInfo)
-#LstarInfo.contents.mInfo.contents.Kp = 4
-QD_inform_MagInfo(epoch, LstarInfo.contents.mInfo)
-
-# Date       = 19991122
-# UTC        = 19.0
-# epoch = dt.datetime(1999,11,22,19,0,0)
-# lgm_lib.Lgm_Set_Coord_Transforms(Date, UTC, LstarInfo.contents.mInfo.contents.c)
-current_time = ticktock_to_Lgm_DateTime(epoch, LstarInfo.contents.mInfo.contents.c)
-lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, LstarInfo.contents.mInfo.contents.c)
-
-lgm_lib.Lstar( pointer(P), LstarInfo )
-print(f"L* = {LstarInfo.contents.LS}")
-
-print(f"Lshell = {storm_data[satellite]['L_LGM_T89IGRF'][i_epoch]}")
-
-import spacepy.irbempy as irbem
-import spacepy.omni as omni
-omnivals = get_Omni(epoch,storm_data[satellite]['Position'])
-results = irbem.get_Lstar(ticks=storm_data[satellite]['Epoch'][i_epoch], loci=storm_data[satellite]['Position'][i_epoch], alpha=alphaofK[satellite].values[i_epoch,0], extMag='T89', omnivals=omnivals)
-
-print(f"L* from IRBEM = {results['Lstar'][0][0]}")
-'''
