@@ -28,8 +28,8 @@ textsize = 16
 Re = 6378.137 #Earth's Radius
 Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
 K_set = np.array((0.1,1,2)) # R_E*G^(1/2)
-mode = 'load' # 'save' or 'load'
-storm_name = 'april2017storm'
+mode = 'save' # 'save' or 'load'
+storm_name = 'aug2018storm'
 plot_flux = True
 plot_psd = True
 plot_combined_psd = True
@@ -40,14 +40,17 @@ input_folder = os.path.join(GPS_data_root, storm_name)
 base_save_folder = os.path.join(GPS_data_root, storm_name)
 extMag = 'TS04'
 
-start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
-stop_date   = dt.datetime(2017, 4, 26, 00, 00, 0)
+if storm_name == 'april2017storm':
+    start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
+    stop_date   = dt.datetime(2017, 4, 26, 00, 00, 0)
 
-# start_date = dt.datetime(2018, 8, 25, 0, 0, 0)
-# stop_date = dt.datetime(2018, 8, 28, 0, 0, 0)
+if storm_name == 'aug2018storm':
+    start_date = dt.datetime(2018, 8, 25, 0, 0, 0)
+    stop_date = dt.datetime(2018, 8, 28, 0, 0, 0)
 
-# start_date  = dt.datetime(2012, 10, 7, 00, 00, 0)
-# stop_date   = dt.datetime(2012, 10, 11, 00, 00, 0)
+if storm_name == 'oct2012storm':
+    start_date  = dt.datetime(2012, 10, 7, 00, 00, 0)
+    stop_date   = dt.datetime(2012, 10, 11, 00, 00, 0)
 
 # Conversions
 # electron mass in MeV is (m_e [kg] * c^2 [m^2/s^2]) [J] / (sc.eV [J/eV] * 10^6 [eV/MeV])
@@ -186,8 +189,8 @@ if __name__ == '__main__':
         print(f"Calculating PSD for satellite {satellite}", end='\r')
         psd[satellite] = find_psd(flux[satellite], energyofmualpha[satellite])
 
-### Calculate Lstar ###)
-    complete_filename = f"storm_data_T89c.npz"
+### Calculate Lstar ###
+    complete_filename = f"storm_data_{extMag}.npz"
     complete_save_path = os.path.join(base_save_folder, complete_filename)
     if mode == 'save':
         # ns57 has the first few values > Lshell = 6
@@ -267,7 +270,7 @@ if plot_flux==True:
 if plot_psd==True:
     k = 0.1
     i_K = np.where(K_set == k)[0]
-    mu = 2000
+    mu = 8000
     i_mu = np.where(Mu_set == mu)[0]
 
     fig, ax = plt.subplots(figsize=(16, 4))
@@ -276,8 +279,8 @@ if plot_psd==True:
     cmap = colors.ListedColormap(colorscheme)
 
     # Logarithmic colorbar setup
-    min_val = np.nanmin(np.log10(1e-9))
-    max_val = np.nanmax(np.log10(1e-5))
+    min_val = np.nanmin(np.log10(1e-12))
+    max_val = np.nanmax(np.log10(1e-7))
 
     for satellite, sat_data in storm_data.items():
         psd_plot = psd[satellite][k].values[:,i_mu].copy().flatten()
@@ -315,12 +318,12 @@ if plot_psd==True:
 if plot_combined_psd==True:
     k = 0.1
     i_K = np.where(K_set == k)[0]
-    mu = 2000
+    mu = 8000
     i_mu = np.where(Mu_set == mu)[0]
 
     # Logarithmic colorbar setup
-    min_val = np.nanmin(np.log10(1e-9))
-    max_val = np.nanmax(np.log10(1e-5))
+    min_val = np.nanmin(np.log10(1e-13))
+    max_val = np.nanmax(np.log10(1e-8))
 
     save_path = os.path.join(f'/home/wzt0020/REPT_data/{storm_name}/', f'rept_data_{extMag}.npz')
     complete_load = np.load(save_path, allow_pickle=True)
@@ -330,7 +333,7 @@ if plot_combined_psd==True:
 
     fig, ax = plt.subplots(figsize=(16, 4))
 
-    colorscheme = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.875, 256))
+    colorscheme = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.9, 256))
     cmap = colors.ListedColormap(colorscheme)
 
     for satellite, sat_data in storm_data.items():
@@ -379,12 +382,14 @@ if plot_combined_psd==True:
 if plot_radial==True:
     k = 0.1
     i_K = np.where(K_set == k)[0]
-    mu = 2000
+    mu = 8000
     i_mu = np.where(Mu_set == mu)[0]
-    gps_scale = 10
+    gps_scale = 5
+    MLT_range = 12 # hours
+    lstar_delta = 0.2
 
     min_val = np.nanmin(1e-12)
-    max_val = np.nanmax(1e-4)
+    max_val = np.nanmax(1e-7)
 
     REPT_data_root = '/home/wzt0020/REPT_data/'
     save_path = os.path.join(REPT_data_root, storm_name, f'rept_data_{extMag}.npz')
@@ -399,14 +404,14 @@ if plot_radial==True:
     # time_start  = dt.datetime(2017, 4, 24, 17, 7, 0)
     # time_stop   = dt.datetime(2017, 4, 24, 21, 35, 0)
     
-    time_start  = dt.datetime(2017, 4, 25, 16, 30, 0)
-    time_stop   = dt.datetime(2017, 4, 25, 21, 00, 0)
+    # time_start  = dt.datetime(2017, 4, 25, 16, 30, 0)
+    # time_stop   = dt.datetime(2017, 4, 25, 21, 00, 0)
 
     # time_start  = dt.datetime(2017, 4, 21, 0, 0, 0)
     # time_stop   = dt.datetime(2017, 4, 26, 0, 0, 0)
 
-    # time_start  = dt.datetime(2018, 8, 25, 2, 30, 0)
-    # time_stop   = dt.datetime(2018, 8, 25, 5, 30, 0)
+    time_start  = dt.datetime(2018, 8, 25, 2, 30, 0)
+    time_stop   = dt.datetime(2018, 8, 25, 5, 30, 0)
 
     # time_start  = dt.datetime(2018, 8, 26, 23, 30, 0)
     # time_stop   = dt.datetime(2018, 8, 27, 2, 0, 0)
@@ -414,13 +419,14 @@ if plot_radial==True:
     # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
     Epoch_B_np = np.array(REPT_data['rbspb']['Epoch'].UTC)
 
-    # Define Lstar delta
-    lstar_delta = 0.1
-
     # Generate Lstar interval boundaries within the time range.
-    time_range = Epoch_B_np[(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
-    lstar_range = REPT_data['rbspb']['Lstar'][(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop),i_K]
-    psd_range = REPT_data['rbspb']['PSD'][k].values[:,i_mu][(Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)]
+    time_mask = (Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)
+    time_range = Epoch_B_np[time_mask]
+    lstar_range = REPT_data['rbspb']['Lstar'][time_mask,i_K]
+    lstar_min = np.min(lstar_range[~np.isnan(lstar_range) & ~(lstar_range==-1.0e31)])
+    lstar_max = np.max(lstar_range[~np.isnan(lstar_range)])
+    lstar_intervals = np.arange(np.floor(lstar_min / lstar_delta) * lstar_delta, np.ceil(lstar_max / lstar_delta) * lstar_delta + lstar_delta, lstar_delta)
+    psd_range = REPT_data['rbspb']['PSD'][k].values[:,i_mu][time_mask]
 
     fig, ax = plt.subplots(figsize=(12, 8))
     colormap_name = 'viridis_r' # Good choice for continuous data
@@ -466,42 +472,49 @@ if plot_radial==True:
     half_hours = np.array([dt_obj.replace(tzinfo=None) for dt_obj in half_hours], dtype=object)
     color_set = plt.cm.get_cmap('viridis_r')(np.linspace(0, 1, 256))[np.linspace(0, 255, len(half_hours), dtype=int)]
 
-    sat_valid = np.zeros((len(storm_data),len(half_hours)),dtype=bool)
-    avg_Lstar = np.zeros((len(storm_data),len(half_hours)))
-    avg_psd = np.zeros((len(storm_data),len(half_hours)))
+    sat_valid = np.zeros((len(storm_data),len(half_hours),len(lstar_intervals)),dtype=bool)
+    avg_psd = np.zeros((len(half_hours),len(lstar_intervals)))
     for i_hh, half_hour in enumerate(half_hours):
-        for satellite, sat_data in storm_data.items():
-            time_mask = (sat_data['Epoch'].UTC >= (half_hour-dt.timedelta(minutes=15))) & (sat_data['Epoch'].UTC < (half_hour+dt.timedelta(minutes=15)))
-            if sum(time_mask) == 0:
-                continue
+        for i_Lstar, lstar_val in enumerate(lstar_intervals):    
+            psd_masked = []
+            for satellite, sat_data in storm_data.items():
+                time_mask = (sat_data['Epoch'].UTC >= (half_hour-dt.timedelta(minutes=15))) & (sat_data['Epoch'].UTC < (half_hour+dt.timedelta(minutes=15)))
+                if sum(time_mask) == 0:
+                    avg_psd[i_hh,i_Lstar] = np.nan
+                    continue
+                Lstar_mask = (sat_data['Lstar'][time_mask,i_K] >= (lstar_val - lstar_delta/2)) & (sat_data['Lstar'][time_mask,i_K] < (lstar_val + lstar_delta/2))
+                if sum(Lstar_mask) == 0:
+                    avg_psd[i_hh,i_Lstar] = np.nan
+                    continue
+                nearest_time = np.zeros(sum(time_mask),dtype=int)
+                for i_epoch, epoch in enumerate(sat_data['Epoch'].UTC[time_mask]):
+                    nearest_time[i_epoch] = np.argmin(np.abs(REPT_data['rbspb']['Epoch'].UTC-epoch))
 
-            nearest_time = np.zeros(sum(time_mask),dtype=int)
-            for i_epoch, epoch in enumerate(sat_data['Epoch'].UTC[time_mask]):
-                nearest_time[i_epoch] = np.argmin(np.abs(REPT_data['rbspb']['Epoch'].UTC-epoch))
-
-            MLT_mask = ((sat_data['MLT'][time_mask] >= (REPT_data['rbspb']['MLT'][nearest_time]-3)) 
-                        & (sat_data['MLT'][time_mask] < (REPT_data['rbspb']['MLT'][nearest_time]+3)))
-            valid_mask = MLT_mask
-            
-            if np.sum(valid_mask)>0:
-                i_sat = list(storm_data.keys()).index(satellite)
-                psd_masked = psd[satellite][k].values[time_mask,i_mu][valid_mask]
-                psd_masked = psd_masked[~np.isnan(psd_masked)]
-                if len(psd_masked) > 0:
-                    sat_valid[i_sat,i_hh] = True
-                    avg_Lstar[i_sat,i_hh] = np.average(sat_data['Lstar'][time_mask,i_K][valid_mask])
-                    avg_psd[i_sat,i_hh] = np.exp(np.nanmean(np.log(psd_masked)))*gps_scale
-        color_for_point = cmap(norm(mdates.date2num(half_hour)))
-        if np.sum(sat_valid[:,i_hh]) != 0:
-            ax.plot(avg_Lstar[sat_valid[:,i_hh], i_hh], avg_psd[sat_valid[:,i_hh], i_hh],
-                        marker='*', markersize=12,
-                        color=color_for_point, # Use the calculated color
-                        label=half_hour.strftime("%d-%m-%Y %H:%M")) # Label for each star
-    sat_valid = pd.DataFrame(sat_valid,index=list(storm_data.keys()),columns=half_hours)
+                MLT_ref = REPT_data['rbspb']['MLT'][nearest_time]
+                MLT_gps = sat_data['MLT'][time_mask]
+                MLT_mask = (MLT_gps >= (MLT_ref - MLT_range)) & (MLT_gps < (MLT_ref + MLT_range))
+                
+                valid_mask = Lstar_mask & MLT_mask
+                
+                if np.sum(valid_mask) > 0:
+                    i_sat = list(storm_data.keys()).index(satellite)
+                    psd_data = psd[satellite][k].values[time_mask, i_mu][valid_mask]
+                    # Filter out NaNs and then append to the collection list
+                    psd_data = psd_data[~np.isnan(psd_data)]
+                    psd_masked.extend(psd_data)
+                    if len(psd_data) > 0:
+                        sat_valid[i_sat,i_hh,i_Lstar] = True
+            avg_psd[i_hh,i_Lstar] = np.exp(np.nanmean(np.log(psd_masked)))*gps_scale
+        
+        nan_mask = ~np.isnan(avg_psd[i_hh,:])
+        ax.plot(lstar_intervals[nan_mask], avg_psd[i_hh,nan_mask],
+                    marker='*', markersize=12,
+                    color=cmap(norm(mdates.date2num(half_hour))), # Use the calculated color
+                    label=half_hour.strftime("%d-%m-%Y %H:%M")) # Label for each star
 
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
 
-    ax.set_xlim(3, 6)
+    ax.set_xlim(3, 5.5)
     ax.set_xlabel(r"L*", fontsize=textsize)
     ax.set_ylim(min_val, max_val)
     ax.set_ylabel(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize)
@@ -540,3 +553,5 @@ if plot_radial==True:
     title_str = f"Time Interval: {time_start.strftime('%Y-%m-%d %H:%M')} to {time_stop.strftime('%Y-%m-%d %H:%M')}"
     ax.set_title(title_str, fontsize = textsize)
     plt.show()
+
+# %%
