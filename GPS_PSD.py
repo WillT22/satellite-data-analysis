@@ -28,8 +28,8 @@ textsize = 16
 Re = 6378.137 #Earth's Radius
 Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
 K_set = np.array((0.1,1,2)) # R_E*G^(1/2)
-mode = 'save' # 'save' or 'load'
-storm_name = 'aug2018storm'
+mode = 'load' # 'save' or 'load'
+storm_name = 'april2017storm'
 plot_flux = True
 plot_psd = True
 plot_combined_psd = True
@@ -398,8 +398,8 @@ if plot_radial==True:
     complete_load.close()
     del complete_load
 
-    # time_start  = dt.datetime(2017, 4, 23, 19, 30, 0)
-    # time_stop   = dt.datetime(2017, 4, 23, 23, 00, 0)
+    time_start  = dt.datetime(2017, 4, 23, 19, 30, 0)
+    time_stop   = dt.datetime(2017, 4, 23, 23, 00, 0)
         
     # time_start  = dt.datetime(2017, 4, 24, 17, 7, 0)
     # time_stop   = dt.datetime(2017, 4, 24, 21, 35, 0)
@@ -410,8 +410,8 @@ if plot_radial==True:
     # time_start  = dt.datetime(2017, 4, 21, 0, 0, 0)
     # time_stop   = dt.datetime(2017, 4, 26, 0, 0, 0)
 
-    time_start  = dt.datetime(2018, 8, 25, 2, 30, 0)
-    time_stop   = dt.datetime(2018, 8, 25, 5, 30, 0)
+    # time_start  = dt.datetime(2018, 8, 25, 2, 30, 0)
+    # time_stop   = dt.datetime(2018, 8, 25, 5, 30, 0)
 
     # time_start  = dt.datetime(2018, 8, 26, 23, 30, 0)
     # time_stop   = dt.datetime(2018, 8, 27, 2, 0, 0)
@@ -457,60 +457,45 @@ if plot_radial==True:
 
     rounded_dt_obj = time_start + dt.timedelta(minutes=10 - (time_start.minute % 10))
     rounded_dt_obj = rounded_dt_obj.replace(second=0, microsecond=0)
-    # Generate sequence by iteratively adding timedelta
-    half_hours = []
-    current_point = rounded_dt_obj  
-    while current_point < time_stop:
-        half_hours.append(current_point)
-        current_point += dt.timedelta(minutes=30)  
-    half_hours = np.array(half_hours, dtype=object)
 
-    for dt_obj in half_hours:
-        if dt_obj.second >= 30:
-            dt_obj = dt_obj + dt.timedelta(minutes=1)
-            dt_obj.replace(second=0, microsecond=0)
-    half_hours = np.array([dt_obj.replace(tzinfo=None) for dt_obj in half_hours], dtype=object)
-    color_set = plt.cm.get_cmap('viridis_r')(np.linspace(0, 1, 256))[np.linspace(0, 255, len(half_hours), dtype=int)]
-
-    sat_valid = np.zeros((len(storm_data),len(half_hours),len(lstar_intervals)),dtype=bool)
-    avg_psd = np.zeros((len(half_hours),len(lstar_intervals)))
-    for i_hh, half_hour in enumerate(half_hours):
+    first_key = list(storm_data.keys())[0]
+    gps_time_mask = (storm_data[first_key]['Epoch'].UTC >= time_start) & (storm_data[first_key]['Epoch'].UTC <= time_stop)
+    gps_time = storm_data[first_key]['Epoch'].UTC[gps_time_mask]
+    nearest_time = np.zeros(len(gps_time),dtype=int)
+    sat_valid = np.zeros((len(storm_data),len(gps_time),len(lstar_intervals)),dtype=bool)
+    avg_psd = np.zeros((len(gps_time),len(lstar_intervals)))
+    for i_epoch, epoch in enumerate(gps_time):
+        i_epoch_global = np.where(storm_data[first_key]['Epoch'].UTC == epoch)[0][0]
         for i_Lstar, lstar_val in enumerate(lstar_intervals):    
             psd_masked = []
             for satellite, sat_data in storm_data.items():
-                time_mask = (sat_data['Epoch'].UTC >= (half_hour-dt.timedelta(minutes=15))) & (sat_data['Epoch'].UTC < (half_hour+dt.timedelta(minutes=15)))
-                if sum(time_mask) == 0:
-                    avg_psd[i_hh,i_Lstar] = np.nan
-                    continue
-                Lstar_mask = (sat_data['Lstar'][time_mask,i_K] >= (lstar_val - lstar_delta/2)) & (sat_data['Lstar'][time_mask,i_K] < (lstar_val + lstar_delta/2))
+                Lstar_mask = (sat_data['Lstar'][i_epoch_global,i_K] >= (lstar_val - lstar_delta/2)) & (sat_data['Lstar'][i_epoch_global,i_K] < (lstar_val + lstar_delta/2))
                 if sum(Lstar_mask) == 0:
-                    avg_psd[i_hh,i_Lstar] = np.nan
+                    avg_psd[i_epoch,i_Lstar] = np.nan
                     continue
-                nearest_time = np.zeros(sum(time_mask),dtype=int)
-                for i_epoch, epoch in enumerate(sat_data['Epoch'].UTC[time_mask]):
-                    nearest_time[i_epoch] = np.argmin(np.abs(REPT_data['rbspb']['Epoch'].UTC-epoch))
+                nearest_time[i_epoch] = np.argmin(np.abs(REPT_data['rbspb']['Epoch'].UTC-epoch))
 
-                MLT_ref = REPT_data['rbspb']['MLT'][nearest_time]
-                MLT_gps = sat_data['MLT'][time_mask]
+                MLT_ref = REPT_data['rbspb']['MLT'][nearest_time[i_epoch]]
+                MLT_gps = sat_data['MLT'][i_epoch_global]
                 MLT_mask = (MLT_gps >= (MLT_ref - MLT_range)) & (MLT_gps < (MLT_ref + MLT_range))
                 
                 valid_mask = Lstar_mask & MLT_mask
                 
                 if np.sum(valid_mask) > 0:
                     i_sat = list(storm_data.keys()).index(satellite)
-                    psd_data = psd[satellite][k].values[time_mask, i_mu][valid_mask]
+                    psd_data = psd[satellite][k].values[i_epoch_global,i_mu][valid_mask]
                     # Filter out NaNs and then append to the collection list
                     psd_data = psd_data[~np.isnan(psd_data)]
                     psd_masked.extend(psd_data)
                     if len(psd_data) > 0:
-                        sat_valid[i_sat,i_hh,i_Lstar] = True
-            avg_psd[i_hh,i_Lstar] = np.exp(np.nanmean(np.log(psd_masked)))*gps_scale
+                        sat_valid[i_sat,i_epoch,i_Lstar] = True
+            avg_psd[i_epoch,i_Lstar] = np.exp(np.nanmean(np.log(psd_masked)))*gps_scale
         
-        nan_mask = ~np.isnan(avg_psd[i_hh,:])
-        ax.plot(lstar_intervals[nan_mask], avg_psd[i_hh,nan_mask],
+        nan_mask = ~np.isnan(avg_psd[i_epoch,:])
+        ax.plot(lstar_intervals[nan_mask], avg_psd[i_epoch,nan_mask],
                     marker='*', markersize=12,
-                    color=cmap(norm(mdates.date2num(half_hour))), # Use the calculated color
-                    label=half_hour.strftime("%d-%m-%Y %H:%M")) # Label for each star
+                    color=cmap(norm(mdates.date2num(epoch))), # Use the calculated color
+                    label=epoch.strftime("%d-%m-%Y %H:%M")) # Label for each star
 
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
 
