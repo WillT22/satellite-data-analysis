@@ -27,8 +27,8 @@ textsize = 16
 Re = 6378.137 #Earth's Radius
 Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
 K_set = np.array((0.1,1,2)) # R_E*G^(1/2)
-mode = 'load' # 'save' or 'load'
-storm_name = 'aug2018storm'
+mode = 'save' # 'save' or 'load'
+storm_name = 'april2017storm'
 plot_flux = True
 plot_psd = True
 plot_radial = True
@@ -36,16 +36,19 @@ plot_radial = True
 REPT_data_root = '/home/wzt0020/REPT_data/'
 input_folder = os.path.join(REPT_data_root, storm_name)
 base_save_folder = os.path.join(REPT_data_root, storm_name)
-extMag = 'TS04'
+extMag = 'T89c' # External Magnetic Field Model: 'T89c', 'TS04'
 
-# start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
-# stop_date   = dt.datetime(2017, 4, 26, 00, 00, 0)
+if storm_name == 'april2017storm':
+    start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
+    stop_date   = dt.datetime(2017, 4, 26, 00, 00, 0)
 
-start_date = dt.datetime(2018, 8, 25, 0, 0, 0)
-stop_date = dt.datetime(2018, 8, 28, 0, 0, 0)
+if storm_name == 'aug2018storm':
+    start_date = dt.datetime(2018, 8, 25, 0, 0, 0)
+    stop_date = dt.datetime(2018, 8, 28, 0, 0, 0)
 
-# start_date  = dt.datetime(2012, 10, 7, 00, 00, 0)
-# stop_date   = dt.datetime(2012, 10, 11, 00, 00, 0)
+if storm_name == 'oct2012storm':
+    start_date  = dt.datetime(2012, 10, 7, 00, 00, 0)
+    stop_date   = dt.datetime(2012, 10, 11, 00, 00, 0)
 
 # Conversions
 # electron mass in MeV is (m_e [kg] * c^2 [m^2/s^2]) [J] / (sc.eV [J/eV] * 10^6 [eV/MeV])
