@@ -149,7 +149,7 @@ def data_period(sat_data, start_date, stop_date):
 #%% Extract QinDenton data for the time period
 def QinDenton_period(start_date, stop_date): 
     print('Loading QinDenton Data...')
-    QD_folder = "/home/wzt0020/QinDenton/"
+    QD_folder = "/home/wzt0020/sat_data_analysis/QinDenton/"
     QD_filenames = []
     current_date_object = start_date
     while current_date_object <= stop_date:

@@ -7,9 +7,12 @@ current_script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0,current_script_dir)
 import numpy as np
 import scipy.constants as sc
-import math
+import matplotlib.dates as mdates
+import matplotlib.ticker
+import matplotlib.colors as colors
 import matplotlib
 import matplotlib.pyplot as plt
+
 import pandas as pd
 
 import importlib
@@ -28,27 +31,32 @@ Re = 6378.137 #Earth's Radius
 Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
 K_set = np.array((0.1,1,2)) # R_E*G^(1/2)
 mode = 'save' # 'save' or 'load'
-storm_name = 'april2017storm'
+storm_name = 'sep2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'sep2019storm'
 plot_flux = True
 plot_psd = True
 plot_radial = True
+plot_radial_Lstar = True
 
-REPT_data_root = '/home/wzt0020/REPT_data/'
+REPT_data_root = '/home/wzt0020/sat_data_analysis/REPT_data/'
 input_folder = os.path.join(REPT_data_root, storm_name)
 base_save_folder = os.path.join(REPT_data_root, storm_name)
-extMag = 'T89c' # External Magnetic Field Model: 'T89c', 'TS04'
+extMag = 'TS04' # External Magnetic Field Model: 'T89c', 'TS04', 'TS07'
 
 if storm_name == 'april2017storm':
     start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
     stop_date   = dt.datetime(2017, 4, 26, 00, 00, 0)
 
-if storm_name == 'aug2018storm':
+elif storm_name == 'aug2018storm':
     start_date = dt.datetime(2018, 8, 25, 0, 0, 0)
     stop_date = dt.datetime(2018, 8, 28, 0, 0, 0)
 
-if storm_name == 'oct2012storm':
+elif storm_name == 'oct2012storm':
     start_date  = dt.datetime(2012, 10, 7, 00, 00, 0)
     stop_date   = dt.datetime(2012, 10, 11, 00, 00, 0)
+
+elif storm_name == 'sep2019storm':
+    start_date  = dt.datetime(2019, 8, 31, 00, 00, 0)
+    stop_date   = dt.datetime(2019, 9, 5, 00, 00, 0)
 
 # Conversions
 # electron mass in MeV is (m_e [kg] * c^2 [m^2/s^2]) [J] / (sc.eV [J/eV] * 10^6 [eV/MeV])
@@ -74,8 +82,10 @@ if __name__ == '__main__':
         file_paths_l3_B = glob.glob(input_folder + "/rbspb*[!r]*.cdf")
         
         REPT_data_raw = {}
-        REPT_data_raw['rbspa'] = process_l3_data(file_paths_l3_A)
-        REPT_data_raw['rbspb'] = process_l3_data(file_paths_l3_B)
+        if len(file_paths_l3_A) != 0:
+            REPT_data_raw['rbspa'] = process_l3_data(file_paths_l3_A)
+        if len(file_paths_l3_B) != 0:
+            REPT_data_raw['rbspb'] = process_l3_data(file_paths_l3_B)
     
         #Save Data for later recall:
         print("Saving Raw REPT Data...")
@@ -234,8 +244,8 @@ if plot_flux==True:
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
     ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
     # Force labels for first and last x-axis tick marks 
-    min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
-    max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+    min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+    max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
     ax.set_xlim(min_epoch, max_epoch)
     ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
     ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
@@ -256,7 +266,7 @@ if plot_psd==True:
     from matplotlib import colors
     k = 0.1
     i_K = np.where(K_set == k)[0]
-    mu = 2000
+    mu = 4000
     i_mu = np.where(Mu_set == mu)[0]
 
     fig, ax = plt.subplots(figsize=(16, 4))
@@ -266,7 +276,7 @@ if plot_psd==True:
 
     # Logarithmic colorbar setup
     min_val = np.nanmin(np.log10(1e-12))
-    max_val = np.nanmax(np.log10(1e-9))
+    max_val = np.nanmax(np.log10(1e-4))
 
     for satellite, sat_data in REPT_data.items():
         psd_plot = REPT_data[satellite]['PSD'][k].values[:,i_mu].copy().flatten()
@@ -284,8 +294,8 @@ if plot_psd==True:
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
     ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
     # Force labels for first and last x-axis tick marks 
-    min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
-    max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+    min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+    max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
     ax.set_xlim(min_epoch, max_epoch)
     ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
     ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
@@ -303,14 +313,96 @@ if plot_psd==True:
 
     plt.show()
 
-#%% Create PSD Radial Profiles
+#%% Create PSD Radial Profiles without Lstar Averaging
 if plot_radial==True:
-    sat_select = 'rbspb'
+    sat_select = 'rbspa'
+    sat_data = REPT_data[sat_select]
+    k = 0.1
+    i_K = np.where(K_set == k)[0]
+    mu = 8000
+    i_mu = np.where(Mu_set == mu)[0]
+
+    min_val = np.nanmin(1e-13)
+    max_val = np.nanmax(1e-7)
+
+    time_start  = start_date
+    time_stop   = stop_date
+
+    # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
+    Epoch_B_np = np.array(REPT_data['rbspa']['Epoch'].UTC)
+
+    # Generate Lstar interval boundaries within the time range.
+    time_mask = (Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)
+    time_range = Epoch_B_np[time_mask]
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+    colormap_name = 'viridis_r' # Good choice for continuous data
+    cmap = plt.cm.get_cmap(colormap_name)
+
+    import matplotlib.dates as mdates
+    time_range_timestamps = mdates.date2num(time_range)
+
+    vmin = mdates.date2num(time_start) #- dt.timedelta(minutes=(time_start.minute % 30))
+    vmax = mdates.date2num(time_stop ) #+ dt.timedelta(minutes=30 - (time_stop.minute % 30))
+    norm = colors.Normalize(vmin=vmin,
+                            vmax=vmax)
+
+    # Apply the mask to both averaged_lstar and averaged_psd
+    scatter_plot = ax.scatter(
+        sat_data['Lstar'][time_mask,i_K],
+        sat_data['PSD'][k].values[:,i_mu][time_mask],
+        c=time_range_timestamps, # Color by Epoch datetime objects
+        cmap=cmap,
+        norm=norm,
+        marker='o')
+
+    cbar = fig.colorbar(scatter_plot, ax=ax, orientation='horizontal', pad=0.15)
+    cbar.set_label('Time (UTC)', fontsize=textsize)
+    cbar.ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+    cbar.ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d\n%H:%M'))
+    cbar.ax.tick_params(labelsize=textsize-2)
+
+    rounded_dt_obj = time_start + dt.timedelta(minutes=10 - (time_start.minute % 10))
+    rounded_dt_obj = rounded_dt_obj.replace(second=0, microsecond=0)
+
+    ax.tick_params(axis='both', labelsize=textsize, pad=10)
+
+    ax.set_xlim(3, 5.5)
+    ax.set_xlabel(r"L*", fontsize=textsize)
+    ax.set_ylim(min_val, max_val)
+    ax.set_ylabel(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize)
+    plt.yscale('log')
+    ax.grid(True)
+
+    # Add K and Mu text to the plot
+    ax.text(0.02, 0.98, r"K = " + f"{k:.1f} " + r"$G^{{1/2}}R_E$, $\mu = $" + f"{mu:.0f}" + r" $MeV/G$", transform=ax.transAxes, fontsize=textsize-2, verticalalignment='top') #add the text
+
+    import matplotlib.lines as mlines
+    handle_rbspb = mlines.Line2D([], [], color='gray', marker='o', linestyle='None',
+                                markersize=10, label='RBSP-A') # Use a generic color/marker for circles
+    # Create the first legend (for RBSP-B and GPS)
+    legend1 = ax.legend(handles=[handle_rbspb],
+                        title = 'Satellite',
+                        title_fontsize = textsize-2,
+                        loc='upper right',
+                        bbox_to_anchor=(1.15, 1.0),
+                        handlelength=1,
+                        fontsize=textsize-4)
+    # Add the first legend to the axes
+    ax.add_artist(legend1)
+    # Set the plot title to the time interval
+    title_str = f"Time Interval: {time_start.strftime('%Y-%m-%d %H:%M')} to {time_stop.strftime('%Y-%m-%d %H:%M')}"
+    ax.set_title(title_str, fontsize = textsize)
+    plt.show()
+
+#%% Create PSD Radial Profiles with Lstar Averaging
+if plot_radial_Lstar==True:
+    sat_select = 'rbspa'
     sat_data = REPT_data[sat_select]
     k = 0.1
 
-    time_start  = dt.datetime(2018, 8, 26, 18, 0, 0)
-    time_stop   = dt.datetime(2018, 8, 27, 8, 0, 0)
+    time_start  = start_date
+    time_stop   = stop_date
 
     # time_start  = dt.datetime(2017, 4, 23, 18, 45, 0)
     # time_stop   = dt.datetime(2017, 4, 23, 22, 58, 0)

@@ -87,7 +87,7 @@ def time_average(sat_data, sat_name):
 
 #%% Extract Magentometer Data and match with nearest time point
 def find_mag(sat_data, sat_name):
-    mag_folder = '/home/wzt0020/REPT_data/MagData/'
+    mag_folder = '/home/wzt0020/sat_data_analysis/REPT_data/MagData/'
 
     Epoch = sat_data['Epoch'].UTC
     date = min(Epoch).date()

@@ -12,7 +12,7 @@ from GPS_PSD_func import find_local90PA, find_Loss_Cone
 
 #%%
 global Zhao_median_filepath
-Zhao_median_filepath = '/home/wzt0020/Zhao_2018_model_files/PAD_model_coeff_median.txt'
+Zhao_median_filepath = '/home/wzt0020/sat_data_analysis/satellite-data-analysis/Zhao_2018_model_files/PAD_model_coeff_median.txt'
 
 #%% Extract coefficients from Zhao_2018
 # NOTE: MLT and L are midpoints of the bin!
