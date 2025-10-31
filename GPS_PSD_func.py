@@ -16,7 +16,7 @@ import pandas as pd
 
 from lgmpy import Lgm_Vector
 import lgmpy.Lgm_Wrap as lgm_lib
-from ctypes import c_int, c_double, pointer
+from ctypes import c_int, c_long, c_double, pointer
 
 E0 = sc.electron_mass * sc.c**2 / (sc.electron_volt * 1e6) # this is m_0*c^2
 
@@ -307,10 +307,16 @@ def AlphaOfK(sat_data, K_set, extMag = 'T89c'):
     alphaofK.fill(np.nan)
     for i_epoch, epoch in enumerate(sat_data['Epoch'].UTC):
         print(f"    Time Index: {i_epoch+1}/{len(sat_data['Epoch'])}", end='\r')
+        
         current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
         lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
         current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'][i_epoch].data[0])
+
+        if extMag == 'TS07': # Work in Progress... I need the coefficient files for this
+            lgm_lib.Lgm_SetCoeffs_TS07(current_time.contents.Date, current_time.contents.Time, pointer(MagInfo.contents.TS07_Info))
+        
         QD_inform_MagInfo(epoch, MagInfo)
+        
         for i_K, K in enumerate(K_set):    
             setup_val = lgm_lib.Lgm_Setup_AlphaOfK(current_time, current_vec, MagInfo)
             if setup_val != -5:
