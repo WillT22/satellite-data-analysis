@@ -271,41 +271,36 @@ def define_Legendre(alpha):
                   legendre(8)(np.cos(alpha_rad)), legendre(10)(np.cos(alpha_rad))])
     return P.transpose()
 
-def create_PAD(gps_data, Zhao_epoch_coeffs, AlphaofK):
-    print("Creating PAD Models...")
+def create_PAD(sat_data, Zhao_epoch_coeffs, AlphaofK):
     alpha_init = np.linspace(0,180,361)
-    PAD_models = {}
-    for satellite, sat_data in Zhao_epoch_coeffs.items():
-        print(f"    Modeling PAD for satellite {satellite}", end='\r')
-        PAD_models[satellite] = {}
-        K_set = np.array(list(sat_data.keys()), dtype=float)
-        local90PA = gps_data[satellite]['local90PA']
-        loss_cone = gps_data[satellite]['loss_cone']
-        for K_val, K_data in sat_data.items():
-            i_K = np.where(K_set == K_val)[0][0]
-            PAD_models[satellite][K_val] = {}
-            for Mu_val, Mu_data in K_data.items():
-                coeff_data = Mu_data.values
-                epoch_list = Mu_data.index.tolist()
-                PAD_models[satellite][K_val][Mu_val] = {} #{{np.zeros((len(epoch_list),len(alpha_init)+6))}}
-                PAD_models[satellite][K_val][Mu_val]['Model'] = np.zeros((len(epoch_list),len(alpha_init)+6))
-                PAD_models[satellite][K_val][Mu_val]['pitch_angles'] = np.zeros((len(epoch_list),len(alpha_init)+6))
-                for i_epoch, epoch in enumerate(epoch_list):
-                    alpha_local90 = local90PA[i_epoch]
-                    alpha_local90_add = np.array((alpha_local90, 180-alpha_local90))
-                    alpha_loss_cone = loss_cone[i_epoch]
-                    alpha_loss_cone_add = np.array((alpha_loss_cone, 180-alpha_loss_cone))
-                    alphaofK = AlphaofK[satellite].values[i_epoch,i_K]
-                    alphaofK_add = np.array((alphaofK, 180-alphaofK))
-                    alpha_epoch = np.append(alpha_init, [alpha_local90_add,alphaofK_add,alpha_loss_cone_add])
-                    alpha_epoch.sort()
-                    PAD_models[satellite][K_val][Mu_val]['pitch_angles'][i_epoch,:] = alpha_epoch
-                    P = define_Legendre(alpha_epoch)
-                    PAD_models[satellite][K_val][Mu_val]['Model'][i_epoch,:] = np.sum(coeff_data[i_epoch,:] * P, axis=1) + 1
-                PAD_models[satellite][K_val][Mu_val]['pitch_angles'] = pd.DataFrame(PAD_models[satellite][K_val][Mu_val]['pitch_angles'], index=epoch_list)
-                PAD_models[satellite][K_val][Mu_val]['Model'] = pd.DataFrame(PAD_models[satellite][K_val][Mu_val]['Model'], index=epoch_list)
-    print("PAD Models Completed")
-    return PAD_models
+    K_set = np.array(list(Zhao_epoch_coeffs.keys()), dtype=float)
+    local90PA = sat_data['local90PA']
+    loss_cone = sat_data['loss_cone']
+    PAD_model = {}
+    for K_val, K_data in Zhao_epoch_coeffs.items():
+        i_K = np.where(K_set == K_val)[0][0]
+        PAD_model[K_val] = {}
+        for Mu_val, Mu_data in K_data.items():
+            coeff_data = Mu_data.values
+            epoch_list = Mu_data.index.tolist()
+            PAD_model[K_val][Mu_val] = {} #{{np.zeros((len(epoch_list),len(alpha_init)+6))}}
+            PAD_model[K_val][Mu_val]['Model'] = np.zeros((len(epoch_list),len(alpha_init)+6))
+            PAD_model[K_val][Mu_val]['pitch_angles'] = np.zeros((len(epoch_list),len(alpha_init)+6))
+            for i_epoch, epoch in enumerate(epoch_list):
+                alpha_local90 = local90PA[i_epoch]
+                alpha_local90_add = np.array((alpha_local90, 180-alpha_local90))
+                alpha_loss_cone = loss_cone[i_epoch]
+                alpha_loss_cone_add = np.array((alpha_loss_cone, 180-alpha_loss_cone))
+                alphaofK = AlphaofK.values[i_epoch,i_K]
+                alphaofK_add = np.array((alphaofK, 180-alphaofK))
+                alpha_epoch = np.append(alpha_init, [alpha_local90_add,alphaofK_add,alpha_loss_cone_add])
+                alpha_epoch.sort()
+                PAD_model[K_val][Mu_val]['pitch_angles'][i_epoch,:] = alpha_epoch
+                P = define_Legendre(alpha_epoch)
+                PAD_model[K_val][Mu_val]['Model'][i_epoch,:] = np.sum(coeff_data[i_epoch,:] * P, axis=1) + 1
+            PAD_model[K_val][Mu_val]['pitch_angles'] = pd.DataFrame(PAD_model[K_val][Mu_val]['pitch_angles'], index=epoch_list)
+            PAD_model[K_val][Mu_val]['Model'] = pd.DataFrame(PAD_model[K_val][Mu_val]['Model'], index=epoch_list)
+    return PAD_model
 
 #%% Find Integral of Normalized PAD between Loss Cone and Local 90 PA
 def P0_int_eq(x,a):

@@ -30,9 +30,10 @@ textsize = 16
 Re = 6378.137 #Earth's Radius
 Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
 K_set = np.array((0.1,1,2)) # R_E*G^(1/2)
-mode = 'save' # 'save' or 'load'
-storm_name = 'sep2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'sep2019storm'
+mode = 'load' # 'save' or 'load'
+storm_name = 'sep2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'may2019storm', 'sep2019storm'
 plot_flux = True
+plot_energies = True
 plot_psd = True
 plot_radial = True
 plot_radial_Lstar = True
@@ -40,7 +41,7 @@ plot_radial_Lstar = True
 REPT_data_root = '/home/wzt0020/sat_data_analysis/REPT_data/'
 input_folder = os.path.join(REPT_data_root, storm_name)
 base_save_folder = os.path.join(REPT_data_root, storm_name)
-extMag = 'TS04' # External Magnetic Field Model: 'T89c', 'TS04', 'TS07'
+extMag = 'TS04' # External Magnetic Field Model: 'T89c', 'TS04', NOT 'TS07'
 
 if storm_name == 'april2017storm':
     start_date  = dt.datetime(2017, 4, 21, 00, 00, 0)
@@ -53,6 +54,10 @@ elif storm_name == 'aug2018storm':
 elif storm_name == 'oct2012storm':
     start_date  = dt.datetime(2012, 10, 7, 00, 00, 0)
     stop_date   = dt.datetime(2012, 10, 11, 00, 00, 0)
+
+elif storm_name == 'may2019storm':
+    start_date  = dt.datetime(2019, 5, 10, 00, 00, 0)
+    stop_date   = dt.datetime(2019, 5, 17, 00, 00, 0)
 
 elif storm_name == 'sep2019storm':
     start_date  = dt.datetime(2019, 8, 31, 00, 00, 0)
@@ -103,7 +108,7 @@ if __name__ == '__main__':
     for satellite, sat_data in REPT_data_raw.items():
         print(f'Restricting Time Period for satellite {satellite}...')
         REPT_data[satellite] = data_period(sat_data, start_date, stop_date)
-    del REPT_data_raw
+    #del REPT_data_raw
 
 ### Average fluxes within a minute ###
     for satellite, sat_data in REPT_data.items():
@@ -165,9 +170,17 @@ if __name__ == '__main__':
  
 ### Find Energy for set Mu and Alpha ###
     energyofmualpha = {}
+    energyofmualpha_filename = f"energyofmualpha_{extMag}.npz"
+    energyofmualpha_save_path = os.path.join(base_save_folder, energyofmualpha_filename)
     for satellite, sat_data in REPT_data.items():
         print(f"Calculating Energy of Mu and Alpha for satellite {satellite}")
         energyofmualpha[satellite] = EnergyofMuAlpha(sat_data, Mu_set, alphaofK[satellite])
+
+    if mode == 'save':
+        # Save Data for later recall:
+        print("Saving REPT Data...")
+        np.savez(energyofmualpha_save_path, **energyofmualpha)
+        print("Data Saved \n")
 
 ### Find Flux at Set Mu and K ####
     flux = {}
@@ -221,13 +234,18 @@ if __name__ == '__main__':
 
 #%% Plot Flux
 if plot_flux==True:
-    energy = 5.2 # MeV
+    energy = 2 # MeV
     energy_channels = REPT_data['rbspa']['Energy_Channels']
     i_energy = np.argmin(np.abs(energy_channels - energy))
 
     # Logarithmic colorbar setup
     min_val = np.nanmin(np.log10(1e2))
     max_val = np.nanmax(np.log10(1e6))
+
+    if extMag == 'T89c':
+        plot_extMag = 'T89'
+    else:
+        plot_extMag = extMag
 
     fig, ax = plt.subplots(figsize=(16, 4))
     for satellite, sat_data in REPT_data.items():
@@ -236,7 +254,7 @@ if plot_flux==True:
         flux_plot = np.nanmean(flux_temp_mask, axis=1)/2
         flux_mask = (flux_plot > 0) & (flux_plot != np.nan)
         # Plotting, ignoring NaN values in the color
-        scatter_A = ax.scatter(sat_data['Epoch'].UTC[flux_mask], sat_data['L_LGM_T89cIGRF'][flux_mask],
+        scatter_A = ax.scatter(sat_data['Epoch'].UTC[flux_mask], sat_data[f'L_LGM_{plot_extMag}IGRF'][flux_mask],
                             c=np.log10(flux_plot[flux_mask]), vmin=min_val, vmax=max_val)
 
     ax.set_title(f"RBSP A&B REPT, {energy} $MeV$ Electron Differential Flux", fontsize=textsize + 2)
@@ -261,12 +279,59 @@ if plot_flux==True:
 
     plt.show()
 
+#%% Plot energies corresponding to each time as probes pass through Lstars
+if plot_energies==True:
+    k = 0.1
+    i_K = np.where(K_set == k)[0]
+    mu = 2000
+    i_mu = np.where(Mu_set == mu)[0]
+
+    time_start  = start_date
+    time_stop   = stop_date
+
+    time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0)
+    time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0)
+
+    colormap_name = 'viridis'
+    cmap = plt.cm.get_cmap(colormap_name)
+    vmin = mdates.date2num(time_start)
+    vmax = mdates.date2num(time_stop)
+    norm = colors.Normalize(vmin=vmin, vmax=vmax)
+
+    fig, ax = plt.subplots(figsize=(10, 9))
+    for satellite, sat_data in REPT_data.items():
+        sat_iepoch_mask = (sat_data['Epoch'].UTC >= time_start) & (sat_data['Epoch'].UTC <= time_stop)
+        energy_plot = energyofmualpha[satellite][k].values[:,i_mu].copy().flatten()
+        energy_mask = (energy_plot > 0) & (energy_plot != np.nan)
+        lstar_mask = (sat_data['Lstar'][:,i_K] > 0).flatten()
+        combined_mask = sat_iepoch_mask & energy_mask & lstar_mask
+        # Plotting, ignoring NaN values in the color
+        scatter_plot = ax.scatter(sat_data['Lstar'][combined_mask,i_K], energy_plot[combined_mask], 
+                               c=mdates.date2num(sat_data['Epoch'].UTC[combined_mask]), cmap=cmap, vmin=vmin, vmax=vmax)
+    
+    cbar = fig.colorbar(scatter_plot, ax=ax, orientation='horizontal', pad=0.11)
+    cbar.set_label('Time (UTC)', fontsize=textsize)
+    cbar.ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+    cbar.ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d\n%H:%M'))
+    cbar.ax.tick_params(labelsize=textsize-2)
+
+    # Add K and Mu text to the plot
+    ax.text(0.5, 0.92, r"K = " + f"{k:.1f} " + r"$G^{{1/2}}R_E$, $\mu = $" + f"{mu:.0f}" + r" $MeV/G$", transform=ax.transAxes, fontsize=textsize) #add the text
+    
+    ax.set_xlim(3.8,5.2)
+    ax.set_ylim(1,3.5)
+    ax.tick_params(axis='both', labelsize=textsize, pad=10)
+    ax.set_xlabel(r"L*", fontsize=textsize)
+    ax.set_ylabel(r"Energy (MeV)", fontsize=textsize)
+    ax.grid(True)
+    
+
 #%% Plot PSD
 if plot_psd==True:
     from matplotlib import colors
     k = 0.1
     i_K = np.where(K_set == k)[0]
-    mu = 4000
+    mu = 2000
     i_mu = np.where(Mu_set == mu)[0]
 
     fig, ax = plt.subplots(figsize=(16, 4))
@@ -336,7 +401,7 @@ if plot_radial==True:
     time_range = Epoch_B_np[time_mask]
 
     fig, ax = plt.subplots(figsize=(8, 8))
-    colormap_name = 'viridis_r' # Good choice for continuous data
+    colormap_name = 'viridis'
     cmap = plt.cm.get_cmap(colormap_name)
 
     import matplotlib.dates as mdates
