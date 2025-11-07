@@ -63,7 +63,7 @@ elif storm_name == 'may2019storm':
 
 elif storm_name == 'sep2019storm':
     start_date  = dt.datetime(2019, 8, 31, 00, 00, 0)
-    stop_date   = dt.datetime(2019, 9, 5, 00, 00, 0)
+    stop_date   = dt.datetime(2019, 9, 2, 00, 00, 0)
 
 # Conversions
 # electron mass in MeV is (m_e [kg] * c^2 [m^2/s^2]) [J] / (sc.eV [J/eV] * 10^6 [eV/MeV])
@@ -179,10 +179,13 @@ if __name__ == '__main__':
 
 ### Find Flux at Set Pitch Angle ####
     #--- Extract Zhao Coefficients at each Epoch ---
-    Zhao_epoch_coeffs_filename = f"Zhao_epoch_coeffs.npz"
+    Zhao_epoch_coeffs_filename = f"Zhao_epoch_coeffs_{extMag}.npz"
     Zhao_epoch_coeffs_save_path = os.path.join(base_save_folder, Zhao_epoch_coeffs_filename)
     if mode == 'save':
-        Zhao_epoch_coeffs = find_Zhao_PAD_coeffs(storm_data, QD_storm_data, energyofmualpha)
+        Zhao_epoch_coeffs = {}
+        for satellite, sat_data in storm_data.items():
+            print(f"    Finding PAD coefficients for satellite {satellite}", end='\r')
+            Zhao_epoch_coeffs[satellite] = find_Zhao_PAD_coeffs(sat_data, QD_storm_data, energyofmualpha[satellite], extMag)
 
         # Save Data for later recall:
         print("Saving Zhao coefficients for each Epoch...")
@@ -217,7 +220,7 @@ if __name__ == '__main__':
         del PAD_models_load
 
     #--- Find Scale Factor from alphaofK and PAD Model ---#
-    scale_factor = PAD_Scale_Factor(storm_data,Zhao_epoch_coeffs,alphaofK)
+    scale_factor = PAD_Scale_Factor(storm_data,Zhao_epoch_coeffs,alphaofK) # nans either come from alphaofK or dividing by zero (integral)
 
 ### Find Flux at Set Pitch Angle and Energy ###
     flux = {}
@@ -270,15 +273,18 @@ if __name__ == '__main__':
 
     print(format_runtime(elapsed_time))
 
-#%% Plot Flux
+#%% Plot GPS Flux (with scale factor)
 if plot_flux==True:
-    energy = 5.2 # MeV
+    energy = 3.4 # MeV
     energy_channels = storm_data[list(storm_data.keys())[0]]['Energy_Channels']
     i_energy = np.argmin(np.abs(energy_channels - energy))
 
+    k = 0.1
+    i_K = np.where(K_set == k)[0]
+
     # Logarithmic colorbar setup
-    min_val = np.nanmin(np.log10(1e2))
-    max_val = np.nanmax(np.log10(1e6))
+    min_val = np.nanmin(np.log10(1e1))
+    max_val = np.nanmax(np.log10(1e5))
 
     if extMag == 'T89c':
         extMag_label = 'T89'
@@ -286,12 +292,14 @@ if plot_flux==True:
         extMag_label = extMag
 
     fig, ax = plt.subplots(figsize=(16, 4))
-    for satellite, sat_data in storm_data.items():
+    for satellite, sat_data in storm_data.items():     
         flux_plot = sat_data['electron_diff_flux'][:,i_energy]
         flux_mask = (flux_plot > 0) & (flux_plot != np.nan)
+
+        scale_muindex = np.argmin(np.abs(energyofmualpha[satellite][k].values - energy), axis=1)
         # Plotting, ignoring NaN values in the color
         scatter_A = ax.scatter(sat_data['Epoch'].UTC[flux_mask], sat_data[f'L_LGM_{extMag_label}IGRF'][flux_mask],
-                            c=np.log10(flux_plot[flux_mask]), vmin=min_val, vmax=max_val)
+                            c=np.log10(flux_plot[flux_mask]*scale_factor[satellite][0.1].values[flux_mask,scale_muindex]), vmin=min_val, vmax=max_val)
 
     ax.set_title(f"GPS CXD, {energy} $MeV$ Electron Differential Flux", fontsize=textsize + 2)
     ax.set_ylabel(r"McIlwain L", fontsize=textsize)
@@ -321,7 +329,7 @@ if plot_combined_flux==True:
     k = 0.1
     i_K = np.where(K_set == k)[0]
     
-    energy = 1.8 # MeV
+    energy = 3.4 # MeV
     
     save_path = os.path.join(f'/home/wzt0020/sat_data_analysis/REPT_data/{storm_name}/', f'rept_data_{extMag}.npz')
     complete_load = np.load(save_path, allow_pickle=True)
@@ -340,6 +348,7 @@ if plot_combined_flux==True:
     min_val = np.nanmin(np.log10(1e1))
     max_val = np.nanmax(np.log10(1e6))
 
+
     if extMag == 'T89c':
         extMag_label = 'T89'
     else:
@@ -352,7 +361,7 @@ if plot_combined_flux==True:
 
     # RBSP Flux
     for satellite, sat_data in REPT_data.items():
-        flux_slice = sat_data['FEDU'][:,i_energy_REPT,:]
+        flux_slice = sat_data['FEDU'][:,:,i_energy_REPT]
         flux_temp_mask = np.where(flux_slice >= 0, flux_slice, np.nan)
         flux_plot_REPT = np.nanmean(flux_temp_mask, axis=1)
         flux_mask = (flux_plot_REPT > 0) & (flux_plot_REPT != np.nan)
@@ -364,10 +373,11 @@ if plot_combined_flux==True:
         flux_plot = sat_data['electron_diff_flux'][:,i_energy_GPS]
         flux_mask = (flux_plot > 0) & (flux_plot != np.nan)
         # find scale factor corresponding to closest energy
-        scale_index = np.argmin(np.abs(energyofmualpha[satellite][0.1].values - energy), axis=1)
+        scale_muindex = np.argmin(np.abs(energyofmualpha[satellite][0.1].values - energy), axis=1)
         # Plotting, ignoring NaN values in the color
         scatter_B = ax.scatter(sat_data['Epoch'].UTC[flux_mask], sat_data[f'L_LGM_{extMag_label}IGRF'][flux_mask],
-                            c=np.log10(flux_plot[flux_mask]*scale_factor[satellite][k].values[flux_mask,scale_index]), cmap=cmap, vmin=min_val, vmax=max_val, zorder=1)
+                            marker='*', s=80, alpha=0.5,
+                            c=np.log10(flux_plot[flux_mask]*scale_factor[satellite][k].values[flux_mask,scale_muindex]), cmap=cmap, vmin=min_val, vmax=max_val, zorder=1)
 
     ax.set_title(f"RBSP REPT & GPS CXD, {energy} MeV Electron Differential Flux", fontsize=textsize + 2)
     ax.set_ylabel(r"McIlwain L", fontsize=textsize)
@@ -379,7 +389,7 @@ if plot_combined_flux==True:
     ax.set_xlim(min_epoch, max_epoch)
     ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
     ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-    ax.set_ylim(3, 5.5)
+    ax.set_ylim(3, 6)
     ax.grid(True)
 
     cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
@@ -395,7 +405,7 @@ if plot_combined_flux==True:
 if plot_psd==True:
     k = 0.1
     i_K = np.where(K_set == k)[0]
-    mu = 2000
+    mu = 4000
     i_mu = np.where(Mu_set == mu)[0]
 
     if extMag == 'T89c':
@@ -410,9 +420,13 @@ if plot_psd==True:
 
     # Logarithmic colorbar setup
     min_val = np.nanmin(np.log10(1e-12))
-    max_val = np.nanmax(np.log10(1e-7))
+    max_val = np.nanmax(np.log10(1e-6))
 
-    for satellite, sat_data in storm_data.items():
+    plot_data = {}
+    plot_data['ns53'] = storm_data['ns53']
+    plot_data['ns55'] = storm_data['ns55']
+
+    for satellite, sat_data in plot_data.items():
         psd_plot = psd[satellite][k].values[:,i_mu].copy().flatten()
         psd_mask = (psd_plot > 0) & (psd_plot != np.nan)
         # Plotting, ignoring NaN values in the color
@@ -565,7 +579,7 @@ if plot_energies==True:
 
 #%% Plot PAD comparison
 if plot_PAD==True: 
-    time_select = dt.datetime(start_date.year, 8, 31, 8, 0, 0)
+    time_select = dt.datetime(start_date.year, 8, 31, 20, 0, 0)
     sat_select = 'rbspa'
     k = 0.1
     i_K = np.where(K_set == k)[0]
@@ -577,6 +591,11 @@ if plot_PAD==True:
         rbsp_label = 'RBSP-A'
     elif sat_select == 'rbspb':
         rbsp_label = 'RBSP-B'
+
+    if extMag == 'T89c':
+        extMag_label = 'T89'
+    else:
+        extMag_label = extMag
 
     save_path = os.path.join(f'/home/wzt0020/sat_data_analysis/REPT_data/{storm_name}/', f'rept_data_{extMag}.npz')
     complete_load = np.load(save_path, allow_pickle=True)
@@ -590,34 +609,78 @@ if plot_PAD==True:
     complete_load.close()
     del complete_load
 
+    alphaofK_REPT_save = os.path.join(f'/home/wzt0020/sat_data_analysis/REPT_data/{storm_name}/', f'alphaofK_{extMag}.npz')
+    complete_load = np.load(energyofmualpha_REPT_save, allow_pickle=True)
+    REPT_alphaofK = load_data(complete_load)
+    complete_load.close()
+    del complete_load
+
     nearest_it_REPT = np.argmin(np.abs(REPT_data[sat_select]['Epoch'].UTC-time_select))
     nearest_time_REPT = REPT_data[sat_select]['Epoch'].UTC[nearest_it_REPT]
 
+    DST_it_time = np.argmin(np.abs(QD_storm_data['DateTime']-nearest_time_REPT))
+    DST_at_time = QD_storm_data['Dst'][DST_it_time]
+    print(f'DST at time {nearest_time_REPT.strftime('%Y-%m-%d %H:%M')} is {DST_at_time} nT')
+    if DST_at_time > -20:
+        i_dst = 'Dst > -20 nT'
+    elif DST_at_time <= -20 and DST_at_time > -50:
+        i_dst = '-50 nT < Dst < -20 nT'
+    elif DST_at_time <= -50:
+        i_dst = 'Dst < -50 nT'
+
     energy_at_mutime = REPT_energyofmualpha[sat_select][k][mu][nearest_it_REPT]
-    nearest_REPT_ienergy = np.argmin(np.abs(REPT_data[sat_select]['Energy_Channels']-energy_at_mutime))
+    nearest_REPT_ienergy = np.argmin(np.abs(REPT_data[sat_select]['Energy_Channels'][0:6]-energy_at_mutime))
     nearest_REPT_energy = REPT_data[sat_select]['Energy_Channels'][nearest_REPT_ienergy]
+
+    MLT_bins = Zhao_coeffs[nearest_REPT_energy][i_dst]['c2']['MLT_values']
+    MLT_ref = REPT_data[sat_select]['MLT'][nearest_it_REPT]
+    MLT_ibin = np.argmin(np.abs(MLT_bins-MLT_ref))
+    MLT_bin = MLT_bins[MLT_ibin]
+
+    L_bins = Zhao_coeffs[nearest_REPT_energy][i_dst]['c2']['L_values']
+    L_ref = REPT_data[sat_select][f'L_LGM_{extMag_label}IGRF'][nearest_it_REPT]
+    L_ibin = np.argmin(np.abs(L_bins-L_ref))
+    L_bin = L_bins[L_ibin]
 
     REPT_PA_local = REPT_data[sat_select]['Pitch_Angles']
     REPT_PA_eq = np.sqrt(np.rad2deg(np.sin(np.deg2rad(REPT_PA_local)))**2*REPT_data[sat_select]['b_min'][nearest_it_REPT]/REPT_data[sat_select]['b_satellite'][nearest_it_REPT])
     REPT_PA_eq = np.unique(np.concatenate((REPT_PA_eq, 180-REPT_PA_eq)))
+    REPT_PA_local90 = REPT_PA_eq[len(REPT_PA_local)-1]
     REPT_PAD = REPT_data[sat_select]['FEDU'][nearest_it_REPT,:,nearest_REPT_ienergy]
     REPT_PAD = np.insert(REPT_PAD, len(REPT_PA_local)+1, REPT_PAD[len(REPT_PA_local)])
 
-    # Find Zhao_2018 PAD Model
-    Model_PA = {}
-    PAD_models_plot = {}
-    for satellite, sat_data in storm_data.items():
-        nearest_it_GPS = np.argmin(np.abs(sat_data['Epoch'].UTC-time_select))
-        nearest_time_GPS = sat_data['Epoch'].UTC[nearest_it_GPS]
-        if sat_data['Lstar'][nearest_it_GPS,i_K] < 4:
-            Model_PA[satellite] = PAD_models[satellite][k][mu]['pitch_angles'].values[nearest_it_GPS,:]
-            PAD_models_plot[satellite] = PAD_models[satellite][k][mu]['Model'].values[nearest_it_GPS,:]
+    # Extract only time period of interest
+    REPT_data_epoch = {}
+    for key, key_data in REPT_data[sat_select].items():
+        if key == 'Energy_Channels' or key == 'Pitch_Angles':
+            REPT_data_epoch[key] = REPT_data[sat_select][key]
+        elif key == 'FEDU' or key == 'FEDU_averaged':
+            REPT_data_epoch[key] = REPT_data[sat_select][key][nearest_it_REPT,:,:]
+        elif key == 'Mu_calc':
+            continue
+        elif key == 'PSD':
+            REPT_data_epoch[key] = {}
+            REPT_data_epoch[key][k] = pd.DataFrame(REPT_data[sat_select]['PSD'][k][mu].values[nearest_it_REPT], index=[nearest_time_REPT], columns=[mu])
+        elif key == 'Lstar':
+            REPT_data_epoch[key] = REPT_data[sat_select][key][nearest_it_REPT,i_K]
+        else:
+            REPT_data_epoch[key] = REPT_data[sat_select][key][nearest_it_REPT]
+
+    Zhao_coeffs_REPT = {}
+    Zhao_coeffs_REPT[sat_select] = find_Zhao_PAD_coeffs(REPT_data_epoch, QD_storm_data, REPT_energyofmualpha[sat_select], extMag)
+    
+    PAD_models_REPT = {}
+    PAD_models_REPT[sat_select] = create_PAD(REPT_data[sat_select], Zhao_coeffs_REPT[sat_select], REPT_alphaofK[sat_select])
+
+    Model_PA = PAD_models_REPT[sat_select][k][mu]['pitch_angles'].values
+    Model_closest_PA = np.argmin(np.abs(Model_PA-REPT_PA_local90))
+    Model_PAD = PAD_models_REPT[sat_select][k][mu]['Model'].values[0]
+    Model_PAD_scale = REPT_PAD[len(REPT_PA_local)-1]/Model_PAD[Model_closest_PA]
 
     fig, ax = plt.subplots(figsize=(10, 9))
 
-    REPT_PAD_plot = ax.scatter(REPT_PA_eq,REPT_PAD,label=rbsp_label,zorder=2)
-    for satellite, model_PA in Model_PA.items():
-        Zhao_PAD_plot = ax.scatter(model_PA,PAD_models_plot[satellite]*1200,zorder=1)
+    REPT_PAD_plot = ax.scatter(REPT_PA_eq[REPT_PAD>0],REPT_PAD[REPT_PAD>0],label=rbsp_label,zorder=2,color='black',marker='+',s=200)
+    REPT_PAD_plot = ax.scatter(Model_PA,Model_PAD*Model_PAD_scale,label='Model',zorder=1)
 
     # Add K and Mu text to the plot
     ax.text(0.54, 0.96, r"K = " + f"{k:.1f} " + r"$G^{{1/2}}R_E$, $\mu = $" + f"{mu:.0f}" + r" $MeV/G$", transform=ax.transAxes, fontsize=textsize) #add the text
@@ -625,12 +688,15 @@ if plot_PAD==True:
     ax.legend(fontsize=textsize-4)
 
     ax.set_xlim(0,180)
-    ax.set_ylim(1e0,1e6)
+    ax.set_ylim(10**np.floor(np.log10(np.nanmin(Model_PAD*Model_PAD_scale))),10**np.ceil(np.log10(np.nanmax(Model_PAD*Model_PAD_scale))))
     plt.yscale('log')
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
-    ax.set_xlabel(r"L*", fontsize=textsize)
-    ax.set_ylabel(r"Energy (MeV)", fontsize=textsize)
+    ax.set_xlabel(r"Equatorial Pitch Angle (degrees)", fontsize=textsize)
+    ax.set_ylabel(r'Directional Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', fontsize=textsize)
     ax.grid(True)
+
+    title_str = f"Time: {time_select.strftime('%Y-%m-%d %H:%M')}"
+    ax.set_title(title_str, fontsize = textsize)
     
 
 #%% Plot PSD Radial Profile with REPT data
@@ -645,7 +711,7 @@ if plot_radial==True:
     lstar_delta = 0.1 # default = 0.1
     time_delta = 30 # minutes, default = 30
 
-    min_val = np.nanmin(1e-8)
+    min_val = np.nanmin(1e-9)
     max_val = np.nanmax(1e-5)
 
     REPT_data_root = '/home/wzt0020/sat_data_analysis/REPT_data/'
@@ -664,20 +730,14 @@ if plot_radial==True:
     time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
     time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0) # for sep2019storm
 
-    time_start = dt.datetime(start_date.year, 9, 1, 10, 0, 0)
-    time_stop = dt.datetime(stop_date.year, 9, 2, 0, 0, 0)
-
     # time_start = dt.datetime(start_date.year, 8, 26, 2, 0, 0) # for aug2018storm
     # time_stop = dt.datetime(stop_date.year, 8, 26, 13, 0, 0) # for aug2018storm
 
     gps_time_start  = time_start
     gps_time_stop   = time_stop
 
-    gps_time_start  = dt.datetime(start_date.year, 9, 1, 14, 0, 0)
-    gps_time_stop   = dt.datetime(start_date.year, 9, 2, 0, 0, 0)
-
-    # gps_time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
-    # gps_time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0) # for sep2019storm
+    gps_time_start = dt.datetime(start_date.year, 8, 31, 18, 0, 0) # for sep2019storm
+    gps_time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0) # for sep2019storm
 
     # gps_time_start = dt.datetime(start_date.year, 8, 26, 6, 0, 0) # for aug2018storm
     # gps_time_stop = dt.datetime(stop_date.year, 8, 26, 13, 0, 0) # for aug2018storm

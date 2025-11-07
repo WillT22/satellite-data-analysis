@@ -18,7 +18,7 @@ import pandas as pd
 import importlib
 import GPS_PSD_func
 importlib.reload(GPS_PSD_func)
-from GPS_PSD_func import (QinDenton_period, load_data, data_period, AlphaOfK, find_Loss_Cone, EnergyofMuAlpha, find_psd, find_McIlwain_L, find_Lstar)
+from GPS_PSD_func import (QinDenton_period, load_data, data_period, AlphaOfK, find_Loss_Cone, find_local90PA, EnergyofMuAlpha, find_psd, find_McIlwain_L, find_Lstar)
 import REPT_PSD_func
 importlib.reload(REPT_PSD_func)
 from REPT_PSD_func import (process_l3_data, time_average, find_mag, Average_FluxbyPA, Interp_Flux)
@@ -30,7 +30,7 @@ textsize = 16
 Re = 6378.137 #Earth's Radius
 Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
 K_set = np.array((0.1,1,2)) # R_E*G^(1/2)
-mode = 'load' # 'save' or 'load'
+mode = 'save' # 'save' or 'load'
 storm_name = 'sep2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'may2019storm', 'sep2019storm'
 plot_flux = True
 plot_energies = True
@@ -149,7 +149,13 @@ if __name__ == '__main__':
         ### Find Loss Cone and Equatorial B ###
         for satellite, sat_data in REPT_data.items():
             print(f"Calculating Equatorial B-field for satellite {satellite}...")
-            REPT_data[satellite]['b_min'], REPT_data[satellite]['b_footpoint'], _ = find_Loss_Cone(sat_data, extMag=extMag)
+            REPT_data[satellite]['b_min'], REPT_data[satellite]['b_footpoint'], REPT_data[satellite]['loss_cone'] = find_Loss_Cone(sat_data, extMag=extMag)
+    
+        ### Determine local 90 degree pitch angle ###
+        for satellite, sat_data in REPT_data.items():
+            print(f"Finding Local 90 degree Pitch angle for {satellite}...")
+            sat_data['local90PA'] = find_local90PA(sat_data)
+
     elif mode == 'load':
         # Load data from previous save
         alphaofK_load = np.load(alphaofK_save_path, allow_pickle=True)
@@ -237,6 +243,7 @@ if plot_flux==True:
     energy = 2 # MeV
     energy_channels = REPT_data['rbspa']['Energy_Channels']
     i_energy = np.argmin(np.abs(energy_channels - energy))
+    energy = energy_channels[i_energy] # use exact energy from REPT channels
 
     # Logarithmic colorbar setup
     min_val = np.nanmin(np.log10(1e2))
@@ -249,7 +256,7 @@ if plot_flux==True:
 
     fig, ax = plt.subplots(figsize=(16, 4))
     for satellite, sat_data in REPT_data.items():
-        flux_slice = sat_data['FEDU_averaged'][:,i_energy,:]
+        flux_slice = sat_data['FEDU_averaged'][:,:,i_energy]
         flux_temp_mask = np.where(flux_slice >= 0, flux_slice, np.nan)
         flux_plot = np.nanmean(flux_temp_mask, axis=1)/2
         flux_mask = (flux_plot > 0) & (flux_plot != np.nan)
@@ -257,7 +264,7 @@ if plot_flux==True:
         scatter_A = ax.scatter(sat_data['Epoch'].UTC[flux_mask], sat_data[f'L_LGM_{plot_extMag}IGRF'][flux_mask],
                             c=np.log10(flux_plot[flux_mask]), vmin=min_val, vmax=max_val)
 
-    ax.set_title(f"RBSP A&B REPT, {energy} $MeV$ Electron Differential Flux", fontsize=textsize + 2)
+    ax.set_title(f"RBSP A&B REPT, {energy} MeV Electron Differential Flux", fontsize=textsize + 2)
     ax.set_ylabel(r"McIlwain L", fontsize=textsize)
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
     ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
@@ -267,7 +274,7 @@ if plot_flux==True:
     ax.set_xlim(min_epoch, max_epoch)
     ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
     ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-    ax.set_ylim(3, 5.5)
+    ax.set_ylim(3, 6)
     ax.grid(True)
 
     cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))

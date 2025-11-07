@@ -196,7 +196,10 @@ def QD_inform_MagInfo(time_dt, MagInfo):
 #%% Find local pitch angle
 def find_local90PA(sat_data):
     local90PA = {}
-    Beq = sat_data['b_equator']
+    if sat_data.get('b_min') is not None:
+        Beq = sat_data['b_min']
+    else:
+        Beq = sat_data['b_equator']
     Bsat = sat_data['b_satellite']
     mask = np.where(Beq > 0) and np.where(Bsat > 0)
     local90PA = np.zeros_like(Beq)
