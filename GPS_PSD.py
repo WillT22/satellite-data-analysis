@@ -128,11 +128,6 @@ if __name__ == '__main__':
     if mode == 'save':
         # Find pitch angle corresponding to set K
         alphaofK = {}
-        satellite = 'ns53'
-        sat_data = storm_data[satellite]
-        i_epoch = 0
-        epoch = sat_data['Epoch'].UTC[i_epoch]
-        QD_data = QD_storm_data
         for satellite, sat_data in storm_data.items():
             print(f"Calculating Pitch Angle for satellite {satellite}")
             alphaofK[satellite] = AlphaOfK(sat_data, K_set, extMag=extMag)
@@ -579,7 +574,7 @@ if plot_energies==True:
 
 #%% Plot PAD comparison
 if plot_PAD==True: 
-    time_select = dt.datetime(start_date.year, 8, 31, 20, 0, 0)
+    time_select = dt.datetime(start_date.year, 8, 31, 8, 30, 0)
     sat_select = 'rbspa'
     k = 0.1
     i_K = np.where(K_set == k)[0]
@@ -610,10 +605,13 @@ if plot_PAD==True:
     del complete_load
 
     alphaofK_REPT_save = os.path.join(f'/home/wzt0020/sat_data_analysis/REPT_data/{storm_name}/', f'alphaofK_{extMag}.npz')
-    complete_load = np.load(energyofmualpha_REPT_save, allow_pickle=True)
-    REPT_alphaofK = load_data(complete_load)
-    complete_load.close()
-    del complete_load
+    alphaofK_load = np.load(alphaofK_REPT_save, allow_pickle=True)
+    REPT_alphaofK = load_data(alphaofK_load)
+    for satellite, sat_data in REPT_data.items():
+        epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
+        REPT_alphaofK[satellite] = pd.DataFrame(REPT_alphaofK[satellite], index=epoch_str, columns=K_set)
+    alphaofK_load.close()
+    del alphaofK_load
 
     nearest_it_REPT = np.argmin(np.abs(REPT_data[sat_select]['Epoch'].UTC-time_select))
     nearest_time_REPT = REPT_data[sat_select]['Epoch'].UTC[nearest_it_REPT]
@@ -628,7 +626,7 @@ if plot_PAD==True:
     elif DST_at_time <= -50:
         i_dst = 'Dst < -50 nT'
 
-    energy_at_mutime = REPT_energyofmualpha[sat_select][k][mu][nearest_it_REPT]
+    energy_at_mutime = REPT_energyofmualpha[sat_select][k][mu].iloc[nearest_it_REPT]
     nearest_REPT_ienergy = np.argmin(np.abs(REPT_data[sat_select]['Energy_Channels'][0:6]-energy_at_mutime))
     nearest_REPT_energy = REPT_data[sat_select]['Energy_Channels'][nearest_REPT_ienergy]
 
@@ -641,6 +639,8 @@ if plot_PAD==True:
     L_ref = REPT_data[sat_select][f'L_LGM_{extMag_label}IGRF'][nearest_it_REPT]
     L_ibin = np.argmin(np.abs(L_bins-L_ref))
     L_bin = L_bins[L_ibin]
+
+    print(f'{sat_select} found at MLT = {MLT_ref:.2f} and L = {L_ref:.2f} with Energy = {nearest_REPT_energy:.2f}')
 
     REPT_PA_local = REPT_data[sat_select]['Pitch_Angles']
     REPT_PA_eq = np.sqrt(np.rad2deg(np.sin(np.deg2rad(REPT_PA_local)))**2*REPT_data[sat_select]['b_min'][nearest_it_REPT]/REPT_data[sat_select]['b_satellite'][nearest_it_REPT])
@@ -666,21 +666,125 @@ if plot_PAD==True:
         else:
             REPT_data_epoch[key] = REPT_data[sat_select][key][nearest_it_REPT]
 
+    REPT_energyofmualpha_val = REPT_energyofmualpha[sat_select][k][mu].iloc[nearest_it_REPT]
+    REPT_energyofmualpha_epoch = {}
+    REPT_energyofmualpha_epoch[sat_select] = {}
+    REPT_energyofmualpha_epoch[sat_select][k] = pd.DataFrame(REPT_energyofmualpha_val,index=[str(nearest_time_REPT)],columns=[mu])
     Zhao_coeffs_REPT = {}
-    Zhao_coeffs_REPT[sat_select] = find_Zhao_PAD_coeffs(REPT_data_epoch, QD_storm_data, REPT_energyofmualpha[sat_select], extMag)
+    Zhao_coeffs_REPT[sat_select] = find_Zhao_PAD_coeffs(REPT_data_epoch, QD_storm_data, REPT_energyofmualpha_epoch[sat_select], extMag)
     
+    REPT_alpha_val = REPT_alphaofK[sat_select][k].iloc[nearest_it_REPT]
+    REPT_alphaofK_epoch = {}
+    REPT_alphaofK_epoch[sat_select] = pd.DataFrame(REPT_alpha_val,index=[str(nearest_time_REPT)],columns=[k])
     PAD_models_REPT = {}
-    PAD_models_REPT[sat_select] = create_PAD(REPT_data[sat_select], Zhao_coeffs_REPT[sat_select], REPT_alphaofK[sat_select])
+    PAD_models_REPT[sat_select] = create_PAD(REPT_data_epoch, Zhao_coeffs_REPT[sat_select], REPT_alphaofK_epoch[sat_select])
 
     Model_PA = PAD_models_REPT[sat_select][k][mu]['pitch_angles'].values
     Model_closest_PA = np.argmin(np.abs(Model_PA-REPT_PA_local90))
     Model_PAD = PAD_models_REPT[sat_select][k][mu]['Model'].values[0]
     Model_PAD_scale = REPT_PAD[len(REPT_PA_local)-1]/Model_PAD[Model_closest_PA]
 
+    time_window = dt.timedelta(minutes=30)
+    time_lower_bound = time_select - time_window
+    time_upper_bound = time_select + time_window
+
+    Model_GPS_PA = {}
+    Model_GPS_PAD = {}
+    near_time_GPS_index = {}
+    near_time_GPS = {}
+    GPS_alphaofK_epoch = {}
+    PAD_models_GPS_PA = {}
+    PAD_models_GPS_Model = {}
+    for satellite, sat_data in storm_data.items():
+        time_range_mask = (sat_data['Epoch'].UTC >= time_lower_bound) & (sat_data['Epoch'].UTC <= time_upper_bound)
+        near_time_GPS_index_sat = np.where(time_range_mask)[0]
+        Model_GPS_PA[satellite] = []
+        Model_GPS_PAD[satellite] = []
+        near_time_GPS_index[satellite] = []
+        near_time_GPS[satellite] = []
+        PAD_models_GPS_PA[satellite] = []
+        PAD_models_GPS_Model[satellite] = []
+        
+        for ii, i_time in enumerate(near_time_GPS_index_sat):
+            near_time_GPS_temp = sat_data['Epoch'].UTC[i_time]
+            minutes_to_subtract = near_time_GPS_temp.minute % 5
+            rounded_near_time_GPS_temp = near_time_GPS_temp - dt.timedelta(
+                minutes=minutes_to_subtract,
+                seconds=near_time_GPS_temp.second,
+                microseconds=near_time_GPS_temp.microsecond
+            )
+            dst_time_index = np.argmin(np.abs(QD_storm_data['DateTime']-rounded_near_time_GPS_temp))
+            current_dst = QD_storm_data['Dst'][dst_time_index]
+
+            current_E = energyofmualpha[satellite][k][mu].iloc[i_time]
+            current_L = sat_data[f'L_LGM_{extMag_label}IGRF'][i_time]
+            current_L_ibin = np.argmin(np.abs(L_bins-current_L))
+            current_MLT = sat_data['MLT'][i_time]
+            current_MLT_ibin = np.argmin(np.abs(MLT_bins-current_MLT))
+            
+            e_mask = np.argmin(np.abs(REPT_data[sat_select]['Energy_Channels'][0:6]-current_E))==nearest_REPT_ienergy
+            l_shell_mask = current_L_ibin == L_ibin
+            mlt_mask = current_MLT_ibin == MLT_ibin
+            
+            if e_mask and l_shell_mask and mlt_mask:
+                near_time_GPS_index[satellite].append(i_time)
+                near_time_GPS[satellite].append(near_time_GPS_temp)
+                
+                # Extract only time period of interest
+                GPS_data_epoch = {}
+                for key, key_data in sat_data.items():
+                    if key == 'Energy_Channels' or key == 'Pitch_Angles':
+                        GPS_data_epoch[key] = sat_data[key]
+                    elif key == 'Mu_calc':
+                        continue
+                    elif key == 'PSD':
+                        GPS_data_epoch[key] = {}
+                        GPS_data_epoch[key][k] = pd.DataFrame(sat_data['PSD'][k][mu].values[i_time], index=[i_time], columns=[mu])
+                    elif key == 'Lstar':
+                        GPS_data_epoch[key] = sat_data[key][i_time,i_K]
+                    else:
+                        GPS_data_epoch[key] = sat_data[key][i_time]
+
+                GPS_energyofmualpha_val = energyofmualpha[satellite][k][mu].iloc[i_time]
+                GPS_energyofmualpha_epoch = {}
+                GPS_energyofmualpha_epoch[satellite] = {}
+                GPS_energyofmualpha_epoch[satellite][k] = pd.DataFrame(GPS_energyofmualpha_val,index=[str(near_time_GPS)],columns=[mu])
+                Zhao_coeffs_GPS = find_Zhao_PAD_coeffs(GPS_data_epoch, QD_storm_data, GPS_energyofmualpha_epoch[satellite], extMag)
+                
+                GPS_alpha_val = alphaofK[satellite][k].iloc[i_time]
+                GPS_alphaofK_epoch[satellite] = pd.DataFrame(GPS_alpha_val,index=[str(near_time_GPS)],columns=[k])
+                GPS_PAD_temp = create_PAD(GPS_data_epoch, Zhao_coeffs_GPS, GPS_alphaofK_epoch[satellite])
+                PAD_models_GPS_PA[satellite].append(GPS_PAD_temp[k][mu]['pitch_angles'].values[0])
+                PAD_models_GPS_Model[satellite].append(GPS_PAD_temp[k][mu]['Model'].values[0])
+
+                pa_array = PAD_models[satellite][k][mu]['pitch_angles'].values[i_time, :]
+                Model_GPS_PA[satellite].append(pa_array)
+                
+                pad_array = PAD_models[satellite][k][mu]['Model'].values[i_time, :]
+                Model_GPS_PAD[satellite].append(pad_array)
+                print(f'GPS satellite {satellite} found at time {near_time_GPS_temp.strftime('%Y-%m-%d %H:%M')} in MLT = {current_MLT} and L = {current_L} with Energy = {current_E:.2f} and dst = {current_dst}')
+        Model_GPS_PA[satellite] = np.array(Model_GPS_PA[satellite])
+        Model_GPS_PA = {key: value for key, value in Model_GPS_PA.items() if value.size > 0}
+        Model_GPS_PAD[satellite] = np.array(Model_GPS_PAD[satellite])
+        Model_GPS_PAD = {key: value for key, value in Model_GPS_PAD.items() if value.size > 0}
+    if not Model_GPS_PAD:
+        print(f'No GPS satellites found at this time in MLT = {MLT_bin} and L = {L_bin}')
+
     fig, ax = plt.subplots(figsize=(10, 9))
 
-    REPT_PAD_plot = ax.scatter(REPT_PA_eq[REPT_PAD>0],REPT_PAD[REPT_PAD>0],label=rbsp_label,zorder=2,color='black',marker='+',s=200)
-    REPT_PAD_plot = ax.scatter(Model_PA,Model_PAD*Model_PAD_scale,label='Model',zorder=1)
+    REPT_Flux_plot = ax.scatter(REPT_PA_eq[REPT_PAD>0],REPT_PAD[REPT_PAD>0],label=rbsp_label,zorder=3,color='black',marker='+',s=200)
+    REPT_PAD_plot = ax.plot(Model_PA[0],Model_PAD*Model_PAD_scale,label='RBSP Model',zorder=2,linewidth=4,alpha=0.7,linestyle='solid')
+
+    GPS_model_scale = {}
+    for satellite, GPS_PAD in Model_GPS_PAD.items():
+        GPS_model_scale[satellite] = []
+        if near_time_GPS_index[satellite]:
+            for i, i_time in enumerate(near_time_GPS_index[satellite]):
+                GPS_model_scale_epoch = flux_energyofmualpha[satellite][k][mu].values[i_time] * scale_factor[satellite][k][mu].values[i_time]
+                GPS_model_scale[satellite].append(GPS_model_scale_epoch)
+                GPS_PAD_plot = ax.plot(Model_GPS_PA[satellite][i],GPS_PAD[i]*GPS_model_scale_epoch,label=satellite,zorder=1,alpha=0.7,linewidth='4',linestyle='dotted')
+                current_color = GPS_PAD_plot[0].get_color()
+                GPS_pred_PAD_plot = ax.plot(PAD_models_GPS_PA[satellite][i],PAD_models_GPS_Model[satellite][i]*GPS_model_scale_epoch,label='GPS Model',zorder=1,linestyle='-',linewidth='1',alpha=0.7,color=current_color)
 
     # Add K and Mu text to the plot
     ax.text(0.54, 0.96, r"K = " + f"{k:.1f} " + r"$G^{{1/2}}R_E$, $\mu = $" + f"{mu:.0f}" + r" $MeV/G$", transform=ax.transAxes, fontsize=textsize) #add the text
@@ -688,8 +792,8 @@ if plot_PAD==True:
     ax.legend(fontsize=textsize-4)
 
     ax.set_xlim(0,180)
-    ax.set_ylim(10**np.floor(np.log10(np.nanmin(Model_PAD*Model_PAD_scale))),10**np.ceil(np.log10(np.nanmax(Model_PAD*Model_PAD_scale))))
-    plt.yscale('log')
+    #ax.set_ylim(10**np.floor(np.log10(np.nanmin(Model_PAD*Model_PAD_scale))),10**np.ceil(np.log10(np.nanmax(Model_PAD*Model_PAD_scale))))
+    #plt.yscale('log')
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
     ax.set_xlabel(r"Equatorial Pitch Angle (degrees)", fontsize=textsize)
     ax.set_ylabel(r'Directional Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', fontsize=textsize)

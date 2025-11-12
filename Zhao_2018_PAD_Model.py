@@ -173,7 +173,6 @@ def find_Zhao_PAD_coeffs(sat_data, QD_data, energyofmualpha, extMag = 'T89c'):
     energy_bins = np.array(list(Zhao_coeffs.keys()), dtype=float)
     # Define the valid range for energy_value besed on instrument energy channels.
     echannel_min = sat_data['Energy_Channels'][0]
-    echannel_max = sat_data['Energy_Channels'][-1]
     # Prepare a list of formatted epoch strings for the column headers of the final Pandas DataFrame for each Mu_value.
     epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
     
@@ -218,7 +217,7 @@ def find_Zhao_PAD_coeffs(sat_data, QD_data, energyofmualpha, extMag = 'T89c'):
                 
                 # --- Primary Filter Condition ---
                 # Do NOT extrapolate outside of energy channel range or beyond 6.2 MeV!
-                if (energy_value >= echannel_min and energy_value <= echannel_max and energy_value <= 6.2 and Lshell <= 6):
+                if (energy_value >= echannel_min and energy_value <= 6.2 and Lshell <= 6):
                     # Find the closest energy bin in Zhao_coeffs for the current energy_value.
                     i_energy = np.argmin(np.abs(energy_value-energy_bins))
                     ebin_value = energy_bins[i_energy]
@@ -281,19 +280,19 @@ def create_PAD(sat_data, Zhao_epoch_coeffs, alphaofK):
             coeff_data = Mu_data.values
             epoch_list = Mu_data.index.tolist()
             PAD_model[K_val][Mu_val] = {} 
-            PAD_model[K_val][Mu_val]['Model'] = np.zeros((len(epoch_list),len(alpha_init)+6))
-            PAD_model[K_val][Mu_val]['pitch_angles'] = np.zeros((len(epoch_list),len(alpha_init)+6))
+            PAD_model[K_val][Mu_val]['Model'] = np.zeros((len(epoch_list),len(alpha_init)))
+            PAD_model[K_val][Mu_val]['pitch_angles'] = np.zeros((len(epoch_list),len(alpha_init)))
             for i_epoch, epoch in enumerate(epoch_list):
-                alpha_local90 = local90PA[i_epoch]
+                alpha_local90 = np.atleast_1d(local90PA)[i_epoch]
                 alpha_local90_add = np.array((alpha_local90, 180-alpha_local90))
-                alpha_loss_cone = loss_cone[i_epoch]
+                alpha_loss_cone = np.atleast_1d(loss_cone)[i_epoch]
                 alpha_loss_cone_add = np.array((alpha_loss_cone, 180-alpha_loss_cone))
-                alphaofK_epoch = alphaofK[K_val][Mu_val].values[i_epoch]
+                alphaofK_epoch = alphaofK[K_val].values[i_epoch]
                 alphaofK_add = np.array((alphaofK_epoch, 180-alphaofK_epoch))
                 alpha_epoch = np.append(alpha_init, [alpha_local90_add,alphaofK_add,alpha_loss_cone_add])
                 alpha_epoch.sort()
-                PAD_model[K_val][Mu_val]['pitch_angles'][i_epoch,:] = alpha_epoch
-                P = define_Legendre(alpha_epoch)
+                PAD_model[K_val][Mu_val]['pitch_angles'][i_epoch,:] = alpha_init
+                P = define_Legendre(alpha_init)
                 PAD_model[K_val][Mu_val]['Model'][i_epoch,:] = np.sum(coeff_data[i_epoch,:] * P, axis=1) + 1
             PAD_model[K_val][Mu_val]['pitch_angles'] = pd.DataFrame(PAD_model[K_val][Mu_val]['pitch_angles'], index=epoch_list)
             PAD_model[K_val][Mu_val]['Model'] = pd.DataFrame(PAD_model[K_val][Mu_val]['Model'], index=epoch_list)
