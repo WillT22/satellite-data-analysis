@@ -494,7 +494,7 @@ def energy_spectra(gps_data, energyofMuAlpha):
                 j_MJ3 = reletavistic_Maxwellian(energies,n3,T3)
                 j_G = Gaussian(energies,nG,muG,sigma)
 
-                j_CXD[satellite][K_val][energy_mask,i_Mu] = j_MJ1[energy_mask] + j_MJ2[energy_mask] + j_MJ3[energy_mask] + j_G[energy_mask]
+                j_CXD[satellite][K_val][energy_mask,i_Mu] = (j_MJ1[energy_mask] + j_MJ2[energy_mask] + j_MJ3[energy_mask] + j_G[energy_mask])
 
             j_CXD[satellite][K_val] = pd.DataFrame(j_CXD[satellite][K_val], index=epoch_list, columns=Mu_set) 
     return j_CXD
