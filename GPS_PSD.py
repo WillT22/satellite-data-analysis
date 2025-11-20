@@ -199,7 +199,7 @@ if __name__ == '__main__':
         PAD_models = {}
         for satellite, sat_data in storm_data.items():
             print(f"    Modeling PAD for satellite {satellite}", end='\r')
-            PAD_models[satellite] = create_PAD(sat_data, Zhao_epoch_coeffs[satellite], alphaofK[satellite])
+            PAD_models[satellite] = create_PAD(sat_data, Zhao_epoch_coeffs[satellite])
 
             # Save Data for later recall:
         print("\nSaving Processed GPS Data...")
@@ -214,7 +214,13 @@ if __name__ == '__main__':
         del PAD_models_load
 
     #--- Find Scale Factor from alphaofK and PAD Model ---#
-    scale_factor, PAD_int = PAD_Scale_Factor(storm_data,Zhao_epoch_coeffs,alphaofK) # nans either come from alphaofK or dividing by zero (integral)
+    scale_factor = {}
+    PAD_Models = {}
+    PAD_integral = {}
+    for satellite, sat_data in storm_data.items():
+        print(f"    Modeling PAD for satellite {satellite}", end='\r')
+        scale_factor[satellite], PAD_Models[satellite], PAD_integral[satellite] = PAD_Scale_Factor(sat_data,Zhao_epoch_coeffs[satellite],alphaofK[satellite]) # nans either come from alphaofK or dividing by zero (integral)
+        print(f'\n    Scale Factor Calculated\n')
 
 ### Find Flux at Set Pitch Angle and Energy ###
     flux = {}
@@ -981,7 +987,7 @@ print(f'Numerical Integral = {num_sum}')
 
 integrand = B_local_temp/B_min_temp * Model_GPS_PAD[satellite][i] * np.sin(alpha_rad) * np.cos(alpha_rad) / np.sqrt(1-B_local_temp/B_min_temp*np.sin(alpha_rad)**2)
 idx_low = np.searchsorted(Model_GPS_PA[satellite][i], loss_cone_temp)
-idx_high = np.searchsorted(Model_GPS_PA[satellite][i], local90_temp)-1
+idx_high = np.searchsorted(Model_GPS_PA[satellite][i], local90_temp)
 integrand_slice = integrand[idx_low:idx_high]
 alpha_slice = alpha_rad[idx_low:idx_high]
 int_result = np.trapezoid(integrand_slice, alpha_slice)
