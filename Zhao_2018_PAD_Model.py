@@ -8,7 +8,6 @@ from scipy.special import legendre
 import importlib
 import GPS_PSD_func
 importlib.reload(GPS_PSD_func)
-from GPS_PSD_func import find_local90PA, find_Loss_Cone
 
 #%%
 global Zhao_median_filepath
@@ -17,7 +16,7 @@ Zhao_median_filepath = '/home/wzt0020/sat_data_analysis/satellite-data-analysis/
 #%% Extract coefficients from Zhao_2018
 # NOTE: MLT and L are midpoints of the bin!
 def import_Zhao_coeffs():
-    print("Importing Zhao Coefficients... ")
+    print("Importing Zhao Coefficients... \r")
     global Zhao_coeffs
     Zhao_coeffs = {}
 
@@ -141,7 +140,7 @@ def import_Zhao_coeffs():
             data_df = pd.DataFrame(current_data_rows, index=current_mlt_values, columns=current_l_values)
             Zhao_coeffs[current_energy][current_dst_range][current_coeff_block]['MLT_values'] = np.array(current_mlt_values)
             Zhao_coeffs[current_energy][current_dst_range][current_coeff_block]['data_matrix'] = data_df
-    print("Zhao Coefficients Imported \n")
+    print("Zhao Coefficients Imported    \n")
     return Zhao_coeffs
 
 #%% Find PAD coefficients from Zhao 2018 model
@@ -189,6 +188,8 @@ def find_Zhao_PAD_coeffs(sat_data, QD_data, energyofmualpha, extMag = 'T89c'):
             Zhao_epoch_coeffs[K_val][Mu_value] = np.zeros((len(sat_data['Epoch']),5))
             
             # --- Loop 3: Iterate through each epoch (time step) for each satellite ---
+            mag_latitude = np.zeros((len(sat_data['Epoch'].UTC),))
+            R = np.zeros((len(sat_data['Epoch'].UTC),))
             for i_epoch, epoch in enumerate(sat_data['Epoch']):
                 # Round down to the nearest 5 minutes
                 time_dt = epoch.UTC[0] # Transform from spacepy TickTock to datetime, the [0] is to extract the value
@@ -214,10 +215,16 @@ def find_Zhao_PAD_coeffs(sat_data, QD_data, energyofmualpha, extMag = 'T89c'):
                 # Get the L-shell and energy value for the current (Mu, Epoch) point.
                 Lshell = np.atleast_1d(sat_data[f'L_LGM_{extMag_label}IGRF'])[i_epoch]
                 energy_value = K_data_values[i_epoch,Mu_val]
+
+                # Calculate R for magnetic latitude calculation
+                R[i_epoch] = np.sqrt(np.sum(sat_data['Position'].data[i_epoch]**2))
+                mag_latitude[i_epoch] = np.rad2deg(np.arccos(np.sqrt(R[i_epoch]/sat_data['L_LGM_TS04IGRF'][i_epoch])))
                 
                 # --- Primary Filter Condition ---
                 # Do NOT extrapolate outside of energy channel range or beyond 6.2 MeV!
-                if (energy_value >= (echannel_min-0.15) and energy_value <= 6.2 and Lshell <= 6):
+                if energy_value >= (echannel_min-0.15) and energy_value <= 6.2 and Lshell <= 6:
+                    # and mag_latitude[i_epoch] < 20\
+                    # and sat_data['b_satellite'][i_epoch]/sat_data['b_equator'][i_epoch] <1.5:
                     # Find the closest energy bin in Zhao_coeffs for the current energy_value.
                     i_energy = np.argmin(np.abs(energy_value-energy_bins))
                     ebin_value = energy_bins[i_energy]
@@ -292,7 +299,7 @@ def create_PAD(sat_data, Zhao_epoch_coeffs, alphaofK):
 
 #%% Find Integral of Normalized PAD between Loss Cone and Local 90 PA
 def P0_int_eq(x,a):
-    return -2*np.sqrt(1 - a*x)
+    return -2/a*np.sqrt(1 - a*x)
 def P2_int_eq(x,a):
     return P0_int_eq(x,a) * (1 - 1/a - x/2)
 def P4_int_eq(x,a):
@@ -314,69 +321,62 @@ def define_Legendre_Int_eq(b_sat, b_eq, b_fpt, b_min):
        P10_int_eq(high,b_sat/b_eq) - P10_int_eq(low,b_sat/b_eq)])
     return P_int.transpose()
 
-def PAD_Scale_Factor(gps_data, Zhao_epoch_coeffs, alphaofK):
-    print('Calculating Scale Factor...')
+def PAD_Scale_Factor(sat_data, Zhao_epoch_coeffs, alphaofK):
     PAD_int_out = {}
     PAD_scale_factor = {}
-    for satellite, coeff_data in Zhao_epoch_coeffs.items():
-        PAD_int_out[satellite] = {}
-        PAD_scale_factor[satellite] = {}
-        K_set = np.array(list(coeff_data.keys()), dtype=float)
-        
-        sat_data = gps_data[satellite]
-        
-        # Inputs for PAD Integration between LC and local90
-        b_satellite = sat_data['b_satellite']
-        b_equator = sat_data['b_equator']
-        b_footpoint = sat_data['b_footpoint']
-        b_min = sat_data['b_min']
+    K_set = np.array(list(Zhao_epoch_coeffs.keys()), dtype=float)
+    
+    # Inputs for PAD Integration between LC and local90
+    b_satellite = sat_data['b_satellite']
+    b_equator = sat_data['b_min']
+    b_footpoint = sat_data['b_footpoint']
+    b_min = sat_data['b_min']
 
-        # Inputs for PAD model generation (and logic restriction)
-        loss_cone = sat_data['loss_cone']
-        local90 = sat_data['local90PA']
-        alphaofK_data = alphaofK[satellite].values
+    # Inputs for PAD model generation (and logic restriction)
+    loss_cone = sat_data['loss_cone']
+    local90 = sat_data['local90PA']
+    alphaofK_data = alphaofK.values
+    
+    for K_val, K_data in Zhao_epoch_coeffs.items():
+        i_K = np.where(K_set == K_val)[0][0]
+        Mu_set = np.array(list(K_data.keys()), dtype=float)
+        epoch_list = K_data[Mu_set[0]].index.tolist()
         
-        for K_val, K_data in coeff_data.items():
-            i_K = np.where(K_set == K_val)[0][0]
-            Mu_set = np.array(list(K_data.keys()), dtype=float)
-            epoch_list = K_data[Mu_set[0]].index.tolist()
+        # Initialize arrays
+        PAD_models = np.zeros((len(epoch_list),len(Mu_set)))
+        PAD_integral = np.zeros((len(epoch_list),len(Mu_set)))
+        PAD_int_out[K_val] = np.ones((len(epoch_list),len(Mu_set))) * np.nan
+        PAD_scale_factor[K_val] = np.ones((len(epoch_list),len(Mu_set))) * np.nan
+
+        for Mu_val, Mu_data in K_data.items():
+            coeffs = Mu_data.values
             
-            # Initialize arrays
-            PAD_models = np.zeros((len(epoch_list),len(Mu_set)))
-            PAD_integral = np.zeros((len(epoch_list),len(Mu_set)))
-            PAD_int_out[satellite][K_val] = np.ones((len(epoch_list),len(Mu_set))) * np.nan
-            PAD_scale_factor[satellite][K_val] = np.ones((len(epoch_list),len(Mu_set))) * np.nan
+            # Only calculate values where any coefficients are nonzero
+            coeff_mask = np.sum(coeffs,axis=1) != 0
+            # Only calculate if the desired angle is larger than loss cone and local90 is larger than 40
+            alpha_mask = (alphaofK_data[:,i_K] > loss_cone)
+            # Combine masks
+            valid_mask = coeff_mask & alpha_mask
+            i_Mu = np.where(Mu_set == Mu_val)[0][0]
+            
+            # Find PAD Model value for Mu_set values
+            P = define_Legendre(alphaofK_data[:,i_K])
+            PAD_models[:,i_Mu] = np.sum(coeffs * P, axis=1) + 1
+            
+            # Find integral between loss cone and local 90 degree pitch angle
+            P_int = define_Legendre_Int_eq(b_satellite, b_equator, b_footpoint, b_min)
+            PAD_integral[:,i_Mu] = np.array(2*np.pi * b_satellite/b_equator * 
+                                    (np.sum(coeffs * P_int, axis=1) + (P0_int_eq(b_equator/b_satellite,b_satellite/b_equator)-P0_int_eq(b_min/b_footpoint,b_satellite/b_equator))))
+            
+            # Normalize the directional flux predicted by the model by the integral from loss cone to local 90 of the model
+            # and then multiply by the GPS omnidirecitonal flux to find GPS directional flux
+            # This is dependent on Mu and K as the coefficients depend on energy and pitch angle
+            PAD_int_out[K_val][valid_mask,i_Mu] = PAD_integral[valid_mask,i_Mu]
+            PAD_scale_factor[K_val][valid_mask,i_Mu] = PAD_models[valid_mask,i_Mu]/PAD_integral[valid_mask,i_Mu]
 
-            for Mu_val, Mu_data in K_data.items():
-                coeffs = Mu_data.values
-                
-                # Only calculate values where any coefficients are nonzero
-                coeff_mask = np.sum(coeffs,axis=1) != 0
-                # Only calculate if the desired angle is larger than loss cone and local90 is larger than 40
-                alpha_mask = (alphaofK_data[:,i_K] > loss_cone) #& ((local90 > 30) | (alphaofK_data[:,i_K] < local90))
-                # Combine masks
-                valid_mask = coeff_mask & alpha_mask
-                i_Mu = np.where(Mu_set == Mu_val)[0][0]
-                
-                # Find PAD Model value for Mu_set values
-                P = define_Legendre(alphaofK_data[:,i_K])
-                PAD_models[:,i_Mu] = np.sum(coeffs * P, axis=1) + 1
-                
-                # Find integral between loss cone and local 90 degree pitch angle
-                P_int = define_Legendre_Int_eq(b_satellite, b_equator, b_footpoint, b_min)
-                PAD_integral[:,i_Mu] = np.array(b_satellite/b_equator * 
-                                        (np.sum(coeffs * P_int, axis=1) + (P0_int_eq(b_equator/b_satellite,b_satellite/b_equator)-P0_int_eq(b_min/b_footpoint,b_satellite/b_equator))))
-                
-                # Normalize the directional flux predicted by the model by the integral from loss cone to local 90 of the model
-                # and then multiply by the GPS omnidirecitonal flux to find GPS directional flux
-                # This is dependent on Mu and K as the coefficients depend on energy and pitch angle
-                PAD_int_out[satellite][K_val][valid_mask,i_Mu] = PAD_integral[valid_mask,i_Mu]
-                PAD_scale_factor[satellite][K_val][valid_mask,i_Mu] = PAD_models[valid_mask,i_Mu]/PAD_integral[valid_mask,i_Mu]
-
-            # PAD scale factor is the flux value of the model at desired angle divided by the integral of the model
-            PAD_int_out[satellite][K_val] = pd.DataFrame(PAD_int_out[satellite][K_val], index=epoch_list, columns=Mu_set) 
-            PAD_scale_factor[satellite][K_val] = pd.DataFrame(PAD_scale_factor[satellite][K_val], index=epoch_list, columns=Mu_set) 
-    print('Scale Factor Calculated\n')
+        # PAD scale factor is the flux value of the model at desired angle divided by the integral of the model
+        PAD_int_out[K_val] = pd.DataFrame(PAD_int_out[K_val], index=epoch_list, columns=Mu_set) 
+        PAD_scale_factor[K_val] = pd.DataFrame(PAD_scale_factor[K_val], index=epoch_list, columns=Mu_set) 
     return PAD_scale_factor, PAD_int_out
 
 # %%

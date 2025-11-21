@@ -31,12 +31,13 @@ Re = 6378.137 #Earth's Radius
 Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
 K_set = np.array((0.1,1,2)) # R_E*G^(1/2)
 mode = 'load' # 'save' or 'load'
-storm_name = 'april2017storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'may2019storm', 'sep2019storm'
+storm_name = 'sep2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'may2019storm', 'sep2019storm'
 plot_flux = True
 plot_energies = True
 plot_psd = True
 plot_radial = True
 plot_radial_Lstar = True
+PAD_calculate = True
 
 REPT_data_root = '/home/wzt0020/sat_data_analysis/REPT_data/'
 input_folder = os.path.join(REPT_data_root, storm_name)
@@ -221,6 +222,49 @@ if __name__ == '__main__':
         print("Saving REPT Data...")
         np.savez(save_path, **REPT_data)
         print("Data Saved \n")
+
+### Calculate PAD model (if necessary) ###
+    if PAD_calculate == True:
+        PAD_filename = f"REPT_PAD_model_{extMag}.npz"
+        PAD_scale_filename = f"REPT_PAD_scale_{extMag}.npz"
+        PAD_save_path = os.path.join(base_save_folder, PAD_filename)
+        PAD_scale_save_path = os.path.join(base_save_folder, PAD_scale_filename)
+        if mode == 'save':
+            from Zhao_2018_PAD_Model import (import_Zhao_coeffs, find_Zhao_PAD_coeffs, create_PAD, PAD_Scale_Factor)
+            
+            Zhao_coeffs = import_Zhao_coeffs()
+
+            Zhao_coeffs_REPT = {}
+            REPT_PAD_Model = {}
+            REPT_PAD_scale = {}
+            REPT_PAD_Int = {}
+            for satellite, sat_data in REPT_data.items():
+                print(f"Calculating PAD model for satellite {satellite}...")
+                Zhao_coeffs_REPT[satellite] = find_Zhao_PAD_coeffs(sat_data, QD_storm_data, energyofmualpha[satellite], extMag)
+                REPT_PAD_Model[satellite] = create_PAD(sat_data, Zhao_coeffs_REPT[satellite], alphaofK[satellite])
+                REPT_PAD_scale[satellite], REPT_PAD_Int[satellite] = PAD_Scale_Factor(sat_data, Zhao_coeffs_REPT[satellite], alphaofK[satellite])
+            print(f"PAD model calculation completed.")
+
+            # Save Data for later recall:
+            print("\nSaving REPT PAD Model Data...")
+            np.savez(PAD_save_path, **REPT_PAD_Model )
+            print("Data Saved \n")
+
+            print("\nSaving REPT PAD Scale Data...")
+            np.savez(PAD_scale_save_path, **REPT_PAD_scale )
+            print("Data Saved \n")
+
+        if mode == 'load':
+            # Load data from previous save
+            PAD_model_load = np.load(PAD_save_path, allow_pickle=True)
+            REPT_PAD_Model = load_data(PAD_model_load)
+            PAD_model_load.close()
+            del PAD_model_load
+            PAD_scale_load = np.load(PAD_scale_save_path, allow_pickle=True)
+            REPT_PAD_scale = load_data(PAD_scale_load)
+            PAD_scale_load.close()
+            del PAD_scale_load
+
 
 ### Execution time
     end_time = time.perf_counter()
