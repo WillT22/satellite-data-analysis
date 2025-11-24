@@ -32,13 +32,13 @@ Re = 6378.137 #Earth's Radius
 Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
 K_set = np.array((0.1,1,2)) # R_E*G^(1/2)
 mode = 'load' # 'save' or 'load'
-storm_name = 'sep2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'may2019storm', 'sep2019storm'
+storm_name = 'may2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'may2019storm', 'sep2019storm'
 plot_flux = False
 plot_processes_flux = False
 plot_psd = False
 plot_combined_psd = True
 plot_energies = False
-PAD_calculate = False
+PAD_calculate = True
 plot_PAD = False
 plot_radial = True
 
@@ -185,7 +185,7 @@ if __name__ == '__main__':
         Zhao_epoch_coeffs = {}
         for satellite, sat_data in storm_data.items():
             print(f"    Finding PAD coefficients for satellite {satellite}", end='\r')
-            Zhao_epoch_coeffs[satellite] = find_Zhao_PAD_coeffs(sat_data, QD_storm_data, energyofmualpha[satellite], extMag)
+            Zhao_epoch_coeffs[satellite] = find_Zhao_PAD_coeffs(sat_data, QD_storm_data, energyofmualpha[satellite], alphaofK[satellite], extMag)
 
         # Save Data for later recall:
         print("Saving Zhao coefficients for each Epoch...")
@@ -637,7 +637,7 @@ if plot_energies==True:
 
 #%% Plot PAD comparison
 if plot_PAD==True: 
-    time_select = dt.datetime(start_date.year, 9, 1, 14, 0, 0)
+    time_select = dt.datetime(start_date.year, 8, 31, 21, 30, 0)
     sat_select = 'rbspa'
     k = 0.1
     i_K = np.where(K_set == k)[0]
@@ -706,6 +706,7 @@ if plot_PAD==True:
     print(f'{sat_select} found at MLT = {MLT_ref:.2f} and L = {L_ref:.2f} with Energy = {nearest_REPT_energy:.2f}')
 
     REPT_PA_local = REPT_data[sat_select]['Pitch_Angles']
+    # NOTE: Sometimes, the measured local Bfield is smaller than the theoretically determined Bmin, causing invalid values in the conversion
     REPT_PA_eq = np.rad2deg(np.asin(np.sqrt(np.sin(np.deg2rad(REPT_PA_local))**2*REPT_data[sat_select]['b_min'][nearest_it_REPT]/REPT_data[sat_select]['b_satellite'][nearest_it_REPT])))
     REPT_PA_eq = np.unique(np.concatenate((REPT_PA_eq, 180-REPT_PA_eq)))
     REPT_PA_local90 = REPT_PA_eq[len(REPT_PA_local)-1]
@@ -880,7 +881,7 @@ if plot_PAD==True:
 
     ax.set_xlim(0,180)
     #ax.set_ylim(10**np.floor(np.log10(np.nanmin(Model_PAD*Model_PAD_scale))),10**np.ceil(np.log10(np.nanmax(Model_PAD*Model_PAD_scale))))
-    ax.set_ylim(1e4,1e7)
+    ax.set_ylim(1e3,1e6)
     plt.yscale('log')
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
     ax.set_xlabel(r"Equatorial Pitch Angle (degrees)", fontsize=textsize)
@@ -1194,49 +1195,43 @@ if find_scale_ratio==True:
     ax.legend()
     ax.grid(True)
     plt.show()
-    
 
-#%% Make trendline of Scale Factor Ratio vs McIlwain L
-trendline=False
-if trendline == True:
-    sat_L_data = []
+    b_sat_data = []
     scale_ratio_data = []
     for satellite, sat_data in storm_data.items():
         sat_iepoch_mask = (sat_data['Epoch'].UTC >= start_date) & (sat_data['Epoch'].UTC <= stop_date)
         ratio_mask = (scale_ratio[satellite] > 0) & (scale_ratio[satellite] != np.nan)
         combined_mask = sat_iepoch_mask & ratio_mask
 
-        sat_L_data.append(sat_data['L_LGM_TS04IGRF'][combined_mask])
+        b_sat_data.append(sat_data['b_satellite'][combined_mask])
         scale_ratio_data.append(scale_ratio[satellite][combined_mask])
-
-    sat_L_data = np.concatenate(sat_L_data)
+    
+    b_sat_data = np.concatenate(b_sat_data)
     scale_ratio_data = np.concatenate(scale_ratio_data)
 
-    degree = 2
-    coeffs = np.polyfit(sat_L_data, scale_ratio_data, degree)
-    poly_func = np.poly1d(coeffs)
-    sorted_L_indices = np.argsort(sat_L_data)
-    sat_L_sorted = sat_L_data[sorted_L_indices]
-    y_poly = poly_func(sat_L_sorted)
+    slope, intercept = np.polyfit(b_sat_data, scale_ratio_data, deg=1)
+    linear_func = np.poly1d((slope, intercept))
 
-    plt.figure(figsize=(10, 6))
-    plt.scatter(sat_L_data, scale_ratio_data, label='Data', alpha=0.5)
-    plt.scatter(sat_L_sorted, y_poly, color='red', label='Power Law Fit')
-    plt.xlabel('McIlwain L', fontsize=textsize)
-    plt.ylabel('Scale Factor Ratio (RBSP/GPS)', fontsize=textsize)
-    plt.title(f'Polynomial Fit of Scale Factor Ratio vs McIlwain L for {satellite}', fontsize=textsize)
-    plt.legend()
-    plt.grid(True)
-    plt.show()  
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.scatter(b_sat_data, scale_ratio_data, label='Data', alpha=0.5)
+    x_vals = np.linspace(0, 0.0065, 100)
+    y_vals = linear_func(x_vals)
+    ax.plot(x_vals, y_vals, color='red', label='Linear Fit')
+    ax.set_xlabel('B_satellite (G)', fontsize=textsize)
+    ax.set_ylabel('Scale Factor Ratio (RBSP/GPS)', fontsize=textsize)
+    ax.set_title(f'Linear Fit of Scale Factor Ratio vs B_satellite', fontsize=textsize)
+    ax.legend()
+    ax.grid(True)
+    plt.show()
 
-    plt.figure(figsize=(10, 6))
-    plt.scatter(sat_L_data, scale_ratio_data/y_poly, label='Data', alpha=0.5)
-    plt.xlabel('McIlwain L', fontsize=textsize)
-    plt.ylabel('Scale Factor Ratio (RBSP/GPS)', fontsize=textsize)
-    plt.title(f'Polynomial Fit of Scale Factor Ratio vs McIlwain L for {satellite}', fontsize=textsize)
-    plt.legend()
-    plt.grid(True)
-    plt.show() 
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.scatter(b_sat_data, scale_ratio_data/linear_func(b_sat_data), label='Data', alpha=0.5)
+    ax.set_xlabel('B_satellite (G)', fontsize=textsize)
+    ax.set_ylabel('Scale Factor Ratio (RBSP/GPS)', fontsize=textsize)
+    ax.set_title(f'Linear Fit of Scale Factor Ratio vs B_satellite', fontsize=textsize)
+    ax.legend()
+    ax.grid(True)
+    plt.show()
 
 #%% Plot PSD Radial Profile with REPT data
 if plot_radial==True:
@@ -1246,7 +1241,7 @@ if plot_radial==True:
     mu = 2000
     i_mu = np.where(Mu_set == mu)[0]
     gps_scale = 1 # default = 1
-    MLT_range = 3 # hours, default = 3 which corresponds to +-1.5 hours
+    MLT_range = 12 # hours, default = 3 which corresponds to +-1.5 hours
     lstar_delta = 0.1 # default = 0.1
     time_delta = 30 # minutes, default = 30
 
@@ -1266,8 +1261,8 @@ if plot_radial==True:
     # time_start = dt.datetime(start_date.year, 10, 8, 12, 0, 0)
     # time_stop = dt.datetime(stop_date.year, 10, 9, 12, 0, 0)
 
-    # time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
-    # time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0) # for sep2019storm
+    time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
+    time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0) # for sep2019storm
 
     # time_start = dt.datetime(start_date.year, 8, 26, 0, 0, 0) # for aug2018storm
     # time_stop = dt.datetime(stop_date.year, 8, 27, 0, 0, 0) # for aug2018storm
@@ -1275,8 +1270,8 @@ if plot_radial==True:
     gps_time_start  = time_start
     gps_time_stop   = time_stop
 
-    # gps_time_start = dt.datetime(start_date.year, 8, 31, 13, 20, 0) # for sep2019storm
-    # gps_time_stop = dt.datetime(stop_date.year, 8, 31, 13, 20, 0) # for sep2019storm
+    gps_time_start = dt.datetime(start_date.year, 8, 31, 14, 0, 0) # for sep2019storm
+    gps_time_stop = dt.datetime(stop_date.year, 8, 31, 14, 0, 0) # for sep2019storm
 
     # gps_time_start = dt.datetime(start_date.year, 8, 26, 6, 40, 0) # for aug2018storm
     # gps_time_stop = dt.datetime(stop_date.year, 8, 26, 13, 0, 0) # for aug2018storm
@@ -1308,7 +1303,7 @@ if plot_radial==True:
             sat_name_array[valid_mask],
             sat_Lstar[valid_mask],
             sat_MLT[valid_mask],
-            sat_PSD[valid_mask]/linear_func(mag_latitude[satellite][sat_iepoch_mask][valid_mask])
+            sat_PSD[valid_mask]/linear_func(sat_data['b_satellite'][sat_iepoch_mask][valid_mask])
         )).T # Transpose to make it an N x 5 matrix (N rows, 5 columns)
 
         temp_data.append(combined_satellite_data)
@@ -1348,17 +1343,20 @@ if plot_radial==True:
 
     time_intervals_GPS = np.arange(gps_time_start, gps_time_stop+dt.timedelta(minutes=time_delta), dt.timedelta(minutes=time_delta)).astype(dt.datetime)
     avg_psd = np.zeros((len(time_intervals_GPS), len(lstar_intervals))) * np.nan
+    plotted_GPS_data = np.empty((len(time_intervals_GPS), len(lstar_intervals)), dtype=object)
     for i_time, time_int in enumerate(time_intervals_GPS):
         time_mask_GPS = (GPS_plot_data[:,0] >= (time_int - dt.timedelta(minutes=time_delta/2))) & (GPS_plot_data[:,0] < (time_int + dt.timedelta(minutes=time_delta/2)))
         for i_lstar, lstar_val in enumerate(lstar_intervals):
             lstar_mask = (GPS_plot_data[:,2] >= (lstar_val - lstar_delta/2)) & (GPS_plot_data[:,2] < (lstar_val + lstar_delta/2))
             combined_mask = time_mask_GPS & lstar_mask & MLT_mask
-            if np.sum(combined_mask) > 0:
+            if np.sum(combined_mask) > 1:
+                plotted_GPS_data[i_time, i_lstar] = GPS_plot_data[combined_mask]
                 psd_data = GPS_plot_data[:,4][combined_mask].astype(float)
                 # Filter out NaNs and then append to the collection list
                 psd_data = psd_data[~np.isnan(psd_data)]
                 if len(psd_data) > 0:
                     avg_psd[i_time,i_lstar] = np.nanmean(psd_data)*gps_scale
+    plotted_GPS_data = pd.DataFrame(plotted_GPS_data, index=time_intervals_GPS, columns=lstar_intervals)
 
     fig, ax = plt.subplots(figsize=(14, 9))
     colormap_name = 'viridis'

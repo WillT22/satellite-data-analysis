@@ -144,7 +144,7 @@ def import_Zhao_coeffs():
     return Zhao_coeffs
 
 #%% Find PAD coefficients from Zhao 2018 model
-def find_Zhao_PAD_coeffs(sat_data, QD_data, energyofmualpha, extMag = 'T89c'):
+def find_Zhao_PAD_coeffs(sat_data, QD_data, energyofmualpha, alphaofK, extMag = 'T89c'):
     """
     Extracts Zhao coefficients for each epoch based on current conditions (Dst), set parameters (Energy), and satellite location (MLT, L)
     
@@ -218,11 +218,12 @@ def find_Zhao_PAD_coeffs(sat_data, QD_data, energyofmualpha, extMag = 'T89c'):
 
                 # Calculate R for magnetic latitude calculation
                 R[i_epoch] = np.sqrt(np.sum(sat_data['Position'].data[i_epoch]**2))
-                mag_latitude[i_epoch] = np.rad2deg(np.arccos(np.sqrt(R[i_epoch]/sat_data['L_LGM_TS04IGRF'][i_epoch])))
+                mag_latitude[i_epoch] = np.rad2deg(np.arccos(np.sqrt(R[i_epoch]/Lshell)))
                 
                 # --- Primary Filter Condition ---
                 # Do NOT extrapolate outside of energy channel range or beyond 6.2 MeV!
                 if energy_value >= (echannel_min-0.15) and energy_value <= 6.2 and Lshell <= 6:
+                    # and sat_data['local90PA'][i_epoch] >= alphaofK[K_val].values[i_epoch]:
                     # and mag_latitude[i_epoch] < 20\
                     # and sat_data['b_satellite'][i_epoch]/sat_data['b_equator'][i_epoch] <1.5:
                     # Find the closest energy bin in Zhao_coeffs for the current energy_value.
