@@ -32,14 +32,14 @@ Re = 6378.137 #Earth's Radius
 Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
 K_set = np.array((0.1,1,2)) # R_E*G^(1/2)
 mode = 'load' # 'save' or 'load'
-storm_name = 'may2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'may2019storm', 'sep2019storm'
+storm_name = 'sep2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'may2019storm', 'sep2019storm'
 plot_flux = False
 plot_processes_flux = False
 plot_psd = False
 plot_combined_psd = True
 plot_energies = False
-PAD_calculate = True
-plot_PAD = False
+PAD_calculate = False
+plot_PAD = True
 plot_radial = True
 
 GPS_data_root = '/home/wzt0020/sat_data_analysis/GPS_data/'
@@ -175,9 +175,6 @@ if __name__ == '__main__':
     flux_energyofmualpha = energy_spectra(storm_data, energyofmualpha)
 
 ### Find Flux at Set Pitch Angle ####
-    
-    mode = 'save'
-    
     #--- Extract Zhao Coefficients at each Epoch ---#
     Zhao_epoch_coeffs_filename = f"Zhao_epoch_coeffs_{extMag}.npz"
     Zhao_epoch_coeffs_save_path = os.path.join(base_save_folder, Zhao_epoch_coeffs_filename)
@@ -233,7 +230,7 @@ if __name__ == '__main__':
         flux[satellite] = {}
         epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
         for i_K, K_value in enumerate(K_set):
-            flux[satellite][K_value] = flux_energyofmualpha[satellite][K_value].values * 4*np.pi * scale_factor[satellite][K_value].values
+            flux[satellite][K_value] = flux_energyofmualpha[satellite][K_value].values * 2*2*np.pi * scale_factor[satellite][K_value].values
             flux[satellite][K_value] = pd.DataFrame(flux[satellite][K_value], index = epoch_str, columns=Mu_set)
 
 ### Calculate PSD ###
@@ -241,8 +238,6 @@ if __name__ == '__main__':
     for satellite, sat_data in storm_data.items():
         print(f"Calculating PSD for satellite {satellite}", end='\r')
         psd[satellite] = find_psd(flux[satellite], energyofmualpha[satellite])
-
-    mode = 'load'
 
 ### Calculate Lstar ###
     complete_filename = f"storm_data_{extMag}.npz"
@@ -282,7 +277,7 @@ if __name__ == '__main__':
 
 #%% Plot GPS Flux
 if plot_flux==True:
-    energy = 3.4 # MeV
+    energy = 2.1 # MeV
     energy_channels = storm_data[list(storm_data.keys())[0]]['Energy_Channels']
     i_energy = np.argmin(np.abs(energy_channels - energy))
 
@@ -290,8 +285,8 @@ if plot_flux==True:
     i_K = np.where(K_set == k)[0]
 
     # Logarithmic colorbar setup
-    min_val = np.nanmin(np.log10(1e1))
-    max_val = np.nanmax(np.log10(1e5))
+    min_val = np.nanmin(np.log10(1e2))
+    max_val = np.nanmax(np.log10(1e6))
 
     if extMag == 'T89c':
         extMag_label = 'T89'
@@ -308,7 +303,7 @@ if plot_flux==True:
         scatter_A = ax.scatter(sat_data['Epoch'].UTC[flux_mask], sat_data[f'L_LGM_{extMag_label}IGRF'][flux_mask],
                             c=np.log10(flux_plot[flux_mask]), vmin=min_val, vmax=max_val)
 
-    ax.set_title(f"GPS CXD, {energy} $MeV$ Electron Differential Flux", fontsize=textsize + 2)
+    ax.set_title(f"GPS CXD, {energy} MeV Electron Differential Flux", fontsize=textsize + 2)
     ax.set_ylabel(r"McIlwain L", fontsize=textsize)
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
     ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
@@ -316,9 +311,9 @@ if plot_flux==True:
     min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
     max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
     ax.set_xlim(min_epoch, max_epoch)
-    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
+    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=24))
     ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-    ax.set_ylim(3, 5.5)
+    ax.set_ylim(3, 6)
     ax.grid(True)
 
     cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
@@ -330,7 +325,7 @@ if plot_flux==True:
 
     plt.show()
 
-# %% Plot Processes Flux for REPT and GPS at K and Mu
+# %% Plot Processed Flux for REPT and GPS at K and Mu
 if plot_processes_flux==True:
     k=0.1
     i_K = np.where(K_set == k)[0]
@@ -507,18 +502,18 @@ if plot_psd==True:
 if plot_combined_psd==True:
     k = 0.1
     i_K = np.where(K_set == k)[0]
-    mu = 2000
+    mu = 4000
     i_mu = np.where(Mu_set == mu)[0]
 
     time_start  = start_date
     time_stop   = stop_date
 
-    # time_start = dt.datetime(start_date.year, 8, 31, 0, 0, 0)
-    # time_stop = dt.datetime(stop_date.year, 9, 2, 0, 0, 0)
+    time_start = dt.datetime(start_date.year, 5, 14, 0, 0, 0)
+    time_stop = dt.datetime(stop_date.year, 5, 15, 0, 0, 0)
 
     # Logarithmic colorbar setup
     min_val = np.nanmin(np.log10(1e-12))
-    max_val = np.nanmax(np.log10(1e-5))
+    max_val = np.nanmax(np.log10(1e-6))
 
     save_path = os.path.join(f'/home/wzt0020/sat_data_analysis/REPT_data/{storm_name}/', f'rept_data_{extMag}.npz')
     complete_load = np.load(save_path, allow_pickle=True)
@@ -559,9 +554,9 @@ if plot_combined_psd==True:
     #min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
     #max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
     ax.set_xlim(time_start, time_stop)   #ax.set_xlim(min_epoch, max_epoch)
-    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
+    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))
     ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-    ax.set_ylim(3.6, 5.2)
+    ax.set_ylim(3.6, 5.4)
     ax.grid(True)
 
     cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
@@ -637,7 +632,7 @@ if plot_energies==True:
 
 #%% Plot PAD comparison
 if plot_PAD==True: 
-    time_select = dt.datetime(start_date.year, 8, 31, 21, 30, 0)
+    time_select = dt.datetime(start_date.year, 8, 31, 8, 30, 0)
     sat_select = 'rbspa'
     k = 0.1
     i_K = np.where(K_set == k)[0]
@@ -735,7 +730,7 @@ if plot_PAD==True:
     REPT_energyofmualpha_epoch[sat_select] = {}
     REPT_energyofmualpha_epoch[sat_select][k] = pd.DataFrame(REPT_energyofmualpha_val,index=[str(nearest_time_REPT)],columns=[mu])
     Zhao_coeffs_REPT = {}
-    Zhao_coeffs_REPT[sat_select] = find_Zhao_PAD_coeffs(REPT_data_epoch, QD_storm_data, REPT_energyofmualpha_epoch[sat_select], extMag)
+    Zhao_coeffs_REPT[sat_select] = find_Zhao_PAD_coeffs(REPT_data_epoch, QD_storm_data, REPT_energyofmualpha_epoch[sat_select], REPT_alphaofK[sat_select], extMag)
     
     REPT_alpha_val = REPT_alphaofK[sat_select][k].iloc[nearest_it_REPT]
     REPT_alphaofK_epoch = {}
@@ -810,8 +805,8 @@ if plot_PAD==True:
     # ax.legend(fontsize=textsize-4)
 
     # ax.set_xlim(0,180)
-    # #ax.set_ylim(10**np.floor(np.log10(np.nanmin(Model_PAD*Model_PAD_scale))),10**np.ceil(np.log10(np.nanmax(Model_PAD*Model_PAD_scale))))
-    # #plt.yscale('log')
+    # ax.set_ylim(10**np.floor(np.log10(np.nanmin(Model_PAD*Model_PAD_scale))),10**np.ceil(np.log10(np.nanmax(Model_PAD*Model_PAD_scale))))
+    # plt.yscale('log')
     # ax.tick_params(axis='both', labelsize=textsize, pad=10)
     # ax.set_xlabel(r"Local Pitch Angle (degrees)", fontsize=textsize)
     # ax.set_ylabel(r'Directional Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', fontsize=textsize)
@@ -881,7 +876,7 @@ if plot_PAD==True:
 
     ax.set_xlim(0,180)
     #ax.set_ylim(10**np.floor(np.log10(np.nanmin(Model_PAD*Model_PAD_scale))),10**np.ceil(np.log10(np.nanmax(Model_PAD*Model_PAD_scale))))
-    ax.set_ylim(1e3,1e6)
+    ax.set_ylim(1e3,1e4)
     plt.yscale('log')
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
     ax.set_xlabel(r"Equatorial Pitch Angle (degrees)", fontsize=textsize)
@@ -892,346 +887,8 @@ if plot_PAD==True:
     ax.set_title(title_str, fontsize = textsize)
     plt.show()   
 
-#%% Plot Scale Factor Calculated from RBSP and GPS PAD Models
-if plot_processes_flux==True:
-    k=0.1
-    i_K = np.where(K_set == k)[0]
-    mu=2000
-    i_mu = np.where(Mu_set == mu)[0]
-    time_start = dt.datetime(start_date.year, 8, 31, 0, 0, 0) # for sep2019storm
-    time_stop = dt.datetime(stop_date.year, 9, 2, 0, 0, 0) # for sep2019storm
 
-    # Import REPT data
-    save_path = os.path.join(f'/home/wzt0020/sat_data_analysis/REPT_data/{storm_name}/', f'rept_data_{extMag}.npz')
-    complete_load = np.load(save_path, allow_pickle=True)
-    REPT_data = load_data(complete_load)
-    complete_load.close()
-    del complete_load
 
-    # Import scale factor data
-    PAD_scale_save_path = os.path.join(f'/home/wzt0020/sat_data_analysis/REPT_data/{storm_name}/', f"REPT_PAD_scale_{extMag}.npz")
-    PAD_scale_load = np.load(PAD_scale_save_path, allow_pickle=True)
-    REPT_PAD_scale = load_data(PAD_scale_load)
-    PAD_scale_load.close()
-    del PAD_scale_load
-
-    min_val = 0
-    max_val = 0.25
-
-    fig, ax = plt.subplots(figsize=(16, 4))
-    for satellite, sat_data in REPT_data.items():
-        sat_iepoch_mask = (sat_data['Epoch'].UTC >= time_start) & (sat_data['Epoch'].UTC <= time_stop)
-        scale_mask = (REPT_Model_scale[satellite] > 0) & (REPT_Model_scale[satellite] != np.nan)
-        lstar_mask = sat_data['Lstar'][:,0]>3
-        combined_mask = sat_iepoch_mask & scale_mask & lstar_mask
-        scatter_A = ax.scatter(sat_data['Epoch'].UTC[combined_mask], sat_data['Lstar'][combined_mask,i_K],
-                            c=REPT_PAD_scale[satellite][k][mu].values[combined_mask], marker='o', s=50, zorder=2,
-                            vmin=min_val, vmax=max_val)
-
-    for satellite, sat_data in storm_data.items():
-        sat_iepoch_mask = (sat_data['Epoch'].UTC >= time_start) & (sat_data['Epoch'].UTC <= time_stop)
-        scale_mask = (flux[satellite][k][mu].values > 0) & (flux[satellite][k][mu].values != np.nan)
-        lstar_mask = sat_data['Lstar'][:,0]>0
-        combined_mask = sat_iepoch_mask & scale_mask & lstar_mask
-        scatter_B = ax.scatter(sat_data['Epoch'].UTC[combined_mask], sat_data['Lstar'][combined_mask,i_K],
-                            c=scale_factor[satellite][k][mu].values[combined_mask], marker='*', s=80, alpha=0.7, zorder=1,
-                            vmin=min_val, vmax=max_val)
-
-    ax.set_xlabel('Time (UTC)', fontsize=textsize)
-    ax.set_ylabel('L*', fontsize=textsize)
-    ax.tick_params(axis='both', labelsize=textsize, pad=10)
-    ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(0.4))
-    ax.set_xlim(time_start, time_stop)
-    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
-    ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-    ax.set_ylim(3.6, 5.2)
-
-    cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01)
-    cbar.set_label(label = r'Scale Factor', fontsize=textsize)
-    cbar.ax.tick_params(labelsize=textsize)
-
-    plt.title(f'Scale Factor Comparison at K={k:.1f} G$^{{1/2}}R_E$, $\mu$={mu} MeV/G', fontsize=textsize)
-
-    handle_rbsp = mlines.Line2D([], [], color='gray', marker='o', linestyle='None',
-                                markersize=10, label='RBSP') # Use a generic color/marker for circles
-    handle_gps = mlines.Line2D([], [], color='gray', marker='*', linestyle='None',
-                                markersize=12, label='GPS') # Use a generic color/marker for stars
-    # Create the first legend (for RBSP-B and GPS)
-    legend1 = ax.legend(handles=[handle_rbsp, handle_gps],
-                    title = 'Satellite',
-                    title_fontsize = textsize-2,
-                    loc='upper right',
-                    bbox_to_anchor=(1.2, 1.1),
-                    handlelength=1,
-                    fontsize=textsize-4)
-
-    ax.grid(True)
-    plt.show()
-
-#%% Find the Ratio in scale factors between RBSP and GPS
-find_scale_ratio=True
-if find_scale_ratio==True:
-    k=0.1
-    i_K = np.where(K_set == k)[0]
-    mu=2000
-    i_mu = np.where(Mu_set == mu)[0]
-
-    scale_ratio = {}
-    for satellite, sat_data in storm_data.items():
-        scale_ratio[satellite] = []
-        for i_time in range(len(sat_data['Epoch'].UTC)):
-            gps_scale_factor = scale_factor[satellite][k][mu].values[i_time]
-            # Find nearest RBSP scale factor
-            nearest_rbsp_scale_factor = np.nan
-            for rbsp_sat in ['rbspa']:
-                rbsp_times = REPT_data[rbsp_sat]['Epoch'].UTC
-                time_diffs = np.abs(rbsp_times - sat_data['Epoch'].UTC[i_time])
-                nearest_index = np.argmin(time_diffs)
-                min_time_diff = time_diffs[nearest_index]
-                nearest_rbsp_scale_factor = REPT_PAD_scale[rbsp_sat][k][mu].values[nearest_index]
-            if nearest_rbsp_scale_factor > 0 and gps_scale_factor > 0:
-                ratio = nearest_rbsp_scale_factor / gps_scale_factor
-            else:
-                ratio = np.nan
-            scale_ratio[satellite].append(ratio)
-        scale_ratio[satellite] = np.array(scale_ratio[satellite])
-
-    # Plot Scale Factor Ratio Results 
-    fig, ax = plt.subplots(figsize=(16, 4))
-    for satellite, sat_data in storm_data.items():
-        sat_iepoch_mask = (sat_data['Epoch'].UTC >= start_date) & (sat_data['Epoch'].UTC <= stop_date)
-        ratio_mask = (scale_ratio[satellite] > 0) & (scale_ratio[satellite] != np.nan)
-        lstar_mask = sat_data['Lstar'][:,0]>0
-        combined_mask = sat_iepoch_mask & ratio_mask & lstar_mask
-        scatter_A = ax.scatter(sat_data['Epoch'].UTC[combined_mask], sat_data['Lstar'][combined_mask,i_K],
-                            c=scale_ratio[satellite][combined_mask], marker='*', s=80, alpha=0.7, zorder=1,
-                            vmin=0.2, vmax=1.2)
-    ax.set_xlabel('Time (UTC)', fontsize=textsize)
-    ax.set_ylabel('L*', fontsize=textsize)
-    ax.tick_params(axis='both', labelsize=textsize, pad=10)
-    ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(0.4))
-    ax.set_xlim(start_date, stop_date)
-    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
-    ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-    ax.set_ylim(3.6, 5.2)
-    cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01)
-    cbar.set_label(label = r'Scale Factor Ratio (RBSP/GPS)', fontsize=textsize)
-    cbar.ax.tick_params(labelsize=textsize)
-    plt.title(f'Scale Factor Ratio at K={k:.1f} G$^{{1/2}}R_E$, $\mu$={mu} MeV/G', fontsize=textsize)
-    ax.grid(True)
-    plt.show()
-
-    # Plot Scale Factor Ratio Histogram
-    fig, ax = plt.subplots(figsize=(10, 6))
-    for satellite, sat_data in storm_data.items():
-        sat_iepoch_mask = (sat_data['Epoch'].UTC >= start_date) & (sat_data['Epoch'].UTC <= stop_date)
-        ratio_mask = (scale_ratio[satellite] > 0) & (scale_ratio[satellite] != np.nan)
-        lstar_mask = sat_data['Lstar'][:,0]>0
-        combined_mask = sat_iepoch_mask & ratio_mask & lstar_mask
-        ax.hist(scale_ratio[satellite][combined_mask], bins=30, alpha=0.5, label=satellite)
-    ax.set_xlabel('Scale Factor Ratio (RBSP/GPS)', fontsize=textsize)
-    ax.set_ylabel('Counts', fontsize=textsize)
-    ax.tick_params(axis='both', labelsize=textsize, pad=10)
-    plt.title(f'Scale Factor Ratio Distribution at K={k:.1f} G$ ^{{1/2}}R_E$, $\mu$={mu} MeV/G', fontsize=textsize)
-    ax.grid(True)
-    plt.show()
-
-    # Plot Scale Factor Ratio Boxplot
-    fig, ax = plt.subplots(figsize=(24, 6))
-    for satellite, sat_data in storm_data.items():
-        sat_iepoch_mask = (sat_data['Epoch'].UTC >= start_date) & (sat_data['Epoch'].UTC <= stop_date)
-        ratio_mask = (scale_ratio[satellite] > 0) & (scale_ratio[satellite] != np.nan)
-        lstar_mask = sat_data['Lstar'][:,0]>0
-        combined_mask = sat_iepoch_mask & ratio_mask & lstar_mask
-        ax.boxplot(scale_ratio[satellite][combined_mask], positions=[list(storm_data.keys()).index(satellite)], widths=0.6)
-    ax.set_xticks(range(len(storm_data.keys())))
-    ax.set_xticklabels(list(storm_data.keys()), fontsize=textsize)
-    ax.set_ylabel('Scale Factor Ratio (RBSP/GPS)', fontsize=textsize)
-    ax.tick_params(axis='both', labelsize=textsize, pad=10)
-    plt.title(f'Scale Factor Ratio Distribution at K={k:.1f} G$ ^{{1/2}}R_E$, $\mu$={mu} MeV/G', fontsize=textsize)
-    ax.grid(True)
-    plt.show()  
-
-    fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(20, 12))
-    axs = axes.flatten()
-
-    def get_masks(sat_data, sat_name):
-        sat_iepoch_mask = (sat_data['Epoch'].UTC >= start_date) & (sat_data['Epoch'].UTC <= stop_date)
-        ratio_vals = scale_ratio[sat_name]
-        ratio_mask = (ratio_vals > 0) & (~np.isnan(ratio_vals))
-        return sat_iepoch_mask & ratio_mask
-
-    ax = axs[0]
-    for satellite, sat_data in storm_data.items():
-        base_mask = get_masks(sat_data, satellite)
-        lstar_mask = sat_data['Lstar'][:,0] > 0
-        combined_mask = base_mask & lstar_mask
-        ax.plot(sat_data['Epoch'].UTC[combined_mask], scale_ratio[satellite][combined_mask], marker='.', linestyle='none', label=satellite)
-    ax.set_xlabel('Time (UTC)', fontsize=textsize)
-    ax.set_ylabel('Scale Factor Ratio', fontsize=textsize)
-    ax.set_xlim(start_date, stop_date)
-    ax.xaxis.set_major_locator(mdates.HourLocator(interval=12))
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H'))
-    ax.grid(True)
-
-    ax = axs[1]
-    for satellite, sat_data in storm_data.items():
-        base_mask = get_masks(sat_data, satellite)
-        data_mask = sat_data['L_LGM_TS04IGRF'] > 0
-        combined_mask = base_mask & data_mask
-        ax.scatter(sat_data['L_LGM_TS04IGRF'][combined_mask], scale_ratio[satellite][combined_mask], marker='.', label=satellite)
-    ax.set_xlabel('McIlwain L', fontsize=textsize)
-    ax.set_xlim(4,6)
-    ax.grid(True)
-
-    ax = axs[2]
-    for satellite, sat_data in storm_data.items():
-        base_mask = get_masks(sat_data, satellite)
-        combined_mask = base_mask
-        ax.scatter(sat_data['MLT'][combined_mask], scale_ratio[satellite][combined_mask], marker='.', label=satellite)
-    ax.set_xlabel('MLT (hours)', fontsize=textsize)
-    ax.grid(True)
-
-    ax = axs[3]
-    for satellite, sat_data in storm_data.items(): 
-        base_mask = get_masks(sat_data, satellite)
-        combined_mask = base_mask
-        ax.scatter(sat_data['b_satellite'][combined_mask], scale_ratio[satellite][combined_mask], marker='.', label=satellite)
-    ax.set_xlabel('B_satellite (G)', fontsize=textsize)
-    ax.set_ylabel('Scale Factor Ratio', fontsize=textsize)
-    ax.set_xlim(0.0025,0.0065)
-    ax.grid(True)
-
-    ax = axs[4]
-    for satellite, sat_data in storm_data.items(): 
-        base_mask = get_masks(sat_data, satellite)
-        combined_mask = base_mask
-        ax.scatter(sat_data['b_equator'][combined_mask], scale_ratio[satellite][combined_mask], marker='.', label=satellite)
-    ax.set_xlabel('B_equator (G)', fontsize=textsize)
-    ax.set_xlim(0,0.0045)
-    ax.grid(True)
-
-    ax = axs[5]
-    for satellite, sat_data in storm_data.items():
-        base_mask = get_masks(sat_data, satellite)
-        combined_mask = base_mask
-        b_ratio = sat_data['b_satellite'][combined_mask] / sat_data['b_equator'][combined_mask]
-        ax.scatter(b_ratio, scale_ratio[satellite][combined_mask], marker='.', label=satellite)
-    ax.set_xlabel('B_sat / B_eq', fontsize=textsize)
-    ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
-    ax.grid(True)
-
-    ax = axs[6]
-    for satellite, sat_data in storm_data.items():
-        base_mask = get_masks(sat_data, satellite)
-        combined_mask = base_mask
-        ax.scatter(sat_data['local90PA'][combined_mask], scale_ratio[satellite][combined_mask], marker='.', label=satellite)
-    ax.set_xlabel('Local 90 PA (deg)', fontsize=textsize)
-    ax.set_ylabel('Scale Factor Ratio', fontsize=textsize)
-    ax.grid(True)
-
-    ax = axs[7]
-    mag_latitude = {}
-    for satellite, sat_data in storm_data.items():
-        sat_iepoch_mask = (sat_data['Epoch'].UTC >= start_date) & (sat_data['Epoch'].UTC <= stop_date)
-        ratio_mask = (scale_ratio[satellite] > 0) & (scale_ratio[satellite] != np.nan)
-        combined_mask = sat_iepoch_mask & ratio_mask
-        R = np.zeros((len(sat_data['Epoch'].UTC),))
-        for i_epoch in range(len(sat_data['Epoch'].UTC)):
-            R[i_epoch] = np.sqrt(np.sum(sat_data['Position'].data[i_epoch]**2))
-        mag_latitude[satellite] = np.rad2deg(np.arccos(np.sqrt(R/sat_data['L_LGM_TS04IGRF'])))
-        ax.scatter(mag_latitude[satellite][combined_mask], scale_ratio[satellite][combined_mask], marker='.', label=satellite) 
-    ax.set_xlabel('Magnetic Latitude (Degrees)', fontsize=textsize)
-    ax.set_xlim(0,40)
-    ax.grid(True)
-
-    for i in range(8, 9):
-        axs[i].axis('off')
-        
-    for i in range(8):
-        axs[i].set_ylim(0, 2)
-
-    # handles, labels = axs[6].get_legend_handles_labels()
-    # fig.legend(handles, labels, loc='upper right', fontsize=textsize)
-
-    plt.suptitle(f'Scale Factor Analysis from {start_date.strftime('%Y-%m-%d')} to {stop_date.strftime('%Y-%m-%d')}\nK={k:.1f} $G^{{1/2}}R_E$, $\mu$={mu} MeV/G', fontsize=textsize+4, y=0.95)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.show()
-
-    mag_lat_data = []
-    scale_ratio_data = []
-    for satellite, sat_data in storm_data.items():
-        sat_iepoch_mask = (sat_data['Epoch'].UTC >= start_date) & (sat_data['Epoch'].UTC <= stop_date)
-        ratio_mask = (scale_ratio[satellite] > 0) & (scale_ratio[satellite] != np.nan)
-        mag_lat_mask = mag_latitude[satellite] < 90
-        combined_mask = sat_iepoch_mask & ratio_mask & mag_lat_mask
-
-        mag_lat_data.append(mag_latitude[satellite][combined_mask])
-        scale_ratio_data.append(scale_ratio[satellite][combined_mask])
-    
-    mag_lat_data = np.concatenate(mag_lat_data)
-    scale_ratio_data = np.concatenate(scale_ratio_data)
-
-    slope, intercept = np.polyfit(mag_lat_data, scale_ratio_data, deg=1)
-    linear_func = np.poly1d((slope, intercept))
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.scatter(mag_lat_data, scale_ratio_data, label='Data', alpha=0.5)
-    x_vals = np.linspace(0, 40, 100)
-    y_vals = linear_func(x_vals)
-    ax.plot(x_vals, y_vals, color='red', label='Linear Fit')
-    ax.set_xlabel('Magnetic Latitude (Degrees)', fontsize=textsize)
-    ax.set_ylabel('Scale Factor Ratio (RBSP/GPS)', fontsize=textsize)
-    ax.set_title(f'Linear Fit of Scale Factor Ratio vs Magnetic Latitude', fontsize=textsize)
-    ax.legend()
-    ax.grid(True)
-    plt.show()
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.scatter(mag_lat_data, scale_ratio_data/linear_func(mag_lat_data), label='Data', alpha=0.5)
-    ax.set_xlabel('Magnetic Latitude (Degrees)', fontsize=textsize)
-    ax.set_ylabel('Scale Factor Ratio (RBSP/GPS)', fontsize=textsize)
-    ax.set_title(f'Linear Fit of Scale Factor Ratio vs Magnetic Latitude', fontsize=textsize)
-    ax.legend()
-    ax.grid(True)
-    plt.show()
-
-    b_sat_data = []
-    scale_ratio_data = []
-    for satellite, sat_data in storm_data.items():
-        sat_iepoch_mask = (sat_data['Epoch'].UTC >= start_date) & (sat_data['Epoch'].UTC <= stop_date)
-        ratio_mask = (scale_ratio[satellite] > 0) & (scale_ratio[satellite] != np.nan)
-        combined_mask = sat_iepoch_mask & ratio_mask
-
-        b_sat_data.append(sat_data['b_satellite'][combined_mask])
-        scale_ratio_data.append(scale_ratio[satellite][combined_mask])
-    
-    b_sat_data = np.concatenate(b_sat_data)
-    scale_ratio_data = np.concatenate(scale_ratio_data)
-
-    slope, intercept = np.polyfit(b_sat_data, scale_ratio_data, deg=1)
-    linear_func = np.poly1d((slope, intercept))
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.scatter(b_sat_data, scale_ratio_data, label='Data', alpha=0.5)
-    x_vals = np.linspace(0, 0.0065, 100)
-    y_vals = linear_func(x_vals)
-    ax.plot(x_vals, y_vals, color='red', label='Linear Fit')
-    ax.set_xlabel('B_satellite (G)', fontsize=textsize)
-    ax.set_ylabel('Scale Factor Ratio (RBSP/GPS)', fontsize=textsize)
-    ax.set_title(f'Linear Fit of Scale Factor Ratio vs B_satellite', fontsize=textsize)
-    ax.legend()
-    ax.grid(True)
-    plt.show()
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.scatter(b_sat_data, scale_ratio_data/linear_func(b_sat_data), label='Data', alpha=0.5)
-    ax.set_xlabel('B_satellite (G)', fontsize=textsize)
-    ax.set_ylabel('Scale Factor Ratio (RBSP/GPS)', fontsize=textsize)
-    ax.set_title(f'Linear Fit of Scale Factor Ratio vs B_satellite', fontsize=textsize)
-    ax.legend()
-    ax.grid(True)
-    plt.show()
 
 #%% Plot PSD Radial Profile with REPT data
 if plot_radial==True:
@@ -1241,12 +898,12 @@ if plot_radial==True:
     mu = 2000
     i_mu = np.where(Mu_set == mu)[0]
     gps_scale = 1 # default = 1
-    MLT_range = 12 # hours, default = 3 which corresponds to +-1.5 hours
+    MLT_range = 3 # hours, default = 3 which corresponds to +-1.5 hours
     lstar_delta = 0.1 # default = 0.1
     time_delta = 30 # minutes, default = 30
 
-    min_val = np.nanmin(1e-9)
-    max_val = np.nanmax(1e-5)
+    min_val = np.nanmin(1e-12)
+    max_val = np.nanmax(1e-7)
 
     REPT_data_root = '/home/wzt0020/sat_data_analysis/REPT_data/'
     save_path = os.path.join(REPT_data_root, storm_name, f'rept_data_{extMag}.npz')
@@ -1258,11 +915,11 @@ if plot_radial==True:
     time_start  = start_date
     time_stop   = stop_date
 
-    # time_start = dt.datetime(start_date.year, 10, 8, 12, 0, 0)
-    # time_stop = dt.datetime(stop_date.year, 10, 9, 12, 0, 0)
+    time_start = dt.datetime(start_date.year, 5, 14, 0, 0, 0)
+    time_stop = dt.datetime(stop_date.year, 5, 15, 0, 0, 0)
 
-    time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
-    time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0) # for sep2019storm
+    # time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
+    # time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0) # for sep2019storm
 
     # time_start = dt.datetime(start_date.year, 8, 26, 0, 0, 0) # for aug2018storm
     # time_stop = dt.datetime(stop_date.year, 8, 27, 0, 0, 0) # for aug2018storm
@@ -1270,8 +927,11 @@ if plot_radial==True:
     gps_time_start  = time_start
     gps_time_stop   = time_stop
 
-    gps_time_start = dt.datetime(start_date.year, 8, 31, 14, 0, 0) # for sep2019storm
-    gps_time_stop = dt.datetime(stop_date.year, 8, 31, 14, 0, 0) # for sep2019storm
+    gps_time_start = dt.datetime(start_date.year, 5, 14, 0, 0, 0)
+    gps_time_stop = dt.datetime(stop_date.year, 5, 15, 0, 0, 0)
+
+    # gps_time_start = dt.datetime(start_date.year, 8, 31, 14, 0, 0) # for sep2019storm
+    # gps_time_stop = dt.datetime(stop_date.year, 8, 31, 14, 0, 0) # for sep2019storm
 
     # gps_time_start = dt.datetime(start_date.year, 8, 26, 6, 40, 0) # for aug2018storm
     # gps_time_stop = dt.datetime(stop_date.year, 8, 26, 13, 0, 0) # for aug2018storm
@@ -1303,7 +963,7 @@ if plot_radial==True:
             sat_name_array[valid_mask],
             sat_Lstar[valid_mask],
             sat_MLT[valid_mask],
-            sat_PSD[valid_mask]/linear_func(sat_data['b_satellite'][sat_iepoch_mask][valid_mask])
+            sat_PSD[valid_mask]
         )).T # Transpose to make it an N x 5 matrix (N rows, 5 columns)
 
         temp_data.append(combined_satellite_data)
@@ -1349,7 +1009,7 @@ if plot_radial==True:
         for i_lstar, lstar_val in enumerate(lstar_intervals):
             lstar_mask = (GPS_plot_data[:,2] >= (lstar_val - lstar_delta/2)) & (GPS_plot_data[:,2] < (lstar_val + lstar_delta/2))
             combined_mask = time_mask_GPS & lstar_mask & MLT_mask
-            if np.sum(combined_mask) > 1:
+            if np.sum(combined_mask) > 0:
                 plotted_GPS_data[i_time, i_lstar] = GPS_plot_data[combined_mask]
                 psd_data = GPS_plot_data[:,4][combined_mask].astype(float)
                 # Filter out NaNs and then append to the collection list
@@ -1399,7 +1059,7 @@ if plot_radial==True:
 
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
 
-    ax.set_xlim(3.8, 5.2) # ax.set_xlim(3.8, 5.2)
+    ax.set_xlim(3.4, 5.0) # ax.set_xlim(3.8, 5.2)
     ax.set_xlabel(r"L*", fontsize=textsize)
     ax.set_ylim(min_val, max_val)
     ax.set_ylabel(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize)

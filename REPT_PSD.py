@@ -31,13 +31,13 @@ Re = 6378.137 #Earth's Radius
 Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
 K_set = np.array((0.1,1,2)) # R_E*G^(1/2)
 mode = 'load' # 'save' or 'load'
-storm_name = 'sep2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'may2019storm', 'sep2019storm'
+storm_name = 'may2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'may2019storm', 'sep2019storm'
 plot_flux = True
-plot_energies = True
+plot_energies = False
 plot_psd = True
-plot_radial = True
-plot_radial_Lstar = True
-PAD_calculate = True
+plot_radial = False
+plot_radial_Lstar = False
+PAD_calculate = False
 
 REPT_data_root = '/home/wzt0020/sat_data_analysis/REPT_data/'
 input_folder = os.path.join(REPT_data_root, storm_name)
@@ -284,7 +284,7 @@ if __name__ == '__main__':
 
 #%% Plot Flux
 if plot_flux==True:
-    energy = 2 # MeV
+    energy = 1.8 # MeV
     energy_channels = REPT_data['rbspa']['Energy_Channels']
     i_energy = np.argmin(np.abs(energy_channels - energy))
     energy = energy_channels[i_energy] # use exact energy from REPT channels
@@ -316,7 +316,7 @@ if plot_flux==True:
     min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
     max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
     ax.set_xlim(min_epoch, max_epoch)
-    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
+    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=24))
     ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
     ax.set_ylim(3, 6)
     ax.grid(True)
@@ -392,7 +392,7 @@ if plot_psd==True:
 
     # Logarithmic colorbar setup
     min_val = np.nanmin(np.log10(1e-12))
-    max_val = np.nanmax(np.log10(1e-4))
+    max_val = np.nanmax(np.log10(1e-5))
 
     for satellite, sat_data in REPT_data.items():
         psd_plot = REPT_data[satellite]['PSD'][k].values[:,i_mu].copy().flatten()
@@ -435,7 +435,7 @@ if plot_radial==True:
     sat_data = REPT_data[sat_select]
     k = 0.1
     i_K = np.where(K_set == k)[0]
-    mu = 8000
+    mu = 2000
     i_mu = np.where(Mu_set == mu)[0]
 
     min_val = np.nanmin(1e-13)
