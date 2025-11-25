@@ -840,42 +840,30 @@ if plot_PAD==True:
                     GPS_model_scale_epoch = flux[satellite][k][mu].values[i_time]
                     GPS_model_scale[satellite].append(GPS_model_scale_epoch)
                     model_scale_ratio[satellite].append(Model_PAD_scale/GPS_model_scale_epoch)
-                    #GPS_PAD_plot = ax.plot(Model_GPS_PA[satellite][i],GPS_PAD[i]*GPS_model_scale_epoch,label=satellite,zorder=1,alpha=0.7,linewidth='3',linestyle='dotted')
-                    
+                    GPS_PAD_plot = ax.plot(Model_GPS_PA[satellite][i],GPS_PAD[i]*GPS_model_scale_epoch,label=satellite,zorder=1,alpha=0.7,linewidth='3',linestyle='dotted')
+                    current_color = GPS_PAD_plot[0].get_color()
+
                     GPS_loss_cone_temp = storm_data[satellite]['loss_cone'][i_time]
                     GPS_loss_cone[satellite].append(GPS_loss_cone_temp)
-                    local_loss_cone = np.rad2deg(np.arcsin(np.sqrt(np.sin(np.deg2rad(GPS_loss_cone_temp))**2 * (storm_data[satellite]['b_satellite'][i_time] / storm_data[satellite]['b_min'][i_time]))))
 
                     GPS_local90_temp = storm_data[satellite]['local90PA'][i_time]
                     GPS_local90[satellite].append(GPS_local90_temp)
                 
-
-                    low_mask = Model_GPS_PA[satellite][i] <= GPS_local90_temp
-                    low_eq_pa = Model_GPS_PA[satellite][i][low_mask]
-                    local_pa_rad = np.arcsin(np.sqrt(np.sin(np.deg2rad(low_eq_pa))**2 * (storm_data[satellite]['b_satellite'][i_time] / storm_data[satellite]['b_min'][i_time])))
-                    local_pa_deg = np.rad2deg(local_pa_rad)
-                    GPS_PA_local_plot = np.concatenate((local_pa_deg, 180 - local_pa_deg))
-                    low_flux = GPS_PAD[i][low_mask]
-                    GPS_PAD_Model_plot = np.concatenate((low_flux, low_flux))
-                    sort_idxs = np.argsort(GPS_PA_local_plot)
-                    GPS_PA_local_plot = GPS_PA_local_plot[sort_idxs]
-                    GPS_PAD_Model_plot = GPS_PAD_Model_plot[sort_idxs]
-                    nan_mask = ~np.isnan(GPS_PA_local_plot)
-                    GPS_PA_local_plot = GPS_PA_local_plot[nan_mask]
-                    GPS_PAD_Model_plot = GPS_PAD_Model_plot[nan_mask]
-                    GPS_PAD_plot = ax.plot(GPS_PA_local_plot,GPS_PAD_Model_plot*GPS_model_scale_epoch,
-                                label=satellite,zorder=1,alpha=0.7,linewidth=3,linestyle='dotted')
-                    GPS_PAD_plot = ax.fill_between(GPS_PA_local_plot,1e-1,GPS_PAD_Model_plot*GPS_model_scale_epoch,
-                                                   where = (GPS_PA_local_plot > local_loss_cone) & (GPS_PA_local_plot < 180-local_loss_cone),
-                                                   label=satellite,zorder=1,alpha=0.7,linewidth=3,linestyle='dotted')
+                    GPS_PAD_plot = ax.fill_between(Model_GPS_PA[satellite][i],1e-1,GPS_PAD[i]*GPS_model_scale_epoch,
+                                                   where = (Model_GPS_PA[satellite][i] > GPS_loss_cone_temp) & (Model_GPS_PA[satellite][i] < GPS_local90_temp),
+                                                   label=satellite,zorder=1,alpha=0.7,linewidth=3,color=current_color)
+                    GPS_PAD_plot = ax.fill_between(Model_GPS_PA[satellite][i],1e-1,GPS_PAD[i]*GPS_model_scale_epoch,
+                                                   where = (Model_GPS_PA[satellite][i] > 180-GPS_local90_temp) & (Model_GPS_PA[satellite][i] < 180-GPS_loss_cone_temp),
+                                                   label=satellite,zorder=1,alpha=0.7,linewidth=3,color=current_color)
 
                     GPS_alpha_temp = alphaofK[satellite][k].iloc[i_time]
                     GPS_alpha[satellite].append(GPS_alpha_temp)
                 
-                    #current_color = GPS_PAD_plot[0].get_color()
-                    GPS_loss_cone_plot = ax.vlines(x=local_loss_cone,ymin=0,ymax=1e8,color=current_color,linestyle='-.')
-                    GPS_loss_cone_plot = ax.vlines(x=180-local_loss_cone,ymin=0,ymax=1e8,color=current_color,linestyle='-.')
-                    #GPS_local90_plot = ax.vlines(x=GPS_local90_temp,ymin=0,ymax=1e8,color=current_color,linestyle='-')
+                    
+                    GPS_loss_cone_plot = ax.vlines(x=GPS_loss_cone_temp,ymin=0,ymax=1e8,color=current_color,linestyle='-.')
+                    GPS_local90_plot = ax.vlines(x=GPS_local90_temp,ymin=0,ymax=1e8,color=current_color,linestyle='-')
+                    GPS_loss_cone_plot = ax.vlines(x=180-GPS_loss_cone_temp,ymin=0,ymax=1e8,color=current_color,linestyle='-.')
+                    GPS_local90_plot = ax.vlines(x=180-GPS_local90_temp,ymin=0,ymax=1e8,color=current_color,linestyle='-')
                     #GPS_alpha_plot = ax.vlines(x=GPS_alpha_temp,ymin=0,ymax=1e8,color=current_color,linestyle='--')
 
 
@@ -885,14 +873,14 @@ if plot_PAD==True:
     LEGEND_GRAY = [0.6, 0.6, 0.6]
     handle_loss_cone = mlines.Line2D([], [], color=LEGEND_GRAY, linestyle='-', 
                                 linewidth=2, label='GPS Loss Cone')
-    # handle_local90 = mlines.Line2D([], [], color=LEGEND_GRAY, linestyle='-', 
-    #                             linewidth=2, label='GPS Local 90')
+    handle_local90 = mlines.Line2D([], [], color=LEGEND_GRAY, linestyle='-', 
+                                linewidth=2, label='GPS Local 90')
     # handle_alpha_k = mlines.Line2D([], [], color=LEGEND_GRAY, linestyle='--', 
     #                             linewidth=2, label=r'PA at K=' + f'{k:.1f}')
 
     existing_handles, existing_labels = ax.get_legend_handles_labels()
-    new_handles = existing_handles + [handle_loss_cone]#, handle_local90, handle_alpha_k]
-    new_labels = existing_labels + [handle_loss_cone.get_label()]#, handle_local90.get_label(), handle_alpha_k.get_label()]
+    new_handles = existing_handles + [handle_loss_cone, handle_local90]#, handle_alpha_k]
+    new_labels = existing_labels + [handle_loss_cone.get_label(), handle_local90.get_label()]#, handle_alpha_k.get_label()]
 
     ax.legend(new_handles, new_labels, fontsize=textsize-4, loc='lower center')
 
@@ -901,7 +889,7 @@ if plot_PAD==True:
     ax.set_ylim(1e2,1e4)
     plt.yscale('log')
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
-    ax.set_xlabel(r"Local Pitch Angle (degrees)", fontsize=textsize)
+    ax.set_xlabel(r"Equatorial Pitch Angle (degrees)", fontsize=textsize)
     ax.set_ylabel(r'Directional Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', fontsize=textsize)
     ax.grid(True)
 
