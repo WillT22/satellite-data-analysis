@@ -222,7 +222,7 @@ if __name__ == '__main__':
     PAD_int = {}
     for satellite, sat_data in storm_data.items():
         print(f"    Calculating Scale Factor for satellite {satellite}", end='\r')
-        scale_factor[satellite], PAD_int[satellite] = PAD_Scale_Factor(sat_data, Zhao_epoch_coeffs[satellite], alphaofK[satellite]) # nans either come from alphaofK or dividing by zero (integral)
+        scale_factor[satellite] = PAD_Scale_Factor(sat_data, Zhao_epoch_coeffs[satellite], alphaofK[satellite]) # nans either come from alphaofK or dividing by zero (integral)
 
 ### Find Flux at Set Pitch Angle and Energy ###
     flux = {}
@@ -323,122 +323,6 @@ if plot_flux==True:
     plt.xticks(fontsize=textsize)
     plt.subplots_adjust(top=0.82, right=0.95)
 
-    plt.show()
-
-# %% Plot Processed Flux for REPT and GPS at K and Mu
-if plot_processes_flux==True:
-    k=0.1
-    i_K = np.where(K_set == k)[0]
-    mu=2000
-    i_mu = np.where(Mu_set == mu)[0]
-    time_start = dt.datetime(start_date.year, 8, 31, 0, 0, 0) # for sep2019storm
-    time_stop = dt.datetime(stop_date.year, 9, 2, 0, 0, 0) # for sep2019storm
-
-    min_val = np.nanmin(np.log10(1e3))
-    max_val = np.nanmax(np.log10(1e7))
-
-    # Import REPT Data
-    save_path = os.path.join(f'/home/wzt0020/sat_data_analysis/REPT_data/{storm_name}/', f'rept_data_{extMag}.npz')
-    complete_load = np.load(save_path, allow_pickle=True)
-    REPT_data = load_data(complete_load)
-    complete_load.close()
-    del complete_load
-
-    # Load in REPT PAD Models
-    REPT_PAD_save_path = os.path.join(f'/home/wzt0020/sat_data_analysis/REPT_data/{storm_name}/', f'REPT_PAD_model_{extMag}.npz')
-    PAD_model_load = np.load(REPT_PAD_save_path, allow_pickle=True)
-    REPT_PAD_Models = load_data(PAD_model_load)
-    PAD_model_load.close()
-    del PAD_model_load
-
-    # Load in REPT alphaofK
-    alphaofK_REPT_save = os.path.join(f'/home/wzt0020/sat_data_analysis/REPT_data/{storm_name}/', f'alphaofK_{extMag}.npz')
-    alphaofK_load = np.load(alphaofK_REPT_save, allow_pickle=True)
-    REPT_alphaofK = load_data(alphaofK_load)
-    for satellite, sat_data in REPT_data.items():
-        epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-        REPT_alphaofK[satellite] = pd.DataFrame(REPT_alphaofK[satellite], index=epoch_str, columns=K_set)
-    alphaofK_load.close()
-    del alphaofK_load
-
-    # Load in REPT energyofmualpha
-    energyofmualpha_REPT_save = os.path.join(f'/home/wzt0020/sat_data_analysis/REPT_data/{storm_name}/', f'energyofmualpha_{extMag}.npz')
-    energyofmualpha_load = np.load(energyofmualpha_REPT_save, allow_pickle=True)
-    REPT_energyofmualpha = load_data(energyofmualpha_load)
-    energyofmualpha_load.close()
-    del energyofmualpha_load
-
-    # Calculate REPT scale
-    REPT_Model_scale = {}
-    for satellite, sat_data in REPT_data.items():
-        REPT_PA_local = REPT_data[satellite]['Pitch_Angles']
-
-        REPT_Model_scale[satellite] = np.zeros(len(sat_data['Epoch'].UTC))
-        for iepoch, epoch in enumerate(sat_data['Epoch'].UTC):
-            energy_at_epoch = REPT_energyofmualpha[satellite][k][mu].iloc[iepoch]
-            nearest_REPT_ienergy = np.argmin(np.abs(REPT_data[satellite]['Energy_Channels'][0:6]-energy_at_epoch))
-            
-            REPT_PA_eq = np.rad2deg(np.asin(np.sqrt(np.sin(np.deg2rad(REPT_PA_local))**2*REPT_data[satellite]['b_min'][iepoch]/REPT_data[satellite]['b_satellite'][iepoch])))
-            REPT_PA_eq = np.unique(np.concatenate((REPT_PA_eq, 180-REPT_PA_eq)))
-            REPT_PA_local90 = REPT_PA_eq[len(REPT_PA_local)-1]
-            REPT_PAD = REPT_data[satellite]['FEDU'][iepoch,:,nearest_REPT_ienergy]
-            REPT_PAD = np.insert(REPT_PAD, len(REPT_PA_local), REPT_PAD[len(REPT_PA_local)-1])
-            
-            Model_PA = REPT_PAD_Models[satellite][k][mu]['pitch_angles'].values[iepoch, :]
-            Model_closest_PA = np.argmin(np.abs(Model_PA-REPT_PA_local90))
-            Model_closest_alpha = np.argmin(np.abs(Model_PA-REPT_alphaofK[satellite][k].iloc[iepoch]))
-            Model_PAD = REPT_PAD_Models[satellite][k][mu]['Model'].values[iepoch, :]
-
-            REPT_Model_scale[satellite][iepoch] = REPT_PAD[len(REPT_PA_local)-1]/Model_PAD[Model_closest_PA]*Model_PAD[Model_closest_alpha]
-
-    fig, ax = plt.subplots(figsize=(16, 4))
-    for satellite, sat_data in REPT_data.items():
-        sat_iepoch_mask = (sat_data['Epoch'].UTC >= time_start) & (sat_data['Epoch'].UTC <= time_stop)
-        scale_mask = (REPT_Model_scale[satellite] > 0) & (REPT_Model_scale[satellite] != np.nan)
-        lstar_mask = sat_data['Lstar'][:,0]>3
-        combined_mask = sat_iepoch_mask & scale_mask & lstar_mask
-        scatter_A = ax.scatter(sat_data['Epoch'].UTC[combined_mask], sat_data['Lstar'][combined_mask,i_K],
-                            c=np.log10(REPT_Model_scale[satellite][combined_mask]), marker='o', s=50, zorder=2,
-                            cmap='viridis', vmin=min_val, vmax=max_val)
-
-    for satellite, sat_data in storm_data.items():
-        sat_iepoch_mask = (sat_data['Epoch'].UTC >= time_start) & (sat_data['Epoch'].UTC <= time_stop)
-        scale_mask = (flux[satellite][k][mu].values > 0) & (flux[satellite][k][mu].values != np.nan)
-        lstar_mask = sat_data['Lstar'][:,0]>0
-        combined_mask = sat_iepoch_mask & scale_mask & lstar_mask
-        scatter_B = ax.scatter(sat_data['Epoch'].UTC[combined_mask], sat_data['Lstar'][combined_mask,i_K],
-                            c=np.log10(flux[satellite][k][mu].values[combined_mask]), marker='*', s=80, alpha=0.7, zorder=1,
-                            cmap='viridis', vmin=min_val, vmax=max_val)
-
-    ax.set_xlabel('Time (UTC)', fontsize=textsize)
-    ax.set_ylabel('L*', fontsize=textsize)
-    ax.tick_params(axis='both', labelsize=textsize, pad=10)
-    ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(0.4))
-    ax.set_xlim(time_start, time_stop)
-    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=12))
-    ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-    ax.set_ylim(3.6, 5.2)
-
-    cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
-    cbar.set_label(label = r'Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', fontsize=textsize)
-    cbar.ax.tick_params(labelsize=textsize)
-
-    plt.title(f'Flux Comparison at K={k:.1f} G$^{{1/2}}R_E$, $\mu$={mu} MeV/G', fontsize=textsize)
-
-    handle_rbsp = mlines.Line2D([], [], color='gray', marker='o', linestyle='None',
-                                markersize=10, label='RBSP') # Use a generic color/marker for circles
-    handle_gps = mlines.Line2D([], [], color='gray', marker='*', linestyle='None',
-                                markersize=12, label='GPS') # Use a generic color/marker for stars
-    # Create the first legend (for RBSP-B and GPS)
-    legend1 = ax.legend(handles=[handle_rbsp, handle_gps],
-                    title = 'Satellite',
-                    title_fontsize = textsize-2,
-                    loc='upper right',
-                    bbox_to_anchor=(1.2, 1.1),
-                    handlelength=1,
-                    fontsize=textsize-4)
-
-    ax.grid(True)
     plt.show()
     
 #%% Plot PSD
@@ -790,97 +674,57 @@ if plot_PAD==True:
     if not Model_GPS_PAD:
         print(f'No GPS satellites found at this time in MLT = {MLT_bin} and L = {L_bin}')
 
-    # # Local Pitch Angle (REPT) Plot
-    # fig, ax = plt.subplots(figsize=(10, 9))
+    fig, ax = plt.subplots(figsize=(10, 9))
 
-    # REPT_Flux_plot = ax.scatter(np.sort(np.concatenate((REPT_PA_local, 180-REPT_PA_local)))[REPT_PAD>0],REPT_PAD[REPT_PAD>0],label=rbsp_label,zorder=3,color='black',marker='+',s=200)
-    # REPT_PA_local_plot = np.rad2deg(np.asin(np.sqrt(np.sin(np.deg2rad(Model_PA[Model_PA<=REPT_PA_local90]))**2*REPT_data[sat_select]['b_satellite'][nearest_it_REPT]/REPT_data[sat_select]['b_min'][nearest_it_REPT])))
-    # REPT_PA_local_plot = np.sort(np.concatenate((REPT_PA_local_plot, 180-REPT_PA_local_plot)))
-    # REPT_PAD_Model_plot = np.concatenate((Model_PAD[Model_PA<=REPT_PA_local90],Model_PAD[Model_PA>=(180-REPT_PA_local90)]))
-    # Model_PAD_scale_local = np.mean((REPT_PAD[len(REPT_PA_local)-1],REPT_PAD[len(REPT_PA_local)]))/REPT_PAD_Model_plot[Model_closest_PA]
-    # REPT_PAD_plot = ax.plot(REPT_PA_local_plot,REPT_PAD_Model_plot*Model_PAD_scale_local,label='RBSP Model',zorder=2,linewidth=4,alpha=0.7,linestyle='solid')
-    
-    # ax.text(0.8, 0.96, r"E = " + f"{nearest_REPT_energy:.1f} " + r"$MeV$", transform=ax.transAxes, fontsize=textsize) #add the text
-
-    # ax.legend(fontsize=textsize-4)
-
-    # ax.set_xlim(0,180)
-    # ax.set_ylim(10**np.floor(np.log10(np.nanmin(Model_PAD*Model_PAD_scale))),10**np.ceil(np.log10(np.nanmax(Model_PAD*Model_PAD_scale))))
-    # plt.yscale('log')
-    # ax.tick_params(axis='both', labelsize=textsize, pad=10)
-    # ax.set_xlabel(r"Local Pitch Angle (degrees)", fontsize=textsize)
-    # ax.set_ylabel(r'Directional Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', fontsize=textsize)
-    # ax.grid(True)
-
-    # title_str = f"Time: {time_select.strftime('%Y-%m-%d %H:%M')}"
-    # ax.set_title(title_str, fontsize = textsize)
-
-
-    fig, ax = plt.subplots(figsize=(9, 9))
-
-    #REPT_Flux_plot = ax.scatter(REPT_PA_eq[REPT_PAD>0],REPT_PAD[REPT_PAD>0],label=rbsp_label,zorder=3,color='black',marker='+',s=200)
-    #REPT_PAD_plot = ax.plot(Model_PA,Model_PAD*Model_PAD_scale,label='RBSP Model',zorder=2,linewidth=4,alpha=0.7,linestyle='solid')
+    REPT_Flux_plot = ax.scatter(REPT_PA_eq[REPT_PAD>0],REPT_PAD[REPT_PAD>0],label=rbsp_label,zorder=3,color='black',marker='+',s=200)
+    REPT_PAD_plot = ax.plot(Model_PA,Model_PAD*Model_PAD_scale,label='RBSP Model',zorder=2,linewidth=4,alpha=0.7,linestyle='solid')
 
     GPS_model_scale = {}
     GPS_local90 = {}
     GPS_loss_cone = {}
     GPS_alpha = {}
     model_scale_ratio = {}
-    plot_first = False
     for satellite, GPS_PAD in Model_GPS_PAD.items():
-        GPS_model_scale[satellite] = []
         GPS_local90[satellite] = []
         GPS_loss_cone[satellite] = []
         GPS_alpha[satellite] = []
-        model_scale_ratio[satellite] = []
         if near_time_GPS_index[satellite]:
             for i, i_time in enumerate(near_time_GPS_index[satellite]):
-                if plot_first == False:
-                    plot_first = True
-                    GPS_model_scale_epoch = flux[satellite][k][mu].values[i_time]
-                    GPS_model_scale[satellite].append(GPS_model_scale_epoch)
-                    model_scale_ratio[satellite].append(Model_PAD_scale/GPS_model_scale_epoch)
-                    GPS_PAD_plot = ax.plot(Model_GPS_PA[satellite][i],GPS_PAD[i]*GPS_model_scale_epoch,label=satellite,zorder=1,alpha=0.7,linewidth='3',linestyle='dotted')
-                    current_color = GPS_PAD_plot[0].get_color()
-
-                    GPS_loss_cone_temp = storm_data[satellite]['loss_cone'][i_time]
-                    GPS_loss_cone[satellite].append(GPS_loss_cone_temp)
-
-                    GPS_local90_temp = storm_data[satellite]['local90PA'][i_time]
-                    GPS_local90[satellite].append(GPS_local90_temp)
+                GPS_model_scale_epoch = flux[satellite][k][mu].values[i_time]
+                GPS_PAD_plot = ax.plot(Model_GPS_PA[satellite][i],GPS_PAD[i]*GPS_model_scale_epoch,label=satellite,zorder=1,alpha=0.7,linewidth='3',linestyle='dotted')
                 
-                    GPS_PAD_plot = ax.fill_between(Model_GPS_PA[satellite][i],1e-1,GPS_PAD[i]*GPS_model_scale_epoch,
-                                                   where = (Model_GPS_PA[satellite][i] > GPS_loss_cone_temp) & (Model_GPS_PA[satellite][i] < GPS_local90_temp),
-                                                   label=satellite,zorder=1,alpha=0.7,linewidth=3,color=current_color)
-                    GPS_PAD_plot = ax.fill_between(Model_GPS_PA[satellite][i],1e-1,GPS_PAD[i]*GPS_model_scale_epoch,
-                                                   where = (Model_GPS_PA[satellite][i] > 180-GPS_local90_temp) & (Model_GPS_PA[satellite][i] < 180-GPS_loss_cone_temp),
-                                                   label=satellite,zorder=1,alpha=0.7,linewidth=3,color=current_color)
+                GPS_loss_cone_temp = storm_data[satellite]['loss_cone'][i_time]
+                GPS_loss_cone[satellite].append(GPS_loss_cone_temp)
 
-                    GPS_alpha_temp = alphaofK[satellite][k].iloc[i_time]
-                    GPS_alpha[satellite].append(GPS_alpha_temp)
-                
-                    
-                    GPS_loss_cone_plot = ax.vlines(x=GPS_loss_cone_temp,ymin=0,ymax=1e8,color=current_color,linestyle='-.')
-                    GPS_local90_plot = ax.vlines(x=GPS_local90_temp,ymin=0,ymax=1e8,color=current_color,linestyle='-')
-                    GPS_loss_cone_plot = ax.vlines(x=180-GPS_loss_cone_temp,ymin=0,ymax=1e8,color=current_color,linestyle='-.')
-                    GPS_local90_plot = ax.vlines(x=180-GPS_local90_temp,ymin=0,ymax=1e8,color=current_color,linestyle='-')
-                    #GPS_alpha_plot = ax.vlines(x=GPS_alpha_temp,ymin=0,ymax=1e8,color=current_color,linestyle='--')
+                GPS_local90_temp = storm_data[satellite]['local90PA'][i_time]
+                GPS_local90[satellite].append(GPS_local90_temp)
+
+                GPS_alpha_temp = alphaofK[satellite][k].iloc[i_time]
+                GPS_alpha[satellite].append(GPS_alpha_temp)
+            
+                current_color = GPS_PAD_plot[0].get_color()
+                GPS_loss_cone_plot = ax.vlines(x=GPS_loss_cone_temp,ymin=0,ymax=1e8,color=current_color,linestyle='-.')
+                GPS_local90_plot = ax.vlines(x=GPS_local90_temp,ymin=0,ymax=1e8,color=current_color,linestyle='-')
+                GPS_alpha_plot = ax.vlines(x=GPS_alpha_temp,ymin=0,ymax=1e8,color=current_color,linestyle='--')
+                GPS_loss_cone_plot = ax.vlines(x=180-GPS_loss_cone_temp,ymin=0,ymax=1e8,color=current_color,linestyle='-.')
+                GPS_local90_plot = ax.vlines(x=180-GPS_local90_temp,ymin=0,ymax=1e8,color=current_color,linestyle='-')
+                GPS_alpha_plot = ax.vlines(x=180-GPS_alpha_temp,ymin=0,ymax=1e8,color=current_color,linestyle='--')
 
 
     # Add K and Mu text to the plot
-    ax.text(0.48, 0.96, r"K = " + f"{k:.1f} " + r"$G^{{1/2}}R_E$, $\mu = $" + f"{mu:.0f}" + r" $MeV/G$", transform=ax.transAxes, fontsize=textsize) #add the text
+    ax.text(0.54, 0.96, r"K = " + f"{k:.1f} " + r"$G^{{1/2}}R_E$, $\mu = $" + f"{mu:.0f}" + r" $MeV/G$", transform=ax.transAxes, fontsize=textsize) #add the text
 
     LEGEND_GRAY = [0.6, 0.6, 0.6]
-    handle_loss_cone = mlines.Line2D([], [], color=LEGEND_GRAY, linestyle='-', 
+    handle_loss_cone = mlines.Line2D([], [], color=LEGEND_GRAY, linestyle='-.', 
                                 linewidth=2, label='GPS Loss Cone')
     handle_local90 = mlines.Line2D([], [], color=LEGEND_GRAY, linestyle='-', 
                                 linewidth=2, label='GPS Local 90')
-    # handle_alpha_k = mlines.Line2D([], [], color=LEGEND_GRAY, linestyle='--', 
-    #                             linewidth=2, label=r'PA at K=' + f'{k:.1f}')
+    handle_alpha_k = mlines.Line2D([], [], color=LEGEND_GRAY, linestyle='--', 
+                                linewidth=2, label=r'PA at K=' + f'{k:.1f}')
 
     existing_handles, existing_labels = ax.get_legend_handles_labels()
-    new_handles = existing_handles + [handle_loss_cone, handle_local90]#, handle_alpha_k]
-    new_labels = existing_labels + [handle_loss_cone.get_label(), handle_local90.get_label()]#, handle_alpha_k.get_label()]
+    new_handles = existing_handles + [handle_loss_cone, handle_local90, handle_alpha_k]
+    new_labels = existing_labels + [handle_loss_cone.get_label(), handle_local90.get_label(), handle_alpha_k.get_label()]
 
     ax.legend(new_handles, new_labels, fontsize=textsize-4, loc='lower center')
 

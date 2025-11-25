@@ -335,7 +335,6 @@ def PAD_Scale_Factor(sat_data, Zhao_epoch_coeffs, alphaofK):
 
     # Inputs for PAD model generation (and logic restriction)
     loss_cone = sat_data['loss_cone']
-    local90 = sat_data['local90PA']
     alphaofK_data = alphaofK.values
     
     for K_val, K_data in Zhao_epoch_coeffs.items():
@@ -376,8 +375,7 @@ def PAD_Scale_Factor(sat_data, Zhao_epoch_coeffs, alphaofK):
             PAD_scale_factor[K_val][valid_mask,i_Mu] = PAD_models[valid_mask,i_Mu]/PAD_integral[valid_mask,i_Mu]
 
         # PAD scale factor is the flux value of the model at desired angle divided by the integral of the model
-        PAD_int_out[K_val] = pd.DataFrame(PAD_int_out[K_val], index=epoch_list, columns=Mu_set) 
         PAD_scale_factor[K_val] = pd.DataFrame(PAD_scale_factor[K_val], index=epoch_list, columns=Mu_set) 
-    return PAD_scale_factor, PAD_int_out
+    return PAD_scale_factor
 
 # %%
