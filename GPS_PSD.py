@@ -27,19 +27,22 @@ from Zhao_2018_PAD_Model import (import_Zhao_coeffs, find_Zhao_PAD_coeffs, creat
 import time
 
 #%% Global Variables
-textsize = 16
+textsize = 22
 Re = 6378.137 #Earth's Radius
 Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
 K_set = np.array((0.1,1,2)) # R_E*G^(1/2)
 mode = 'load' # 'save' or 'load'
-storm_name = 'sep2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'may2019storm', 'sep2019storm'
+storm_name = 'latefeb2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'latefeb2019storm', 'may2019storm', 'sep2019storm'
 plot_flux = False
+plot_flux_all=True
 plot_processes_flux = False
 plot_psd = False
 plot_combined_psd = True
 plot_energies = False
 PAD_calculate = False
-plot_PAD = True
+plot_PAD = False
+if plot_PAD == True:
+    PAD_calculate = True
 plot_radial = True
 
 GPS_data_root = '/home/wzt0020/sat_data_analysis/GPS_data/'
@@ -59,13 +62,17 @@ elif storm_name == 'oct2012storm':
     start_date  = dt.datetime(2012, 10, 7, 00, 00, 0)
     stop_date   = dt.datetime(2012, 10, 11, 00, 00, 0)
 
+elif storm_name == 'latefeb2019storm':
+    start_date  = dt.datetime(2019, 2, 27, 00, 00, 0)
+    stop_date   = dt.datetime(2019, 3, 4, 00, 00, 0)
+
 elif storm_name == 'may2019storm':
     start_date  = dt.datetime(2019, 5, 10, 00, 00, 0)
     stop_date   = dt.datetime(2019, 5, 17, 00, 00, 0)
 
 elif storm_name == 'sep2019storm':
     start_date  = dt.datetime(2019, 8, 31, 00, 00, 0)
-    stop_date   = dt.datetime(2019, 9, 2, 00, 00, 0)
+    stop_date   = dt.datetime(2019, 9, 3, 00, 00, 0)
 
 # Conversions
 # electron mass in MeV is (m_e [kg] * c^2 [m^2/s^2]) [J] / (sc.eV [J/eV] * 10^6 [eV/MeV])
@@ -172,7 +179,10 @@ if __name__ == '__main__':
         print("Data Saved \n")
 
 ### Find Flux at Set Energy ###
-    flux_energyofmualpha = energy_spectra(storm_data, energyofmualpha)
+    flux_energyofmualpha = {}
+    for satellite, sat_data in storm_data.items():
+        print(f"    Calculating Energy Spectra for satellite {satellite}", end='\r')
+        flux_energyofmualpha[satellite] = energy_spectra(sat_data, energyofmualpha[satellite])
 
 ### Find Flux at Set Pitch Angle ####
     #--- Extract Zhao Coefficients at each Epoch ---#
@@ -298,7 +308,6 @@ if plot_flux==True:
         flux_plot = sat_data['electron_diff_flux'][:,i_energy]
         flux_mask = (flux_plot > 0) & (flux_plot != np.nan)
 
-        scale_muindex = np.argmin(np.abs(energyofmualpha[satellite][k].values - energy), axis=1)
         # Plotting, ignoring NaN values in the color
         scatter_A = ax.scatter(sat_data['Epoch'].UTC[flux_mask], sat_data[f'L_LGM_{extMag_label}IGRF'][flux_mask],
                             c=np.log10(flux_plot[flux_mask]), vmin=min_val, vmax=max_val)
@@ -323,6 +332,133 @@ if plot_flux==True:
     plt.xticks(fontsize=textsize)
     plt.subplots_adjust(top=0.82, right=0.95)
 
+    plt.show()
+
+#%% Plot flux from REPT and CXD for all energy channels
+if plot_flux_all==True:
+    save_path = os.path.join(f'/home/wzt0020/sat_data_analysis/REPT_data/{storm_name}/', f'rept_data_{extMag}.npz')
+    complete_load = np.load(save_path, allow_pickle=True)
+    REPT_data = load_data(complete_load)
+    complete_load.close()
+    del complete_load
+    
+    energy_channels = REPT_data[list(REPT_data.keys())[0]]['Energy_Channels']
+    energy_channels = energy_channels[energy_channels<4]
+
+    time_start  = start_date
+    time_stop   = stop_date
+
+    # time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0)
+    # time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0)
+
+    if extMag == 'T89c':
+        extMag_label = 'T89'
+    else:
+        extMag_label = extMag
+
+    fig, axes = plt.subplots(len(energy_channels)+1,1,figsize=(24, 14),sharex=True,sharey=False)
+    colormap_name = 'viridis'
+    cmap = plt.cm.get_cmap(colormap_name)
+    
+    for i_energy, energy in enumerate(energy_channels):
+        ax = axes[i_energy]
+        # Plot REPT
+        for satellite, sat_data in REPT_data.items():
+            sat_iepoch_mask = (sat_data['Epoch'].UTC >= time_start) & (sat_data['Epoch'].UTC <= time_stop)
+            flux_slice = sat_data['FEDU_averaged'][sat_iepoch_mask,:,i_energy]
+            flux_temp_mask = np.where(flux_slice >= 0, flux_slice, np.nan)
+            flux_plot = np.nanmean(flux_temp_mask, axis=1)/2
+            flux_mask = (flux_plot > 0) & (flux_plot != np.nan)
+            combined_mask = np.zeros_like(sat_iepoch_mask, dtype=bool)
+            combined_mask[sat_iepoch_mask] = flux_mask
+            vmax = np.ceil(max(np.log10(flux_plot[flux_mask])))
+            # Plotting, ignoring NaN values in the color
+            scatter_A = ax.scatter(sat_data['Epoch'].UTC[combined_mask], sat_data[f'L_LGM_{extMag_label}IGRF'][combined_mask],
+                                c=np.log10(flux_plot[flux_mask]), cmap=cmap, vmin=0, vmax=vmax, zorder=2)
+
+        # Plot GPS CXD
+        target_K_set = [0.1]
+        for satellite, sat_data in storm_data.items():     
+            energy_input = {}
+            sat_iepoch_mask = (sat_data['Epoch'].UTC >= time_start) & (sat_data['Epoch'].UTC <= time_stop)
+            epoch_index = sat_data['Epoch'].UTC
+            for k in target_K_set:
+                energy_input[k] = {}
+                # Create a SERIES (one column) for this specific energy value
+                energy_input[k][energy] = pd.Series(
+                    data=np.full(len(epoch_index), energy), # Repeated value
+                    index=epoch_index
+                )
+            flux_plot = energy_spectra(sat_data, energy_input)
+            flux_plot = flux_plot[target_K_set[0]][energy]
+            flux_mask = (flux_plot > 0) & (flux_plot != np.nan)
+
+            # Plotting, ignoring NaN values in the color
+            scatter_B = ax.scatter(sat_data['Epoch'].UTC[flux_mask], sat_data[f'L_LGM_{extMag_label}IGRF'][flux_mask],
+                                marker='*', s=80, alpha=0.7,
+                                c=np.log10(flux_plot[flux_mask]), vmin=0, vmax=vmax, zorder=1)
+
+        ax.set_title(f"{energy:.2f} MeV", fontsize=textsize+4)
+        # Force labels for first and last x-axis tick marks 
+        ax.tick_params(axis='both', labelsize=textsize, pad=5)
+        ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+        ax.set_ylim(3, 6.5)
+        ax.grid(True)
+
+        cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
+        if vmax > 5:
+            cbar.locator = matplotlib.ticker.MultipleLocator(2)
+        else:
+            cbar.locator = matplotlib.ticker.MultipleLocator(1)
+        cbar.ax.tick_params(labelsize=textsize)
+
+    # Plot DST
+    ax = axes[-1]
+    iepoch_mask = (QD_storm_data['DateTime'] >= time_start) & (QD_storm_data['DateTime'] <= time_stop)
+    ax.plot(QD_storm_data['DateTime'][iepoch_mask], QD_storm_data['Dst'][iepoch_mask], color='black')
+    ax.tick_params(axis='both', labelsize=textsize, pad=5)
+    ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(20))
+    min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+    max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+    ax.set_xlim(min_epoch, max_epoch)
+    ax.axhline(0, color='gray', linestyle='--', linewidth=0.8, alpha=0)
+    ax.set_ylabel(r'DST (nT)', fontsize=textsize)
+    ax.grid(True)
+
+    cbar_dummy = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01)
+    cbar_dummy.ax.set_visible(False) # Hide the ticks and labels
+    cbar_dummy.outline.set_visible(False) # Hide the box outline
+
+    # Force labels for first and last x-axis tick marks 
+    # Set X-axis limits and labels only for the bottom row
+    if i_energy >= len(energy_channels)-1:
+        ax.set_xlabel('Time (UTC)', fontsize=textsize+2,labelpad=2)
+        ax.set_xlim(time_start, time_stop)
+        ax.xaxis.set_major_locator(mdates.HourLocator(interval=24))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+        ax.tick_params(axis='x', labelsize=textsize+2, pad=12)
+
+    fig.text(0.08, 0.575, r'McIllwain L', 
+         fontsize=textsize+2, rotation='vertical', va='center')
+    fig.text(0.965, 0.575, r'Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', 
+         fontsize=textsize+2, rotation='vertical', va='center')
+
+    handle_rbsp = mlines.Line2D([], [], color='gray', marker='o', linestyle='None',
+                            markersize=10, label='RBSP') # Use a generic color/marker for circles
+    handle_gps = mlines.Line2D([], [], color='gray', marker='*', linestyle='None',
+                            markersize=12, label='GPS') # Use a generic color/marker for stars
+    # Create the first legend (for RBSP-B and GPS)
+    legend1 = fig.legend(handles=[handle_rbsp, handle_gps],
+                    title = 'Satellite',
+                    title_fontsize = textsize,
+                    loc='upper right',
+                    bbox_to_anchor=(0.99, 1.03),
+                    handlelength=1,
+                    fontsize=textsize-2)
+
+    plt.xticks(fontsize=textsize)
+    plt.subplots_adjust(right=0.95, hspace=0.3)
+    fig.suptitle(f'RBSP REPT & GPS CXD Differential Flux {time_start.strftime('%Y-%m-%d %H')} to {time_stop.strftime('%Y-%m-%d %H')}', fontsize=textsize + 10, y=0.98)
     plt.show()
     
 #%% Plot PSD
@@ -386,14 +522,14 @@ if plot_psd==True:
 if plot_combined_psd==True:
     k = 0.1
     i_K = np.where(K_set == k)[0]
-    mu = 4000
+    mu = 2000
     i_mu = np.where(Mu_set == mu)[0]
 
     time_start  = start_date
     time_stop   = stop_date
 
-    time_start = dt.datetime(start_date.year, 5, 14, 0, 0, 0)
-    time_stop = dt.datetime(stop_date.year, 5, 15, 0, 0, 0)
+    # time_start = dt.datetime(start_date.year, 2, 27, 0, 0, 0)
+    # time_stop = dt.datetime(stop_date.year, 3, 4, 0, 0, 0)
 
     # Logarithmic colorbar setup
     min_val = np.nanmin(np.log10(1e-12))
@@ -405,9 +541,14 @@ if plot_combined_psd==True:
     complete_load.close()
     del complete_load
 
-    fig, ax = plt.subplots(figsize=(16, 4))
+    fig, ax = plt.subplots(figsize=(24, 2.5))
+    # colormap_name = 'turbo'
+    # cmap = plt.cm.get_cmap(colormap_name)
 
-    colorscheme = plt.cm.get_cmap('nipy_spectral')(np.linspace(0, 0.9, 256))
+    # cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
+    #     'custom_dark_cool', ['#0099CC', '#CC00CC']
+    #         )
+    colorscheme = plt.cm.get_cmap('turbo')(np.linspace(0, 0.85, 256))
     cmap = colors.ListedColormap(colorscheme)
 
     for satellite, sat_data in REPT_data.items():
@@ -430,7 +571,7 @@ if plot_combined_psd==True:
                             marker='*', s=80, alpha=0.7,
                             c=np.log10(psd_plot[combined_mask]), cmap=cmap, vmin=min_val, vmax=max_val, zorder=1)
 
-    ax.set_title(f"RBSP REPT & GPS CXD, K={k:.1f} $G^{{1/2}}R_E$, $\\mu$={mu:.0f} $MeV/G$", fontsize=textsize + 2)
+    ax.set_title(f"RBSP REPT & GPS CXD Phase Space Density, K={k:.1f} $G^{{1/2}}R_E$, $\\mu$={mu:.0f} $MeV/G$", fontsize=textsize+10, y=1.1)
     ax.set_ylabel(r"L*", fontsize=textsize)
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
     ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(0.4))
@@ -438,15 +579,15 @@ if plot_combined_psd==True:
     #min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
     #max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=math.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
     ax.set_xlim(time_start, time_stop)   #ax.set_xlim(min_epoch, max_epoch)
-    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))
-    ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=24))
+    ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d'))
     ax.set_ylim(3.6, 5.4)
     ax.grid(True)
 
     cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
     tick_locations = np.arange(min_val, max_val + 1)
     cbar.set_ticks(tick_locations)
-    cbar.set_label(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize)
+    cbar.set_label(r"PSD $(c/MeV/cm)^3$", fontsize=textsize)
     cbar.ax.tick_params(labelsize=textsize)
 
     handle_rbsp = mlines.Line2D([], [], color='gray', marker='o', linestyle='None',
@@ -454,16 +595,16 @@ if plot_combined_psd==True:
     handle_gps = mlines.Line2D([], [], color='gray', marker='*', linestyle='None',
                             markersize=12, label='GPS') # Use a generic color/marker for stars
     # Create the first legend (for RBSP-B and GPS)
-    legend1 = ax.legend(handles=[handle_rbsp, handle_gps],
-                    title = 'Satellite',
-                    title_fontsize = textsize-2,
-                    loc='upper right',
-                    bbox_to_anchor=(1.2, 1.1),
-                    handlelength=1,
-                    fontsize=textsize-4)
+    # legend1 = ax.legend(handles=[handle_rbsp, handle_gps],
+    #                 title = 'Satellite',
+    #                 title_fontsize = textsize,
+    #                 loc='upper right',
+    #                 bbox_to_anchor=(1.09, 1.85),
+    #                 handlelength=1,
+    #                 fontsize=textsize-2)
 
     plt.xticks(fontsize=textsize)
-    plt.subplots_adjust(top=0.82, right=0.95)
+    plt.subplots_adjust(top=1, right=0.95)
 
     plt.show()
 
@@ -472,14 +613,11 @@ if plot_combined_psd==True:
 if plot_energies==True:
     k = 0.1
     i_K = np.where(K_set == k)[0]
-    mu = 2000
+    mu = 4000
     i_mu = np.where(Mu_set == mu)[0]
 
     time_start  = start_date
     time_stop   = stop_date
-
-    time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0)
-    time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0)
 
     colormap_name = 'viridis'
     cmap = plt.cm.get_cmap(colormap_name)
@@ -487,7 +625,7 @@ if plot_energies==True:
     vmax = mdates.date2num(time_stop)
     norm = colors.Normalize(vmin=vmin, vmax=vmax)
 
-    fig, ax = plt.subplots(figsize=(10, 9))
+    fig, ax = plt.subplots(figsize=(20, 8))
     for satellite, sat_data in storm_data.items():
         sat_iepoch_mask = (sat_data['Epoch'].UTC >= time_start) & (sat_data['Epoch'].UTC <= time_stop)
         energy_plot = energyofmualpha[satellite][k].values[:,i_mu].copy().flatten()
@@ -497,17 +635,17 @@ if plot_energies==True:
         scatter_plot = ax.scatter(sat_data['Lstar'][combined_mask,i_K], energy_plot[combined_mask], 
                                c=mdates.date2num(sat_data['Epoch'].UTC[combined_mask]), cmap=cmap, vmin=vmin, vmax=vmax)
     
-    cbar = fig.colorbar(scatter_plot, ax=ax, orientation='horizontal', pad=0.11)
+    cbar = fig.colorbar(scatter_plot, ax=ax, orientation='vertical', pad=0.05)
     cbar.set_label('Time (UTC)', fontsize=textsize)
-    cbar.ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-    cbar.ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d\n%H:%M'))
+    cbar.ax.yaxis.set_major_locator(mdates.AutoDateLocator())
+    cbar.ax.yaxis.set_major_formatter(mdates.DateFormatter('%m-%d\n%H:%M'))
     cbar.ax.tick_params(labelsize=textsize-2)
 
     # Add K and Mu text to the plot
     ax.text(0.5, 0.92, r"K = " + f"{k:.1f} " + r"$G^{{1/2}}R_E$, $\mu = $" + f"{mu:.0f}" + r" $MeV/G$", transform=ax.transAxes, fontsize=textsize) #add the text
 
     ax.set_xlim(3.8,5.2)
-    ax.set_ylim(1,3.5)
+    ax.set_ylim(1,5)
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
     ax.set_xlabel(r"L*", fontsize=textsize)
     ax.set_ylabel(r"Energy (MeV)", fontsize=textsize)
@@ -516,12 +654,16 @@ if plot_energies==True:
 
 #%% Plot PAD comparison
 if plot_PAD==True: 
-    time_select = dt.datetime(start_date.year, 8, 31, 8, 30, 0)
-    sat_select = 'rbspa'
+    time_select = dt.datetime(start_date.year, 3, 1, 12, 0, 0)
+    sat_select = 'rbspb'
     k = 0.1
     i_K = np.where(K_set == k)[0]
     mu = 2000
     i_mu = np.where(Mu_set == mu)[0]
+
+    time_window = dt.timedelta(minutes=60)
+    lower_bound = 1e3
+    upper_bound = 1e5
 
     # Find REPT PAD
     if sat_select == 'rbspa':
@@ -627,7 +769,6 @@ if plot_PAD==True:
     Model_PAD = PAD_models_REPT[sat_select][k][mu]['Model'].values[0]
     Model_PAD_scale = REPT_PAD[len(REPT_PA_local)-1]/Model_PAD[Model_closest_PA]
 
-    time_window = dt.timedelta(minutes=30)
     time_lower_bound = time_select - time_window
     time_upper_bound = time_select + time_window
 
@@ -674,7 +815,7 @@ if plot_PAD==True:
     if not Model_GPS_PAD:
         print(f'No GPS satellites found at this time in MLT = {MLT_bin} and L = {L_bin}')
 
-    fig, ax = plt.subplots(figsize=(10, 9))
+    fig, ax = plt.subplots(figsize=(9, 9))
 
     REPT_Flux_plot = ax.scatter(REPT_PA_eq[REPT_PAD>0],REPT_PAD[REPT_PAD>0],label=rbsp_label,zorder=3,color='black',marker='+',s=200)
     REPT_PAD_plot = ax.plot(Model_PA,Model_PAD*Model_PAD_scale,label='RBSP Model',zorder=2,linewidth=4,alpha=0.7,linestyle='solid')
@@ -730,7 +871,7 @@ if plot_PAD==True:
 
     ax.set_xlim(0,180)
     #ax.set_ylim(10**np.floor(np.log10(np.nanmin(Model_PAD*Model_PAD_scale))),10**np.ceil(np.log10(np.nanmax(Model_PAD*Model_PAD_scale))))
-    ax.set_ylim(1e2,1e4)
+    ax.set_ylim(lower_bound,upper_bound)
     plt.yscale('log')
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
     ax.set_xlabel(r"Equatorial Pitch Angle (degrees)", fontsize=textsize)
@@ -741,9 +882,6 @@ if plot_PAD==True:
     ax.set_title(title_str, fontsize = textsize)
     plt.show()   
 
-
-
-
 #%% Plot PSD Radial Profile with REPT data
 if plot_radial==True:
     sat_select = 'rbspa'
@@ -752,11 +890,11 @@ if plot_radial==True:
     mu = 2000
     i_mu = np.where(Mu_set == mu)[0]
     gps_scale = 1 # default = 1
-    MLT_range = 3 # hours, default = 3 which corresponds to +-1.5 hours
+    MLT_range = 12 # hours, default = 3 which corresponds to +-1.5 hours
     lstar_delta = 0.1 # default = 0.1
     time_delta = 30 # minutes, default = 30
 
-    min_val = np.nanmin(1e-12)
+    min_val = np.nanmin(1e-10)
     max_val = np.nanmax(1e-7)
 
     REPT_data_root = '/home/wzt0020/sat_data_analysis/REPT_data/'
@@ -769,11 +907,11 @@ if plot_radial==True:
     time_start  = start_date
     time_stop   = stop_date
 
-    time_start = dt.datetime(start_date.year, 5, 14, 0, 0, 0)
-    time_stop = dt.datetime(stop_date.year, 5, 15, 0, 0, 0)
+    # time_start = dt.datetime(start_date.year, 2, 28, 6, 0, 0)
+    # time_stop = dt.datetime(stop_date.year, 3, 1, 6, 0, 0)
 
-    # time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
-    # time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0) # for sep2019storm
+    time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
+    time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0) # for sep2019storm
 
     # time_start = dt.datetime(start_date.year, 8, 26, 0, 0, 0) # for aug2018storm
     # time_stop = dt.datetime(stop_date.year, 8, 27, 0, 0, 0) # for aug2018storm
@@ -781,19 +919,26 @@ if plot_radial==True:
     gps_time_start  = time_start
     gps_time_stop   = time_stop
 
-    gps_time_start = dt.datetime(start_date.year, 5, 14, 0, 0, 0)
-    gps_time_stop = dt.datetime(stop_date.year, 5, 15, 0, 0, 0)
+    # gps_time_start = dt.datetime(start_date.year, 2, 28, 12, 0, 0)
+    # gps_time_stop = dt.datetime(stop_date.year, 3, 1, 6, 0, 0)
 
-    # gps_time_start = dt.datetime(start_date.year, 8, 31, 14, 0, 0) # for sep2019storm
-    # gps_time_stop = dt.datetime(stop_date.year, 8, 31, 14, 0, 0) # for sep2019storm
+    gps_time_start = dt.datetime(start_date.year, 8, 31, 12, 0, 0) # for sep2019storm
+    gps_time_stop = dt.datetime(stop_date.year, 8, 31, 14, 0, 0) # for sep2019storm
 
     # gps_time_start = dt.datetime(start_date.year, 8, 26, 6, 40, 0) # for aug2018storm
     # gps_time_stop = dt.datetime(stop_date.year, 8, 26, 13, 0, 0) # for aug2018storm
 
+    time_intervals_GPS = np.arange(gps_time_start, gps_time_stop+dt.timedelta(minutes=time_delta), dt.timedelta(minutes=time_delta)).astype(dt.datetime)
+    # time_intervals_GPS = np.concatenate((np.atleast_1d(time_intervals_GPS[0]), 
+    #                                      time_intervals_GPS[5:6],
+    #                                      time_intervals_GPS[9:11],
+    #                                      time_intervals_GPS[26:27],
+    #                                      time_intervals_GPS[34:35]))
+
     temp_data = []
     for satellite, sat_data in storm_data.items():
         # 1. Apply Time Mask
-        sat_iepoch_mask = (sat_data['Epoch'].UTC >= time_start) & (sat_data['Epoch'].UTC <= time_stop)
+        sat_iepoch_mask = (sat_data['Epoch'].UTC >= time_start-dt.timedelta(minutes=time_delta-1)) & (sat_data['Epoch'].UTC <= time_stop+dt.timedelta(minutes=time_delta-1))
         
         # 2. Extract Data for the current satellite
         sat_epoch = sat_data['Epoch'].UTC[sat_iepoch_mask]
@@ -855,15 +1000,14 @@ if plot_radial==True:
     lstar_range_sorted = lstar_range[sort_indices]
     psd_range_sorted = psd_range[sort_indices]
 
-    time_intervals_GPS = np.arange(gps_time_start, gps_time_stop+dt.timedelta(minutes=time_delta), dt.timedelta(minutes=time_delta)).astype(dt.datetime)
     avg_psd = np.zeros((len(time_intervals_GPS), len(lstar_intervals))) * np.nan
     plotted_GPS_data = np.empty((len(time_intervals_GPS), len(lstar_intervals)), dtype=object)
     for i_time, time_int in enumerate(time_intervals_GPS):
         time_mask_GPS = (GPS_plot_data[:,0] >= (time_int - dt.timedelta(minutes=time_delta/2))) & (GPS_plot_data[:,0] < (time_int + dt.timedelta(minutes=time_delta/2)))
         for i_lstar, lstar_val in enumerate(lstar_intervals):
-            lstar_mask = (GPS_plot_data[:,2] >= (lstar_val - lstar_delta/2)) & (GPS_plot_data[:,2] < (lstar_val + lstar_delta/2))
+            lstar_mask = (GPS_plot_data[:,2] >= (lstar_val - lstar_delta/2)) & (GPS_plot_data[:,2] < (lstar_val + lstar_delta/2)) * (GPS_plot_data[:,2] < 5)
             combined_mask = time_mask_GPS & lstar_mask & MLT_mask
-            if np.sum(combined_mask) > 0:
+            if np.sum(combined_mask) > 1:
                 plotted_GPS_data[i_time, i_lstar] = GPS_plot_data[combined_mask]
                 psd_data = GPS_plot_data[:,4][combined_mask].astype(float)
                 # Filter out NaNs and then append to the collection list
@@ -872,9 +1016,11 @@ if plot_radial==True:
                     avg_psd[i_time,i_lstar] = np.nanmean(psd_data)*gps_scale
     plotted_GPS_data = pd.DataFrame(plotted_GPS_data, index=time_intervals_GPS, columns=lstar_intervals)
 
-    fig, ax = plt.subplots(figsize=(14, 9))
-    colormap_name = 'viridis'
-    cmap = plt.cm.get_cmap(colormap_name)
+    fig, ax = plt.subplots(figsize=(24, 10))
+    colormap_name = 'plasma'
+    plasma = plt.cm.get_cmap(colormap_name)
+    cmap = matplotlib.colors.LinearSegmentedColormap.from_list('truncated_plasma',plasma(np.linspace(0, 0.9, 256)))
+    
     vmin = mdates.date2num(time_start)
     vmax = mdates.date2num(time_stop)
     norm = colors.Normalize(vmin=vmin, vmax=vmax)
@@ -886,7 +1032,7 @@ if plot_radial==True:
         c=time_range_num_sorted, # Color by Epoch datetime objects
         cmap=cmap,
         norm=norm,
-        marker='o')
+        marker='o',s=20,alpha=0.3)
     
     # scatter_plot = ax.scatter(
     #     GPS_plot_data[MLT_mask,2],
@@ -897,33 +1043,44 @@ if plot_radial==True:
     #     marker='*',
     #     s=80)
 
-    cbar = fig.colorbar(scatter_plot, ax=ax, orientation='horizontal', pad=0.1)
-    cbar.set_label('Time (UTC)', fontsize=textsize)
-    cbar.ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-    cbar.ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d\n%H:%M'))
-    cbar.ax.tick_params(labelsize=textsize-2)
+    cbar = fig.colorbar(scatter_plot, ax=ax, orientation='vertical', pad=0.04)
+    cbar.solids.set_alpha(1)
+    cbar.set_label('Time (UTC)', fontsize=textsize+2, labelpad=20)
+    cbar.ax.yaxis.set_major_locator(mdates.AutoDateLocator())
+    cbar.ax.yaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+    cbar.ax.tick_params(labelsize=textsize)
 
     for i_time, time_int in enumerate(time_intervals_GPS):
         if (sum(~np.isnan(avg_psd[i_time,:]))> 0):
-            ax.plot(lstar_intervals, avg_psd[i_time,:],
-                    marker='*', markersize=12,
+            ax.plot(lstar_intervals[~np.isnan(avg_psd[i_time,:])], avg_psd[i_time,~np.isnan(avg_psd[i_time,:])],
+                    marker='*', markersize=16,
                     color=cmap(norm(mdates.date2num(time_int))), # Use the calculated color
                     label=time_int.strftime("%d-%m-%Y %H:%M")) # Label for each star
-
+            if i_time == len(time_intervals_GPS)-1:
+                yoff = -5
+            else:
+                yoff = -10
+            ax.annotate(time_int.strftime("%H:%M"), 
+                (lstar_intervals[~np.isnan(avg_psd[i_time,:])][-1], avg_psd[i_time,:][~np.isnan(avg_psd[i_time,:])][-1]), 
+                xytext=(10, yoff),
+                textcoords='offset points',
+                fontsize=textsize+2, 
+                color=cmap(norm(mdates.date2num(time_int))),
+                fontweight='bold',
+                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="none", alpha=0.7)) # White background box
 
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
 
-    ax.set_xlim(3.4, 5.0) # ax.set_xlim(3.8, 5.2)
-    ax.set_xlabel(r"L*", fontsize=textsize)
+    ax.set_xlim(4, 5.2) # ax.set_xlim(3.8, 5.2)
+    ax.set_xlabel(r"L*", fontsize=textsize+2, labelpad=10)
     ax.set_ylim(min_val, max_val)
-    ax.set_ylabel(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize)
+    ax.set_ylabel(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize+2)
     plt.yscale('log')
     ax.grid(True)
 
     # Add K and Mu text to the plot
-    ax.text(0.02, 0.98, r"K = " + f"{k:.1f} " + r"$G^{{1/2}}R_E$, $\mu = $" + f"{mu:.0f}" + r" $MeV/G$", transform=ax.transAxes, fontsize=textsize-2, verticalalignment='top') #add the text
+    ax.text(0.02, 0.98, r"K = " + f"{k:.1f} " + r"$G^{{1/2}}R_E$, $\mu = $" + f"{mu:.0f}" + r" $MeV/G$", transform=ax.transAxes, fontsize=textsize+4, verticalalignment='top') #add the text
 
-    import matplotlib.lines as mlines
     if sat_select == 'rbspa':
         rbsp_label = 'RBSP-A'
     elif sat_select == 'rbspb':
@@ -933,27 +1090,17 @@ if plot_radial==True:
     handle_gps = mlines.Line2D([], [], color='gray', marker='*', linestyle='None',
                                 markersize=12, label='GPS') # Use a generic color/marker for stars
     # Create the first legend (for RBSP-B and GPS)
-    legend1 = ax.legend(handles=[handle_rbsp, handle_gps],
-                        title = 'Satellite',
-                        title_fontsize = textsize-2,
-                        loc='upper right',
-                        bbox_to_anchor=(1.15, 1.0),
-                        handlelength=1,
-                        fontsize=textsize-4)
-    # Add the first legend to the axes
-    ax.add_artist(legend1)
-    # Add legend
-    ax.legend(
-        title=r"Time (UTC)",
-        title_fontsize = textsize-2,
-        loc='center right',
-        bbox_to_anchor=(1.225,0.4),
-        markerscale=0.7,
-        handlelength=1,
-        fontsize=textsize-4
-    )
+    ax.legend(handles=[handle_rbsp, handle_gps],
+                    title = 'Satellite',
+                    title_fontsize = textsize,
+                    loc='upper right',
+                    bbox_to_anchor=(1.0, 1.0),
+                    handlelength=1,
+                    fontsize=textsize-2)
+
     # Set the plot title to the time interval
     title_str = f"Time Interval: {time_start.strftime('%Y-%m-%d %H:%M')} to {time_stop.strftime('%Y-%m-%d %H:%M')}"
-    ax.set_title(title_str, fontsize = textsize)
+    ax.set_title(title_str, fontsize = textsize+10)
     plt.show()
 
+# %%

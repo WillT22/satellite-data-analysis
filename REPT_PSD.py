@@ -12,6 +12,7 @@ import matplotlib.ticker
 import matplotlib.colors as colors
 import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
 
 import pandas as pd
 
@@ -31,8 +32,9 @@ Re = 6378.137 #Earth's Radius
 Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
 K_set = np.array((0.1,1,2)) # R_E*G^(1/2)
 mode = 'load' # 'save' or 'load'
-storm_name = 'may2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'may2019storm', 'sep2019storm'
+storm_name = 'latefeb2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'latefeb2019storm', 'may2019storm', 'sep2019storm'
 plot_flux = True
+plot_flux_all = True
 plot_energies = False
 plot_psd = True
 plot_radial = False
@@ -55,6 +57,10 @@ elif storm_name == 'aug2018storm':
 elif storm_name == 'oct2012storm':
     start_date  = dt.datetime(2012, 10, 7, 00, 00, 0)
     stop_date   = dt.datetime(2012, 10, 11, 00, 00, 0)
+
+elif storm_name == 'latefeb2019storm':
+    start_date  = dt.datetime(2019, 2, 27, 00, 00, 0)
+    stop_date   = dt.datetime(2019, 3, 4, 00, 00, 0)
 
 elif storm_name == 'may2019storm':
     start_date  = dt.datetime(2019, 5, 10, 00, 00, 0)
@@ -282,16 +288,22 @@ if __name__ == '__main__':
 
     print(format_runtime(elapsed_time))
 
-#%% Plot Flux
+#%% Plot Flux for one energy channel
 if plot_flux==True:
-    energy = 1.8 # MeV
-    energy_channels = REPT_data['rbspa']['Energy_Channels']
+    energy = 2.1 # MeV
+    energy_channels = REPT_data[list(REPT_data.keys())[0]]['Energy_Channels']
     i_energy = np.argmin(np.abs(energy_channels - energy))
     energy = energy_channels[i_energy] # use exact energy from REPT channels
 
+    time_start  = start_date
+    time_stop   = stop_date
+
+    time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0)
+    time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0)
+
     # Logarithmic colorbar setup
-    min_val = np.nanmin(np.log10(1e2))
-    max_val = np.nanmax(np.log10(1e6))
+    min_val = np.nanmin(np.log10(1e3))
+    max_val = np.nanmax(np.log10(1e4))
 
     if extMag == 'T89c':
         plot_extMag = 'T89'
@@ -300,13 +312,15 @@ if plot_flux==True:
 
     fig, ax = plt.subplots(figsize=(16, 4))
     for satellite, sat_data in REPT_data.items():
+        sat_iepoch_mask = (sat_data['Epoch'].UTC >= time_start) & (sat_data['Epoch'].UTC <= time_stop)
         flux_slice = sat_data['FEDU_averaged'][:,:,i_energy]
         flux_temp_mask = np.where(flux_slice >= 0, flux_slice, np.nan)
         flux_plot = np.nanmean(flux_temp_mask, axis=1)/2
         flux_mask = (flux_plot > 0) & (flux_plot != np.nan)
+        combined_mask = flux_mask & sat_iepoch_mask
         # Plotting, ignoring NaN values in the color
-        scatter_A = ax.scatter(sat_data['Epoch'].UTC[flux_mask], sat_data[f'L_LGM_{plot_extMag}IGRF'][flux_mask],
-                            c=np.log10(flux_plot[flux_mask]), vmin=min_val, vmax=max_val)
+        scatter_A = ax.scatter(sat_data['Epoch'].UTC[combined_mask], sat_data[f'L_LGM_{plot_extMag}IGRF'][combined_mask],
+                            c=np.log10(flux_plot[combined_mask]), vmin=min_val, vmax=max_val)
 
     ax.set_title(f"RBSP A&B REPT, {energy} MeV Electron Differential Flux", fontsize=textsize + 2)
     ax.set_ylabel(r"McIlwain L", fontsize=textsize)
@@ -315,10 +329,10 @@ if plot_flux==True:
     # Force labels for first and last x-axis tick marks 
     min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
     max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
-    ax.set_xlim(min_epoch, max_epoch)
-    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=24))
+    ax.set_xlim(time_start, time_stop)
+    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=3))
     ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
-    ax.set_ylim(3, 6)
+    ax.set_ylim(3, 6.5)
     ax.grid(True)
 
     cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
@@ -328,6 +342,74 @@ if plot_flux==True:
     plt.xticks(fontsize=textsize)
     plt.subplots_adjust(top=0.82, right=0.95)
 
+    plt.show()
+
+#%% Plot flux for all energy channels
+if plot_flux_all==True:
+    energy_channels = REPT_data[list(REPT_data.keys())[0]]['Energy_Channels']
+    energy_channels = energy_channels[energy_channels<4]
+
+    time_start  = start_date
+    time_stop   = stop_date
+
+    # time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0)
+    # time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0)
+
+    # Logarithmic colorbar setup
+    min_val = np.nanmin(np.log10(1e3))
+    max_val = np.nanmax(np.log10(1e4))
+
+    if extMag == 'T89c':
+        plot_extMag = 'T89'
+    else:
+        plot_extMag = extMag
+
+    fig, axes = plt.subplots(len(energy_channels),1,figsize=(24, 12),sharex=True,sharey=False)
+    for i_energy, energy in enumerate(energy_channels):
+        ax = axes[i_energy]
+        for satellite, sat_data in REPT_data.items():
+            sat_iepoch_mask = (sat_data['Epoch'].UTC >= time_start) & (sat_data['Epoch'].UTC <= time_stop)
+            flux_slice = sat_data['FEDU_averaged'][:,:,i_energy]
+            flux_temp_mask = np.where(flux_slice >= 0, flux_slice, np.nan)
+            flux_plot = np.nanmean(flux_temp_mask, axis=1)/2
+            flux_mask = (flux_plot > 0) & (flux_plot != np.nan)
+            combined_mask = flux_mask & sat_iepoch_mask
+            vmax = np.ceil(max(np.log10(flux_plot[combined_mask])))
+            # Plotting, ignoring NaN values in the color
+            scatter_A = ax.scatter(sat_data['Epoch'].UTC[combined_mask], sat_data[f'L_LGM_{plot_extMag}IGRF'][combined_mask],
+                                c=np.log10(flux_plot[combined_mask]), vmin=0, vmax=vmax)
+
+        ax.set_title(f"{energy:.2f} MeV Electron Differential Flux", fontsize=textsize)
+        # Force labels for first and last x-axis tick marks 
+        min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+        max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+        ax.set_xlim(min_epoch, max_epoch)
+        ax.tick_params(axis='both', labelsize=textsize, pad=5)
+        ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+        ax.set_ylim(3, 6.5)
+        ax.grid(True)
+
+        cbar = fig.colorbar(scatter_A, ax=ax, fraction=0.03, pad=0.01, format=matplotlib.ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
+        if vmax > 5:
+            cbar.locator = matplotlib.ticker.MultipleLocator(2)
+        else:
+            cbar.locator = matplotlib.ticker.MultipleLocator(1)
+        cbar.ax.tick_params(labelsize=textsize)
+
+    # Force labels for first and last x-axis tick marks 
+    # Set X-axis limits and labels only for the bottom row
+    if i_energy >= len(energy_channels)-1:
+        ax.set_xlabel('Time (UTC)', fontsize=textsize,labelpad=2)
+        ax.set_xlim(time_start, time_stop)
+        ax.xaxis.set_major_locator(mdates.HourLocator(interval=24))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H'))
+        ax.tick_params(axis='x', labelsize=textsize, pad=10)
+
+    fig.text(0.96, 0.5, r'Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', 
+         fontsize=textsize, rotation='vertical', va='center')
+
+    plt.xticks(fontsize=textsize-2)
+    plt.subplots_adjust(right=0.925, hspace=0.2)
     plt.show()
 
 #%% Plot energies corresponding to each time as probes pass through Lstars
@@ -340,8 +422,8 @@ if plot_energies==True:
     time_start  = start_date
     time_stop   = stop_date
 
-    time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0)
-    time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0)
+    # time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0)
+    # time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0)
 
     colormap_name = 'viridis'
     cmap = plt.cm.get_cmap(colormap_name)
@@ -431,27 +513,30 @@ if plot_psd==True:
 
 #%% Create PSD Radial Profiles without Lstar Averaging
 if plot_radial==True:
-    sat_select = 'rbspa'
+    sat_select = 'rbspb'
     sat_data = REPT_data[sat_select]
     k = 0.1
     i_K = np.where(K_set == k)[0]
     mu = 2000
     i_mu = np.where(Mu_set == mu)[0]
 
-    min_val = np.nanmin(1e-13)
-    max_val = np.nanmax(1e-7)
+    min_val = np.nanmin(1e-11)
+    max_val = np.nanmax(1e-5)
 
     time_start  = start_date
     time_stop   = stop_date
 
+    time_start = dt.datetime(start_date.year, 5, 11, 0, 0, 0)
+    time_stop = dt.datetime(stop_date.year, 5, 12, 6, 0, 0)
+
     # Convert Epoch_A and Epoch_B to NumPy arrays of datetimes
-    Epoch_B_np = np.array(REPT_data['rbspa']['Epoch'].UTC)
+    Epoch_B_np = np.array(REPT_data[sat_select]['Epoch'].UTC)
 
     # Generate Lstar interval boundaries within the time range.
     time_mask = (Epoch_B_np >= time_start) & (Epoch_B_np <= time_stop)
     time_range = Epoch_B_np[time_mask]
 
-    fig, ax = plt.subplots(figsize=(8, 8))
+    fig, ax = plt.subplots(figsize=(14, 9))
     colormap_name = 'viridis'
     cmap = plt.cm.get_cmap(colormap_name)
 
@@ -483,7 +568,7 @@ if plot_radial==True:
 
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
 
-    ax.set_xlim(3, 5.5)
+    ax.set_xlim(3.4, 5)
     ax.set_xlabel(r"L*", fontsize=textsize)
     ax.set_ylim(min_val, max_val)
     ax.set_ylabel(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize)
@@ -493,19 +578,21 @@ if plot_radial==True:
     # Add K and Mu text to the plot
     ax.text(0.02, 0.98, r"K = " + f"{k:.1f} " + r"$G^{{1/2}}R_E$, $\mu = $" + f"{mu:.0f}" + r" $MeV/G$", transform=ax.transAxes, fontsize=textsize-2, verticalalignment='top') #add the text
 
-    import matplotlib.lines as mlines
-    handle_rbspb = mlines.Line2D([], [], color='gray', marker='o', linestyle='None',
-                                markersize=10, label='RBSP-A') # Use a generic color/marker for circles
+    if sat_select == 'rbspa':
+        rbsp_label = 'RBSP-A'
+    elif sat_select == 'rbspb':
+        rbsp_label = 'RBSP-B'
+    handle_rbsp = mlines.Line2D([], [], color='gray', marker='o', linestyle='None',
+                                markersize=10, label=rbsp_label) # Use a generic color/marker for circles
     # Create the first legend (for RBSP-B and GPS)
-    legend1 = ax.legend(handles=[handle_rbspb],
-                        title = 'Satellite',
-                        title_fontsize = textsize-2,
-                        loc='upper right',
-                        bbox_to_anchor=(1.15, 1.0),
-                        handlelength=1,
-                        fontsize=textsize-4)
-    # Add the first legend to the axes
-    ax.add_artist(legend1)
+    ax.legend(handles=[handle_rbsp],
+                title = 'Satellite',
+                title_fontsize = textsize-2,
+                loc='upper right',
+                bbox_to_anchor=(1.15, 1.0),
+                handlelength=1,
+                fontsize=textsize-4)
+
     # Set the plot title to the time interval
     title_str = f"Time Interval: {time_start.strftime('%Y-%m-%d %H:%M')} to {time_stop.strftime('%Y-%m-%d %H:%M')}"
     ax.set_title(title_str, fontsize = textsize)
@@ -520,8 +607,8 @@ if plot_radial_Lstar==True:
     time_start  = start_date
     time_stop   = stop_date
 
-    # time_start  = dt.datetime(2017, 4, 23, 18, 45, 0)
-    # time_stop   = dt.datetime(2017, 4, 23, 22, 58, 0)
+    time_start = dt.datetime(start_date.year, 5, 11, 0, 0, 0)
+    time_stop = dt.datetime(stop_date.year, 5, 12, 0, 0, 0)
 
     # time_start  = dt.datetime(2017, 4, 24, 17, 7, 0)
     # time_stop   = dt.datetime(2017, 4, 24, 21, 35, 0)

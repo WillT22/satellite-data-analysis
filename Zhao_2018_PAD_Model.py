@@ -278,9 +278,6 @@ def define_Legendre(alpha):
 def create_PAD(sat_data, Zhao_epoch_coeffs, alphaofK):
     alpha_init = np.linspace(0,180,361)
     K_set = np.array(list(Zhao_epoch_coeffs.keys()), dtype=float)
-    Mu_set = np.array(list(Zhao_epoch_coeffs[K_set[0]].keys()), dtype=float)
-    local90PA = sat_data['local90PA']
-    loss_cone = sat_data['loss_cone']
     PAD_model = {}
     for K_val, K_data in Zhao_epoch_coeffs.items():
         PAD_model[K_val] = {}
