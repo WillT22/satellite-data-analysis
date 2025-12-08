@@ -355,16 +355,12 @@ if plot_flux_all==True:
     # time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0)
     # time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0)
 
-    # Logarithmic colorbar setup
-    min_val = np.nanmin(np.log10(1e3))
-    max_val = np.nanmax(np.log10(1e4))
-
     if extMag == 'T89c':
         plot_extMag = 'T89'
     else:
         plot_extMag = extMag
 
-    fig, axes = plt.subplots(len(energy_channels),1,figsize=(24, 12),sharex=True,sharey=False)
+    fig, axes = plt.subplots(len(energy_channels),1,figsize=(20, 10),sharex=True,sharey=False)
     for i_energy, energy in enumerate(energy_channels):
         ax = axes[i_energy]
         for satellite, sat_data in REPT_data.items():
@@ -379,7 +375,7 @@ if plot_flux_all==True:
             scatter_A = ax.scatter(sat_data['Epoch'].UTC[combined_mask], sat_data[f'L_LGM_{plot_extMag}IGRF'][combined_mask],
                                 c=np.log10(flux_plot[combined_mask]), vmin=0, vmax=vmax)
 
-        ax.set_title(f"{energy:.2f} MeV Electron Differential Flux", fontsize=textsize)
+        ax.set_title(f"{energy:.2f} MeV", fontsize=textsize+2)
         # Force labels for first and last x-axis tick marks 
         min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
         max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
@@ -408,8 +404,9 @@ if plot_flux_all==True:
     fig.text(0.96, 0.5, r'Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', 
          fontsize=textsize, rotation='vertical', va='center')
 
-    plt.xticks(fontsize=textsize-2)
-    plt.subplots_adjust(right=0.925, hspace=0.2)
+    plt.xticks(fontsize=textsize)
+    plt.subplots_adjust(right=0.95, hspace=0.2)
+    fig.suptitle(f'RBSP REPT Differential Flux {time_start.strftime('%Y-%m-%d %H')} to {time_stop.strftime('%Y-%m-%d %H')}', fontsize=textsize + 4, y=0.94)
     plt.show()
 
 #%% Plot energies corresponding to each time as probes pass through Lstars

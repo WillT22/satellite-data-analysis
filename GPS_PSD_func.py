@@ -532,13 +532,8 @@ def find_McIlwain_L(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
         lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
         current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'].data[i_epoch])
         QD_inform_MagInfo(epoch, MagInfo)
-        
-        b_local = sat_data['b_satellite'][i_epoch]
-        b_min = sat_data['b_min'][i_epoch]
-        eq_pitch_angle = alphaofK.values[i_epoch,0] # this is equitorial pitch angle
-        local_pitch_angle = np.rad2deg(np.arcsin(np.sqrt(np.sin(np.deg2rad(eq_pitch_angle))**2*b_local/b_min)))
-
-        sat_data[f'L_LGM_{extMag}IGRF'][i_epoch] = lgm_lib.Lgm_McIlwain_L(current_time.contents.Date, current_time.contents.Time, current_vec, local_pitch_angle, 0, pointer(I), pointer(Bm), pointer(M), MagInfo)
+        pitch_angle = alphaofK.values[i_epoch,0] # this is equitorial pitch angle
+        sat_data[f'L_LGM_{extMag}IGRF'][i_epoch] = lgm_lib.Lgm_McIlwain_L(current_time.contents.Date, current_time.contents.Time, current_vec, pitch_angle, 0, pointer(I), pointer(Bm), pointer(M), MagInfo)
     return sat_data
 
 #%% Calculate L_star
@@ -561,12 +556,8 @@ def find_Lstar(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
             lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, LstarInfo.contents.mInfo.contents.c)
             current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'].data[i_epoch])
             QD_inform_MagInfo(epoch, LstarInfo.contents.mInfo)
-
-            b_local = sat_data['b_satellite'][i_epoch]
-            b_min = sat_data['b_min'][i_epoch]
-            eq_pitch_angle = alphaofK.values[i_epoch,0] # this is equitorial pitch angle
-            local_pitch_angle = np.rad2deg(np.arcsin(np.sqrt(np.sin(np.deg2rad(eq_pitch_angle))**2*b_local/b_min)))
-            LstarInfo.contents.PitchAngle = c_double(local_pitch_angle)
+            pitch_angle = alphaofK.values[i_epoch,0] # this is equitorial pitch angle
+            LstarInfo.contents.PitchAngle = c_double(pitch_angle)
             #LstarInfo.contents.mInfo.contents.Bm = c_double(sat_data['b_footpoint'][i_epoch])
             
             lgm_lib.Lstar(pointer(current_vec), LstarInfo)
