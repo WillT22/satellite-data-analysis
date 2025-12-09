@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import matplotlib.lines as mlines
 import matplotlib.ticker as ticker
+import matplotlib.animation as animation
 from matplotlib import colors
 import pandas as pd
 
@@ -44,6 +45,8 @@ plot_PAD = False
 if plot_PAD == True:
     PAD_calculate = True
 plot_radial = True
+plot_radial_dynamic = False
+SHOW_GPS_DATA = True
 
 GPS_data_root = '/home/wzt0020/sat_data_analysis/GPS_data/'
 input_folder = os.path.join(GPS_data_root, storm_name)
@@ -370,7 +373,7 @@ if plot_flux_all==True:
             flux_mask = (flux_plot > 0) & (flux_plot != np.nan)
             combined_mask = np.zeros_like(sat_iepoch_mask, dtype=bool)
             combined_mask[sat_iepoch_mask] = flux_mask
-            vmax = 6 #np.ceil(max(np.log10(flux_plot[flux_mask])))
+            vmax = 7 #np.ceil(max(np.log10(flux_plot[flux_mask])))
             # Plotting, ignoring NaN values in the color
             scatter_A = ax.scatter(sat_data['Epoch'].UTC[combined_mask], sat_data[f'L_LGM_{extMag_label}IGRF'][combined_mask],
                                 c=np.log10(flux_plot[flux_mask]), cmap=cmap, vmin=0, vmax=vmax, zorder=2)
@@ -439,11 +442,11 @@ if plot_flux_all==True:
     if i_energy >= len(energy_channels)-1:
         ax.set_xlabel('Time (UTC)', fontsize=textsize+2,labelpad=2)
         ax.set_xlim(time_start, time_stop)
-        ax.xaxis.set_major_locator(mdates.HourLocator(interval=24))
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+        ax.xaxis.set_major_locator(mdates.HourLocator(interval=12))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H'))
         ax.tick_params(axis='x', labelsize=textsize+2, pad=12)
 
-    fig.text(0.08, 0.575, r'McIllwain L', 
+    fig.text(0.08, 0.575, r'McIlwain L', 
          fontsize=textsize+2, rotation='vertical', va='center')
     # fig.text(0.965, 0.575, r'Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', 
     #      fontsize=textsize+2, rotation='vertical', va='center')
@@ -457,13 +460,13 @@ if plot_flux_all==True:
     #                 title = 'Satellite',
     #                 title_fontsize = textsize,
     #                 loc='upper right',
-    #                 bbox_to_anchor=(0.99, 1.2),
+    #                 bbox_to_anchor=(1.03, 1.03),
     #                 handlelength=1,
     #                 fontsize=textsize-2)
 
     plt.xticks(fontsize=textsize)
     plt.subplots_adjust(right=0.95, hspace=0.35)
-    #fig.suptitle(f'RBSP REPT & GPS CXD Differential Flux {time_start.strftime('%Y-%m-%d %H')} to {time_stop.strftime('%Y-%m-%d %H')}', fontsize=textsize + 10, y=0.98)
+    # fig.suptitle(f'RBSP REPT & GPS CXD Differential Flux {time_start.strftime('%Y-%m-%d %H')} to {time_stop.strftime('%Y-%m-%d %H')}', fontsize=textsize + 10, y=0.99)
     plt.show()
     
 #%% Plot PSD
@@ -525,7 +528,7 @@ if plot_psd==True:
 
 #%% Plot Combined PSD with REPT data
 if plot_combined_psd==True:
-    k = 0.1
+    k = 0.1   
     i_K = np.where(K_set == k)[0]
     mu = 2000
     i_mu = np.where(Mu_set == mu)[0]
@@ -659,7 +662,7 @@ if plot_energies==True:
 
 #%% Plot PAD comparison
 if plot_PAD==True: 
-    time_select = dt.datetime(start_date.year, 3, 1, 4, 0, 0)
+    time_select = dt.datetime(start_date.year, 2, 28, 9, 30, 0)
     sat_select = 'rbspb'
     k = 0.1
     i_K = np.where(K_set == k)[0]
@@ -875,8 +878,8 @@ if plot_PAD==True:
     ax.legend(new_handles, new_labels, fontsize=textsize-4, loc='lower center')
 
     ax.set_xlim(0,180)
-    #ax.set_ylim(10**np.floor(np.log10(np.nanmin(Model_PAD*Model_PAD_scale))),10**np.ceil(np.log10(np.nanmax(Model_PAD*Model_PAD_scale))))
-    ax.set_ylim(lower_bound,upper_bound)
+    ax.set_ylim(10**np.floor(np.log10(np.nanmin(Model_PAD*Model_PAD_scale))),10**np.ceil(np.log10(np.nanmax(Model_PAD*Model_PAD_scale))))
+    #ax.set_ylim(lower_bound,upper_bound)
     plt.yscale('log')
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
     ax.set_xlabel(r"Equatorial Pitch Angle (degrees)", fontsize=textsize)
@@ -912,8 +915,8 @@ if plot_radial==True:
     time_start  = start_date
     time_stop   = stop_date
 
-    time_start = dt.datetime(start_date.year, 2, 28, 6, 0, 0)
-    time_stop = dt.datetime(stop_date.year, 3, 1, 6, 0, 0)
+    time_start = dt.datetime(start_date.year, 2, 28, 8, 0, 0)
+    time_stop = dt.datetime(stop_date.year, 3, 1, 4, 0, 0)
 
     # time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
     # time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0) # for sep2019storm
@@ -924,22 +927,23 @@ if plot_radial==True:
     gps_time_start  = time_start
     gps_time_stop   = time_stop
 
-    gps_time_start = dt.datetime(start_date.year, 2, 28, 12, 0, 0)
-    gps_time_stop = dt.datetime(stop_date.year, 3, 1, 6, 0, 0)
-    #gps_time_stop = dt.datetime(stop_date.year, 3, 1, 6, 0, 0)
+    gps_time_start = dt.datetime(start_date.year, 2, 28, 8, 0, 0)
+    gps_time_stop = dt.datetime(stop_date.year, 3, 1, 4, 0, 0)
 
-    # gps_time_start = dt.datetime(start_date.year, 8, 31, 12, 0, 0) # for sep2019storm
+    # gps_time_start = dt.datetime(start_date.year, 8, 31, 10, 0, 0) # for sep2019storm
     # gps_time_stop = dt.datetime(stop_date.year, 8, 31, 14, 0, 0) # for sep2019storm
 
     # gps_time_start = dt.datetime(start_date.year, 8, 26, 6, 40, 0) # for aug2018storm
     # gps_time_stop = dt.datetime(stop_date.year, 8, 26, 13, 0, 0) # for aug2018storm
 
     time_intervals_GPS = np.arange(gps_time_start, gps_time_stop+dt.timedelta(minutes=time_delta), dt.timedelta(minutes=time_delta)).astype(dt.datetime)
-    time_intervals_GPS = np.concatenate((np.atleast_1d(time_intervals_GPS[0]), 
-                                         time_intervals_GPS[5:6]))
-                                        #  time_intervals_GPS[9:11],
-                                        #  time_intervals_GPS[26:27],
-                                        #  time_intervals_GPS[34:35])
+    # time_intervals_GPS = np.concatenate((time_intervals_GPS[0:1],time_intervals_GPS[4:]))
+    time_intervals_GPS = np.concatenate((time_intervals_GPS[7:8],
+                                         time_intervals_GPS[13:14],
+                                         time_intervals_GPS[17:19],
+                                         time_intervals_GPS[34:35],
+                                         time_intervals_GPS[39:40],
+                                         ))
 
     temp_data = []
     for satellite, sat_data in storm_data.items():
@@ -1011,7 +1015,7 @@ if plot_radial==True:
     for i_time, time_int in enumerate(time_intervals_GPS):
         time_mask_GPS = (GPS_plot_data[:,0] >= (time_int - dt.timedelta(minutes=time_delta/2))) & (GPS_plot_data[:,0] < (time_int + dt.timedelta(minutes=time_delta/2)))
         for i_lstar, lstar_val in enumerate(lstar_intervals):
-            lstar_mask = (GPS_plot_data[:,2] >= (lstar_val - lstar_delta/2)) & (GPS_plot_data[:,2] < (lstar_val + lstar_delta/2)) * (GPS_plot_data[:,2] < 5)
+            lstar_mask = (GPS_plot_data[:,2] >= (lstar_val - lstar_delta/2)) & (GPS_plot_data[:,2] < (lstar_val + lstar_delta/2))
             combined_mask = time_mask_GPS & lstar_mask & MLT_mask
             if np.sum(combined_mask) > 1:
                 plotted_GPS_data[i_time, i_lstar] = GPS_plot_data[combined_mask]
@@ -1022,7 +1026,7 @@ if plot_radial==True:
                     avg_psd[i_time,i_lstar] = np.nanmean(psd_data)*gps_scale
     plotted_GPS_data = pd.DataFrame(plotted_GPS_data, index=time_intervals_GPS, columns=lstar_intervals)
 
-    fig, ax = plt.subplots(figsize=(24, 8))
+    fig, ax = plt.subplots(figsize=(24, 10))
     colormap_name = 'plasma'
     plasma = plt.cm.get_cmap(colormap_name)
     cmap = matplotlib.colors.LinearSegmentedColormap.from_list('truncated_plasma',plasma(np.linspace(0, 0.9, 256)))
@@ -1077,7 +1081,7 @@ if plot_radial==True:
 
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
 
-    ax.set_xlim(4, 5.2) # ax.set_xlim(3.8, 5.2)
+    ax.set_xlim(4, 5.3) # ax.set_xlim(3.8, 5.2)
     ax.set_xlabel(r"L*", fontsize=textsize+2, labelpad=10)
     ax.set_ylim(min_val, max_val)
     ax.set_ylabel(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize+2)
@@ -1099,14 +1103,293 @@ if plot_radial==True:
     ax.legend(handles=[handle_rbsp, handle_gps],
                     title = 'Satellite',
                     title_fontsize = textsize,
-                    loc='upper right',
-                    bbox_to_anchor=(1.0, 1.0),
+                    loc='lower right',
+                    bbox_to_anchor=(1.0, 0),
                     handlelength=1,
                     fontsize=textsize-2)
 
     # Set the plot title to the time interval
-    #title_str = f"Time Interval: {time_start.strftime('%Y-%m-%d %H:%M')} to {time_stop.strftime('%Y-%m-%d %H:%M')}"
-    #ax.set_title(title_str, fontsize = textsize+10)
+    title_str = f"Time Interval: {time_start.strftime('%Y-%m-%d %H:%M')} to {time_stop.strftime('%Y-%m-%d %H:%M')}"
+    ax.set_title(title_str, fontsize = textsize+10)
     plt.show()
+
+#%% Plot PSD Radial Profile with REPT data
+if plot_radial_dynamic==True:
+    # for feb: rbspb, Lstar 4-5.3, PSD_min=1e-10, time_interval = 2 hours, 50fps
+    # for sep: rbspa, Lstar 4-5.3, PSD_min=1e-9, time_interval = 2 hours, 30fps
+    
+    sat_select = 'rbspa'
+    k = 0.1
+    i_K = np.where(K_set == k)[0]
+    mu = 2000
+    i_mu = np.where(Mu_set == mu)[0]
+    gps_scale = 1 # default = 1
+    MLT_range = 12 # hours, default = 3 which corresponds to +-1.5 hours
+    lstar_delta = 0.1 # default = 0.1
+    time_delta = 30 # minutes, default = 30
+
+    min_val = np.nanmin(1e-9)
+    max_val = np.nanmax(1e-5)
+
+    REPT_data_root = '/home/wzt0020/sat_data_analysis/REPT_data/'
+    save_path = os.path.join(REPT_data_root, storm_name, f'rept_data_{extMag}.npz')
+    complete_load = np.load(save_path, allow_pickle=True)
+    REPT_data = load_data(complete_load)
+    complete_load.close()
+    del complete_load
+
+    time_start  = start_date
+    time_stop   = stop_date
+
+    # time_start = dt.datetime(start_date.year, 2, 28, 8, 0, 0)
+    # time_stop = dt.datetime(stop_date.year, 3, 1, 4, 0, 0)
+
+    time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
+    time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0) # for sep2019storm
+
+    # time_start = dt.datetime(start_date.year, 8, 26, 0, 0, 0) # for aug2018storm
+    # time_stop = dt.datetime(stop_date.year, 8, 27, 0, 0, 0) # for aug2018storm
+
+    gps_time_start  = time_start
+    gps_time_stop   = time_stop
+
+    # gps_time_start = dt.datetime(start_date.year, 2, 28, 8, 0, 0)
+    # gps_time_stop = dt.datetime(stop_date.year, 3, 1, 4, 0, 0)
+
+    gps_time_start = dt.datetime(start_date.year, 8, 31, 10, 0, 0) # for sep2019storm
+    gps_time_stop = dt.datetime(stop_date.year, 8, 31, 14, 0, 0) # for sep2019storm
+
+    # gps_time_start = dt.datetime(start_date.year, 8, 26, 6, 40, 0) # for aug2018storm
+    # gps_time_stop = dt.datetime(stop_date.year, 8, 26, 13, 0, 0) # for aug2018storm
+
+    time_intervals_GPS = np.arange(gps_time_start, gps_time_stop+dt.timedelta(minutes=time_delta), dt.timedelta(minutes=time_delta)).astype(dt.datetime)
+    time_intervals_GPS = np.concatenate((time_intervals_GPS[0:1],time_intervals_GPS[4:]))
+    # time_intervals_GPS = np.concatenate((time_intervals_GPS[4:5],
+    #                                      time_intervals_GPS[7:8],
+    #                                      time_intervals_GPS[13:14],
+    #                                      time_intervals_GPS[17:19],
+    #                                      time_intervals_GPS[23:24],
+    #                                      time_intervals_GPS[27:28],
+    #                                      time_intervals_GPS[34:35],
+    #                                      time_intervals_GPS[39:40],
+    #                                      ))
+
+
+    temp_data = []
+    for satellite, sat_data in storm_data.items():
+        # 1. Apply Time Mask
+        sat_iepoch_mask = (sat_data['Epoch'].UTC >= time_start-dt.timedelta(minutes=time_delta-1)) & (sat_data['Epoch'].UTC <= time_stop+dt.timedelta(minutes=time_delta-1))
+        
+        # 2. Extract Data for the current satellite
+        sat_epoch = sat_data['Epoch'].UTC[sat_iepoch_mask]
+        sat_MLT = sat_data['MLT'][sat_iepoch_mask]
+        sat_Lstar = sat_data['Lstar'][sat_iepoch_mask, i_K].flatten() # Flatten Lstar to a 1D array
+        
+        # ASSUMPTION: 'psd' is available and correctly indexed by satellite/k/i_mu
+        # We apply the mask to the psd data, and flatten it for consistency
+        sat_PSD = psd[satellite][k].values[sat_iepoch_mask, i_mu].flatten()
+        
+        # 3. Create a satellite name array for this block
+        sat_name_array = np.full(len(sat_epoch), satellite, dtype='<U10') # Use a 10-character string dtype
+
+        # 4. Combine arrays column-wise (Epoch, Name, Lstar, MLT, PSD)
+        # Filter out any data where Lstar or PSD is NaN (optional, but good practice for clean data)
+        valid_mask = ~np.isnan(sat_Lstar) & ~np.isnan(sat_PSD)
+
+        # Use a structured array to hold mixed data types
+        combined_satellite_data = np.vstack((
+            sat_epoch[valid_mask],
+            sat_name_array[valid_mask],
+            sat_Lstar[valid_mask],
+            sat_MLT[valid_mask],
+            sat_PSD[valid_mask]
+        )).T # Transpose to make it an N x 5 matrix (N rows, 5 columns)
+
+        temp_data.append(combined_satellite_data)
+
+    GPS_plot_data = np.concatenate(temp_data, axis=0)
+    GPS_plot_data = GPS_plot_data[GPS_plot_data[:, 0].argsort()]
+
+    nearest_time = np.zeros(len(GPS_plot_data),dtype=int)
+    MLT_mask = np.zeros(len(GPS_plot_data),dtype=bool)
+    for i_epoch, epoch in enumerate(GPS_plot_data[:,0]):
+        nearest_time[i_epoch] = np.argmin(np.abs(REPT_data[sat_select]['Epoch'].UTC-GPS_plot_data[i_epoch,0]))
+
+        MLT_ref = REPT_data[sat_select]['MLT'][nearest_time[i_epoch]]
+        MLT_gps = GPS_plot_data[:,3][i_epoch]
+        mlt_diff = np.minimum(np.abs(MLT_ref - MLT_gps), 24-np.abs(MLT_ref - MLT_gps))
+        MLT_mask[i_epoch] = (mlt_diff <= MLT_range/2)
+
+    # Convert Epoch to numerical time for plotting (RBSP)
+    Epoch_np = np.array(REPT_data[sat_select]['Epoch'].UTC)
+    time_mask_REPT = (Epoch_np >= time_start) & (Epoch_np <= time_stop)
+    time_range_REPT = Epoch_np[time_mask_REPT]
+    
+    time_range_num = mdates.date2num(time_range_REPT)
+    sort_indices = np.argsort(time_range_num)
+    time_range_REPT_sorted = time_range_REPT[sort_indices]
+    time_range_num_sorted = time_range_num[sort_indices]
+
+    lstar_range = REPT_data[sat_select]['Lstar'][time_mask_REPT, i_K].flatten() # Flatten Lstar for scatter plot
+    lstar_min = np.min(lstar_range[~np.isnan(lstar_range) & ~(lstar_range==-1.0e31)])
+    lstar_max = np.max(lstar_range[~np.isnan(lstar_range)])
+    lstar_intervals = np.arange(np.floor(lstar_min / lstar_delta) * lstar_delta, np.ceil(lstar_max / lstar_delta) * lstar_delta + lstar_delta, lstar_delta)
+    psd_range = REPT_data[sat_select]['PSD'][k].values[:, i_mu].flatten()[time_mask_REPT] # Flatten PSD
+
+    lstar_range_sorted = lstar_range[sort_indices]
+    psd_range_sorted = psd_range[sort_indices]
+
+    avg_psd = np.zeros((len(time_intervals_GPS), len(lstar_intervals))) * np.nan
+    plotted_GPS_data = np.empty((len(time_intervals_GPS), len(lstar_intervals)), dtype=object)
+    for i_time, time_int in enumerate(time_intervals_GPS):
+        time_mask_GPS = (GPS_plot_data[:,0] >= (time_int - dt.timedelta(minutes=time_delta/2)))\
+              & (GPS_plot_data[:,0] < (time_int + dt.timedelta(minutes=time_delta/2)))
+        for i_lstar, lstar_val in enumerate(lstar_intervals):
+            lstar_mask = (GPS_plot_data[:,2] >= (lstar_val - lstar_delta/2)) & (GPS_plot_data[:,2] < (lstar_val + lstar_delta/2))
+            combined_mask = time_mask_GPS & lstar_mask & MLT_mask
+            if np.sum(combined_mask) > 1:
+                plotted_GPS_data[i_time, i_lstar] = GPS_plot_data[combined_mask]
+                psd_data = GPS_plot_data[:,4][combined_mask].astype(float)
+                # Filter out NaNs and then append to the collection list
+                psd_data = psd_data[~np.isnan(psd_data)]
+                if len(psd_data) > 0:
+                    avg_psd[i_time,i_lstar] = np.nanmean(psd_data)*gps_scale
+    plotted_GPS_data = pd.DataFrame(plotted_GPS_data, index=time_intervals_GPS, columns=lstar_intervals)
+        
+    fig, ax = plt.subplots(figsize=(24, 8)) #24, 8
+    colormap_name = 'plasma'
+    plasma = plt.cm.get_cmap(colormap_name)
+    cmap = matplotlib.colors.LinearSegmentedColormap.from_list('truncated_plasma',plasma(np.linspace(0, 0.9, 256)))
+    
+    vmin = mdates.date2num(time_start)
+    vmax = mdates.date2num(time_stop)
+    norm = colors.Normalize(vmin=vmin, vmax=vmax)
+
+    scatter_plot = ax.scatter([], [], c=[],cmap=cmap, norm=norm, marker='o', s=30, alpha=0.3)
+    scatter_plot.set_clim(vmin,vmax)
+
+    gps_artists = []
+    if SHOW_GPS_DATA:
+        for i_time, time_int in enumerate(time_intervals_GPS):
+            if np.sum(~np.isnan(avg_psd[i_time,:])) > 0:
+                valid_mask = ~np.isnan(avg_psd[i_time,:])
+                x_vals = lstar_intervals[valid_mask]
+                y_vals = avg_psd[i_time, valid_mask]
+                
+                # 1. Create Line (Invisible)
+                line, = ax.plot(x_vals, y_vals,
+                        marker='*', markersize=16,
+                        color=cmap(norm(mdates.date2num(time_int))),
+                        label=time_int.strftime("%d-%m-%Y %H:%M"),
+                        visible=False) # Start Hidden
+                
+                # 2. Create Annotation (Invisible)
+                if i_time == len(time_intervals_GPS)-1:
+                    yoff = -5
+                else:
+                    yoff = -10
+
+                ann = ax.annotate(time_int.strftime("%H:%M"), 
+                            (x_vals[-1], y_vals[-1]), 
+                            xytext=(10, yoff),
+                            textcoords='offset points',
+                            fontsize=textsize+2, 
+                            color=cmap(norm(mdates.date2num(time_int))),
+                            fontweight='bold',
+                            bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="none", alpha=0.7),
+                            visible=False) # Start Hidden
+                
+                # Store metadata to know WHEN to turn them on
+                gps_artists.append({
+                    'trigger_time': time_int,
+                    'line': line,
+                    'annotation': ann,
+                    'shown': False
+                })
+
+    cbar = fig.colorbar(scatter_plot, ax=ax, orientation='vertical', pad=0.04)
+    cbar.solids.set_alpha(1)
+    cbar.set_label('Time (UTC)', fontsize=textsize+2, labelpad=20)
+    cbar.ax.yaxis.set_major_locator(mdates.HourLocator(interval=2))
+    cbar.ax.yaxis.set_major_formatter(matplotlib.dates.DateFormatter('%m-%d %H'))
+    cbar.ax.tick_params(labelsize=textsize)
+    cbar_line = cbar.ax.axhline(vmin, color='white', lw=3)
+
+    ax.tick_params(axis='both', labelsize=textsize, pad=10)
+    ax.set_xlim(4, 5.3) # ax.set_xlim(3.8, 5.2)
+    ax.set_xlabel(r"L*", fontsize=textsize+2, labelpad=10)
+    ax.set_ylim(min_val, max_val)
+    ax.set_ylabel(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize+2)
+    plt.yscale('log')
+    ax.grid(True)
+
+    # Add K and Mu text to the plot
+    ax.text(0.02, 0.98, r"K = " + f"{k:.1f} " + r"$G^{{1/2}}R_E$, $\mu = $" + f"{mu:.0f}" + r" $MeV/G$", transform=ax.transAxes, fontsize=textsize+4, verticalalignment='top') #add the text
+
+    if sat_select == 'rbspa':
+        rbsp_label = 'RBSP-A'
+    elif sat_select == 'rbspb':
+        rbsp_label = 'RBSP-B'
+    handle_rbsp = mlines.Line2D([], [], color='gray', marker='o', linestyle='None',
+                                markersize=10, label=rbsp_label) # Use a generic color/marker for circles
+    handle_gps = mlines.Line2D([], [], color='gray', marker='*', linestyle='None',
+                                markersize=12, label='GPS') # Use a generic color/marker for stars
+    # Create the first legend (for RBSP-B and GPS)
+    ax.legend(handles=[handle_rbsp, handle_gps],
+                    title = 'Satellite',
+                    title_fontsize = textsize,
+                    loc='lower right',
+                    bbox_to_anchor=(1.0, 0),
+                    handlelength=1,
+                    fontsize=textsize-2)
+
+    # Set the plot title to the time interval
+    title_str = f"Time Interval: {time_start.strftime('%Y-%m-%d %H:%M')} to {time_stop.strftime('%Y-%m-%d %H:%M')}"
+    #ax.set_title(title_str, fontsize = textsize+10)
+    plt.tight_layout()
+
+    def update(frame):
+        current_time_val = time_range_num_sorted[frame]
+        
+        # Update Scatter
+        current_x = lstar_range_sorted[:frame+1]
+        current_y = psd_range_sorted[:frame+1]
+        current_c = time_range_num_sorted[:frame+1]
+        
+        if len(current_x) > 0:
+            pos_data = np.column_stack((current_x, current_y))
+            scatter_plot.set_offsets(pos_data)
+            scatter_plot.set_array(current_c)
+
+        # Update Colorbar Line
+        cbar_line.set_ydata([current_time_val, current_time_val])
+        
+        # Check GPS Artists visibility
+        for item in gps_artists:
+            # If current animation time has reached or passed the trigger time
+            if not item['shown'] and time_range_REPT_sorted[frame] >= item['trigger_time']:
+                item['line'].set_visible(True)
+                item['annotation'].set_visible(True)
+                item['shown'] = True # Optimization to avoid re-setting
+        
+        # Return ALL artists that exist in the plot (even if invisible/unchanged)
+        # This keeps the blitter happy.
+        all_dynamic_artists = [scatter_plot, cbar_line]
+        for item in gps_artists:
+            all_dynamic_artists.append(item['line'])
+            all_dynamic_artists.append(item['annotation'])
+            
+        return all_dynamic_artists
+
+    # 4. Create the Animation Object
+    ani = animation.FuncAnimation(fig, update, frames=len(time_range_num_sorted), interval=20, blit=True)
+
+    # 5. Save as MP4 (Much more memory efficient)
+    print("Saving Animation as MP4...")
+    # Requires: sudo apt install ffmpeg
+    ani.save('sorted_time_scatter.mp4', writer='ffmpeg', fps=30, dpi=100)
+    print("Success! Saved as sorted_time_scatter.mp4")
+
+    plt.close(fig) # Explicitly close to free memory
 
 # %%
