@@ -221,6 +221,7 @@ def find_Loss_Cone(sat_data, height = 100, extMag='T89c'):
     lgm_lib.Lgm_Set_MagModel(IntMagModel, ExtMagModel, MagInfo)
 
     b_min = np.zeros(len(sat_data['Epoch']))
+    P_min = np.zeros((len(sat_data['Epoch']),3))
     b_footpoint = np.zeros(len(sat_data['Epoch']))
     loss_cone = np.zeros(len(sat_data['Epoch']))
         
@@ -237,13 +238,16 @@ def find_Loss_Cone(sat_data, height = 100, extMag='T89c'):
                             height, 0.01, 1e-7, MagInfo)
                 
         b_min[i_epoch] = MagInfo.contents.Bmin * 1e-5
+        P_min[i_epoch,0] = MagInfo.contents.Pmin.x
+        P_min[i_epoch,1] = MagInfo.contents.Pmin.y
+        P_min[i_epoch,2] = MagInfo.contents.Pmin.z
         if sat_data['Position'][i_epoch].z >= 0:
             b_footpoint[i_epoch] = MagInfo.contents.Ellipsoid_Footprint_Bn * 1e-5
         else:
             b_footpoint[i_epoch] = MagInfo.contents.Ellipsoid_Footprint_Bs * 1e-5
 
     loss_cone = np.rad2deg(np.arcsin(np.sqrt(b_min/b_footpoint)))
-    return b_min, b_footpoint, loss_cone
+    return b_min, P_min, b_footpoint, loss_cone
 
 #%% Extract relevant information from time processed data
 def data_from_gps(time_restricted_data, Lshell = [], intMag = 'IGRF', extMag = 'T89'):
@@ -286,7 +290,7 @@ def data_from_gps(time_restricted_data, Lshell = [], intMag = 'IGRF', extMag = '
                 gps_data_out[satellite][var_name] = time_restricted_data[satellite][var_name][mask]
 
         gps_data_out[satellite]['local90PA'] = find_local90PA(gps_data_out[satellite])
-        gps_data_out[satellite]['b_min'], gps_data_out[satellite]['b_footpoint'], gps_data_out[satellite]['loss_cone'] = find_Loss_Cone(gps_data_out[satellite])
+        gps_data_out[satellite]['b_min'], gps_data_out[satellite]['P_min'], gps_data_out[satellite]['b_footpoint'], gps_data_out[satellite]['loss_cone'] = find_Loss_Cone(gps_data_out[satellite])
     return gps_data_out
 
 #%% Find pitch angle corresponding to set K
@@ -530,8 +534,8 @@ def find_McIlwain_L(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
         print(f"    Time Index: {i_epoch+1}/{len(sat_data['Epoch'])}", end='\r')
         current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
         lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
-        current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'].data[i_epoch])
         QD_inform_MagInfo(epoch, MagInfo)
+        current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'].data[i_epoch])
         pitch_angle = alphaofK.values[i_epoch,0] # this is equitorial pitch angle
         sat_data[f'L_LGM_{extMag}IGRF'][i_epoch] = lgm_lib.Lgm_McIlwain_L(current_time.contents.Date, current_time.contents.Time, current_vec, pitch_angle, 0, pointer(I), pointer(Bm), pointer(M), MagInfo)
     return sat_data
@@ -554,11 +558,20 @@ def find_Lstar(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
             # Could possibly speed up with NewTimeLstarInfo
             current_time = ticktock_to_Lgm_DateTime(epoch, LstarInfo.contents.mInfo.contents.c)
             lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, LstarInfo.contents.mInfo.contents.c)
-            current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'].data[i_epoch])
             QD_inform_MagInfo(epoch, LstarInfo.contents.mInfo)
-            pitch_angle = alphaofK.values[i_epoch,0] # this is equitorial pitch angle
-            LstarInfo.contents.PitchAngle = c_double(pitch_angle)
-            #LstarInfo.contents.mInfo.contents.Bm = c_double(sat_data['b_footpoint'][i_epoch])
+
+            # NOTE: Lstar uses local pitch angle as the input, so we can either
+            #       1) Use satellite location and convert to local pitch angle
+            #       2) Use Pmin and equatorial pitch angle output from AlphaOfK
+            
+            current_vec = Lgm_Vector.Lgm_Vector(*sat_data['P_min'][i_epoch,:])   # for equatorial PA
+            #current_vec = Lgm_Vector.Lgm_Vector(*sat_data['Position'].data[i_epoch]) # for local PA
+
+            eq_pitch_angle = alphaofK.values[i_epoch,0] # this is equitorial pitch angle
+            # b_local = sat_data['b_satellite'][i_epoch]
+            # b_min = sat_data['b_min'][i_epoch]
+            #local_pitch_angle = np.rad2deg(np.arcsin(np.sqrt(np.sin(np.deg2rad(eq_pitch_angle))**2*b_local/b_min)))
+            LstarInfo.contents.PitchAngle = c_double(eq_pitch_angle)
             
             lgm_lib.Lstar(pointer(current_vec), LstarInfo)
             sat_data['Lstar'][i_epoch,i_K] = LstarInfo.contents.LS

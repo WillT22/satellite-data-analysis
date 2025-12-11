@@ -19,7 +19,7 @@ import pandas as pd
 import importlib
 import GPS_PSD_func
 importlib.reload(GPS_PSD_func)
-from GPS_PSD_func import (QinDenton_period, import_GPS, data_period, data_from_gps, load_data,
+from GPS_PSD_func import (QinDenton_period, import_GPS, data_period, data_from_gps, find_Loss_Cone, load_data,
                             AlphaOfK, MuofEnergyAlpha, EnergyofMuAlpha, energy_spectra, find_psd, find_Lstar)
 import Zhao_2018_PAD_Model
 importlib.reload(Zhao_2018_PAD_Model)
@@ -33,14 +33,14 @@ Re = 6378.137 #Earth's Radius
 Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
 K_set = np.array((0.1,1,2)) # R_E*G^(1/2)
 mode = 'load' # 'save' or 'load'
-storm_name = 'latefeb2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'latefeb2019storm', 'may2019storm', 'sep2019storm'
+storm_name = 'sep2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'latefeb2019storm', 'may2019storm', 'sep2019storm'
 plot_flux = False
 plot_flux_all=True
 plot_processes_flux = False
 plot_psd = False
 plot_combined_psd = True
 plot_energies = False
-PAD_calculate = False
+PAD_calculate = True
 plot_PAD = False
 if plot_PAD == True:
     PAD_calculate = True
@@ -118,7 +118,7 @@ if __name__ == '__main__':
 
         # Limit to relevant Lshells, convert satellite position from spherical GEO to GSM and extract relevant data
         # (Takes a few minutes)
-        print('Processing Data for each Satellite...')
+        print('\nProcessing Data for each Satellite...')
         storm_data = data_from_gps(storm_data_raw, Lshell=6)
         del storm_data_raw
 
@@ -141,7 +141,7 @@ if __name__ == '__main__':
         # Find pitch angle corresponding to set K
         alphaofK = {}
         for satellite, sat_data in storm_data.items():
-            print(f"Calculating Pitch Angle for satellite {satellite}")
+            print(f"Calculating Pitch Angle for satellite {satellite}", end='\r')
             alphaofK[satellite] = AlphaOfK(sat_data, K_set, extMag=extMag)
 
         # Save Data for later recall:
@@ -177,14 +177,14 @@ if __name__ == '__main__':
     
     if mode == 'save':
         # Save Data for later recall:
-        print("Saving REPT Data...")
+        print("\nSaving Data...")
         np.savez(energyofmualpha_save_path, **energyofmualpha)
         print("Data Saved \n")
 
 ### Find Flux at Set Energy ###
     flux_energyofmualpha = {}
     for satellite, sat_data in storm_data.items():
-        print(f"    Calculating Energy Spectra for satellite {satellite}", end='\r')
+        print(f"Calculating Energy Spectra for satellite {satellite}", end='\r')
         flux_energyofmualpha[satellite] = energy_spectra(sat_data, energyofmualpha[satellite])
 
 ### Find Flux at Set Pitch Angle ####
@@ -194,11 +194,11 @@ if __name__ == '__main__':
     if mode == 'save':
         Zhao_epoch_coeffs = {}
         for satellite, sat_data in storm_data.items():
-            print(f"    Finding PAD coefficients for satellite {satellite}", end='\r')
+            print(f"Finding PAD coefficients for satellite {satellite}", end='\r')
             Zhao_epoch_coeffs[satellite] = find_Zhao_PAD_coeffs(sat_data, QD_storm_data, energyofmualpha[satellite], alphaofK[satellite], extMag)
 
         # Save Data for later recall:
-        print("Saving Zhao coefficients for each Epoch...")
+        print("\nSaving Zhao coefficients for each Epoch...")
         np.savez(Zhao_epoch_coeffs_save_path, **Zhao_epoch_coeffs)
         print("Data Saved \n")
     elif mode == 'load': 
@@ -215,7 +215,7 @@ if __name__ == '__main__':
         if mode == 'save':
             PAD_models = {}
             for satellite, sat_data in storm_data.items():
-                print(f"    Modeling PAD for satellite {satellite}", end='\r')
+                print(f"Modeling PAD for satellite {satellite}", end='\r')
                 PAD_models[satellite] = create_PAD(sat_data, Zhao_epoch_coeffs[satellite], alphaofK[satellite])
 
             # Save Data for later recall:
@@ -234,7 +234,7 @@ if __name__ == '__main__':
     scale_factor = {}
     PAD_int = {}
     for satellite, sat_data in storm_data.items():
-        print(f"    Calculating Scale Factor for satellite {satellite}", end='\r')
+        print(f"Calculating Scale Factor for satellite {satellite}", end='\r')
         scale_factor[satellite] = PAD_Scale_Factor(sat_data, Zhao_epoch_coeffs[satellite], alphaofK[satellite]) # nans either come from alphaofK or dividing by zero (integral)
 
 ### Find Flux at Set Pitch Angle and Energy ###
@@ -261,7 +261,7 @@ if __name__ == '__main__':
             storm_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag=extMag)
 
         # Save Data for later recall:
-        print("Saving Processed GPS Data...")
+        print("\nSaving Processed GPS Data...")
         np.savez(complete_save_path, **storm_data )
         print("Data Saved \n")
     elif mode == 'load': 
@@ -471,7 +471,7 @@ if plot_flux_all==True:
     
 #%% Plot PSD
 if plot_psd==True:
-    k = 0.1
+    k = 1
     i_K = np.where(K_set == k)[0]
     mu = 4000
     i_mu = np.where(Mu_set == mu)[0]
@@ -490,13 +490,10 @@ if plot_psd==True:
     min_val = np.nanmin(np.log10(1e-12))
     max_val = np.nanmax(np.log10(1e-6))
 
-    plot_data = {}
-    plot_data['ns53'] = storm_data['ns53']
-    plot_data['ns55'] = storm_data['ns55']
-
-    for satellite, sat_data in plot_data.items():
+    for satellite, sat_data in storm_data.items():
         psd_plot = psd[satellite][k].values[:,i_mu].copy().flatten()
         psd_mask = (psd_plot > 0) & (psd_plot != np.nan)
+        print(sum(psd_mask))
         # Plotting, ignoring NaN values in the color
         scatter_A = ax.scatter(sat_data['Epoch'].UTC[psd_mask], sat_data['Lstar'][psd_mask,i_K],
                             c=np.log10(psd_plot[psd_mask]), cmap=cmap, vmin=min_val, vmax=max_val)
@@ -598,6 +595,9 @@ if plot_combined_psd==True:
     cbar.set_label(r"PSD $(c/MeV/cm)^3$", fontsize=textsize)
     cbar.ax.tick_params(labelsize=textsize)
 
+    # Add K and Mu text to the plot
+    #ax.text(0.36, 0.98, r"K = " + f"{k:.1f} " + r"$G^{{1/2}}R_E$, $\mu = $" + f"{mu:.0f}" + r" $MeV/G$", transform=ax.transAxes, fontsize=textsize+4, verticalalignment='top') #add the text
+
     handle_rbsp = mlines.Line2D([], [], color='gray', marker='o', linestyle='None',
                             markersize=10, label='RBSP') # Use a generic color/marker for circles
     handle_gps = mlines.Line2D([], [], color='gray', marker='*', linestyle='None',
@@ -662,8 +662,10 @@ if plot_energies==True:
 
 #%% Plot PAD comparison
 if plot_PAD==True: 
-    time_select = dt.datetime(start_date.year, 2, 28, 9, 30, 0)
-    sat_select = 'rbspb'
+    # latefeb2019, PAD poor fit 12:30-13:30, 18-22
+    # sep2019, PAD poor fit 14:30-17
+    time_select = dt.datetime(start_date.year, 8, 31, 18, 0, 0)
+    sat_select = 'rbspa'
     k = 0.1
     i_K = np.where(K_set == k)[0]
     mu = 2000
@@ -892,7 +894,7 @@ if plot_PAD==True:
 
 #%% Plot PSD Radial Profile with REPT data
 if plot_radial==True:
-    sat_select = 'rbspb'
+    sat_select = 'rbspa'
     k = 0.1
     i_K = np.where(K_set == k)[0]
     mu = 2000
@@ -902,7 +904,7 @@ if plot_radial==True:
     lstar_delta = 0.1 # default = 0.1
     time_delta = 30 # minutes, default = 30
 
-    min_val = np.nanmin(1e-10)
+    min_val = np.nanmin(1e-9)
     max_val = np.nanmax(1e-5)
 
     REPT_data_root = '/home/wzt0020/sat_data_analysis/REPT_data/'
@@ -915,11 +917,11 @@ if plot_radial==True:
     time_start  = start_date
     time_stop   = stop_date
 
-    time_start = dt.datetime(start_date.year, 2, 28, 8, 0, 0)
-    time_stop = dt.datetime(stop_date.year, 3, 1, 4, 0, 0)
+    # time_start = dt.datetime(start_date.year, 2, 28, 8, 0, 0)
+    # time_stop = dt.datetime(stop_date.year, 3, 1, 6, 0, 0)
 
-    # time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
-    # time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0) # for sep2019storm
+    time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
+    time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0) # for sep2019storm
 
     # time_start = dt.datetime(start_date.year, 8, 26, 0, 0, 0) # for aug2018storm
     # time_stop = dt.datetime(stop_date.year, 8, 27, 0, 0, 0) # for aug2018storm
@@ -927,23 +929,17 @@ if plot_radial==True:
     gps_time_start  = time_start
     gps_time_stop   = time_stop
 
-    gps_time_start = dt.datetime(start_date.year, 2, 28, 8, 0, 0)
-    gps_time_stop = dt.datetime(stop_date.year, 3, 1, 4, 0, 0)
+    # gps_time_start = dt.datetime(start_date.year, 2, 28, 10, 40, 0)
+    # gps_time_stop = dt.datetime(stop_date.year, 3, 1, 5, 0, 0)
 
-    # gps_time_start = dt.datetime(start_date.year, 8, 31, 10, 0, 0) # for sep2019storm
-    # gps_time_stop = dt.datetime(stop_date.year, 8, 31, 14, 0, 0) # for sep2019storm
+    gps_time_start = dt.datetime(start_date.year, 8, 31, 10, 0, 0) # for sep2019storm
+    gps_time_stop = dt.datetime(stop_date.year, 8, 31, 14, 0, 0) # for sep2019storm
 
     # gps_time_start = dt.datetime(start_date.year, 8, 26, 6, 40, 0) # for aug2018storm
     # gps_time_stop = dt.datetime(stop_date.year, 8, 26, 13, 0, 0) # for aug2018storm
 
     time_intervals_GPS = np.arange(gps_time_start, gps_time_stop+dt.timedelta(minutes=time_delta), dt.timedelta(minutes=time_delta)).astype(dt.datetime)
-    # time_intervals_GPS = np.concatenate((time_intervals_GPS[0:1],time_intervals_GPS[4:]))
-    time_intervals_GPS = np.concatenate((time_intervals_GPS[7:8],
-                                         time_intervals_GPS[13:14],
-                                         time_intervals_GPS[17:19],
-                                         time_intervals_GPS[34:35],
-                                         time_intervals_GPS[39:40],
-                                         ))
+    #time_intervals_GPS = time_intervals_GPS[0::2]
 
     temp_data = []
     for satellite, sat_data in storm_data.items():
@@ -1026,7 +1022,7 @@ if plot_radial==True:
                     avg_psd[i_time,i_lstar] = np.nanmean(psd_data)*gps_scale
     plotted_GPS_data = pd.DataFrame(plotted_GPS_data, index=time_intervals_GPS, columns=lstar_intervals)
 
-    fig, ax = plt.subplots(figsize=(24, 10))
+    fig, ax = plt.subplots(figsize=(24, 10)) # 30, 9
     colormap_name = 'plasma'
     plasma = plt.cm.get_cmap(colormap_name)
     cmap = matplotlib.colors.LinearSegmentedColormap.from_list('truncated_plasma',plasma(np.linspace(0, 0.9, 256)))
@@ -1061,8 +1057,9 @@ if plot_radial==True:
     cbar.ax.tick_params(labelsize=textsize)
 
     for i_time, time_int in enumerate(time_intervals_GPS):
-        if (sum(~np.isnan(avg_psd[i_time,:]))> 0):
-            ax.plot(lstar_intervals[~np.isnan(avg_psd[i_time,:])], avg_psd[i_time,~np.isnan(avg_psd[i_time,:])],
+        if (sum(~np.isnan(avg_psd[i_time,:]) & (avg_psd[i_time,:]>min_val))> 0):
+            range_mask = ~np.isnan(avg_psd[i_time,:]) & (avg_psd[i_time,:]>min_val)
+            ax.plot(lstar_intervals[range_mask], avg_psd[i_time,range_mask],
                     marker='*', markersize=16,
                     color=cmap(norm(mdates.date2num(time_int))), # Use the calculated color
                     label=time_int.strftime("%d-%m-%Y %H:%M")) # Label for each star
@@ -1142,7 +1139,7 @@ if plot_radial_dynamic==True:
     time_stop   = stop_date
 
     # time_start = dt.datetime(start_date.year, 2, 28, 8, 0, 0)
-    # time_stop = dt.datetime(stop_date.year, 3, 1, 4, 0, 0)
+    # time_stop = dt.datetime(stop_date.year, 3, 1, 6, 0, 0)
 
     time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
     time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0) # for sep2019storm
@@ -1154,7 +1151,7 @@ if plot_radial_dynamic==True:
     gps_time_stop   = time_stop
 
     # gps_time_start = dt.datetime(start_date.year, 2, 28, 8, 0, 0)
-    # gps_time_stop = dt.datetime(stop_date.year, 3, 1, 4, 0, 0)
+    # gps_time_stop = dt.datetime(stop_date.year, 3, 1, 6, 0, 0)
 
     gps_time_start = dt.datetime(start_date.year, 8, 31, 10, 0, 0) # for sep2019storm
     gps_time_stop = dt.datetime(stop_date.year, 8, 31, 14, 0, 0) # for sep2019storm
@@ -1163,16 +1160,16 @@ if plot_radial_dynamic==True:
     # gps_time_stop = dt.datetime(stop_date.year, 8, 26, 13, 0, 0) # for aug2018storm
 
     time_intervals_GPS = np.arange(gps_time_start, gps_time_stop+dt.timedelta(minutes=time_delta), dt.timedelta(minutes=time_delta)).astype(dt.datetime)
-    time_intervals_GPS = np.concatenate((time_intervals_GPS[0:1],time_intervals_GPS[4:]))
+    # time_intervals_GPS = np.concatenate((time_intervals_GPS[0:1],time_intervals_GPS[4:]))
     # time_intervals_GPS = np.concatenate((time_intervals_GPS[4:5],
-    #                                      time_intervals_GPS[7:8],
-    #                                      time_intervals_GPS[13:14],
-    #                                      time_intervals_GPS[17:19],
-    #                                      time_intervals_GPS[23:24],
-    #                                      time_intervals_GPS[27:28],
-    #                                      time_intervals_GPS[34:35],
-    #                                      time_intervals_GPS[39:40],
-    #                                      ))
+    #                                         time_intervals_GPS[7:8],
+    #                                         time_intervals_GPS[13:14],
+    #                                         time_intervals_GPS[17:19],
+    #                                         time_intervals_GPS[24:25],
+    #                                         time_intervals_GPS[34:35],
+    #                                         time_intervals_GPS[27:28],
+    #                                         time_intervals_GPS[41:42],
+    #                                         ))
 
 
     temp_data = []
@@ -1251,7 +1248,7 @@ if plot_radial_dynamic==True:
                 plotted_GPS_data[i_time, i_lstar] = GPS_plot_data[combined_mask]
                 psd_data = GPS_plot_data[:,4][combined_mask].astype(float)
                 # Filter out NaNs and then append to the collection list
-                psd_data = psd_data[~np.isnan(psd_data)]
+                psd_data = psd_data[~np.isnan(psd_data) & (psd_data>min_val)]
                 if len(psd_data) > 0:
                     avg_psd[i_time,i_lstar] = np.nanmean(psd_data)*gps_scale
     plotted_GPS_data = pd.DataFrame(plotted_GPS_data, index=time_intervals_GPS, columns=lstar_intervals)
@@ -1390,6 +1387,6 @@ if plot_radial_dynamic==True:
     ani.save('sorted_time_scatter.mp4', writer='ffmpeg', fps=30, dpi=100)
     print("Success! Saved as sorted_time_scatter.mp4")
 
-    plt.close(fig) # Explicitly close to free memory
+    #plt.close(fig) # Explicitly close to free memory
 
 # %%

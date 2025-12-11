@@ -31,7 +31,7 @@ textsize = 16
 Re = 6378.137 #Earth's Radius
 Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G
 K_set = np.array((0.1,1,2)) # R_E*G^(1/2)
-mode = 'load' # 'save' or 'load'
+mode = 'save' # 'save' or 'load'
 storm_name = 'latefeb2019storm' # 'april2017storm', 'aug2018storm', 'oct2012storm', 'latefeb2019storm', 'may2019storm', 'sep2019storm'
 plot_flux = True
 plot_flux_all = True
@@ -156,7 +156,7 @@ if __name__ == '__main__':
         ### Find Loss Cone and Equatorial B ###
         for satellite, sat_data in REPT_data.items():
             print(f"Calculating Equatorial B-field for satellite {satellite}...")
-            REPT_data[satellite]['b_min'], REPT_data[satellite]['b_footpoint'], REPT_data[satellite]['loss_cone'] = find_Loss_Cone(sat_data, extMag=extMag)
+            REPT_data[satellite]['b_min'], REPT_data[satellite]['P_min'], REPT_data[satellite]['b_footpoint'], REPT_data[satellite]['loss_cone'] = find_Loss_Cone(sat_data, extMag=extMag)
     
         ### Determine local 90 degree pitch angle ###
         for satellite, sat_data in REPT_data.items():
@@ -174,7 +174,7 @@ if __name__ == '__main__':
         del alphaofK_load
 
     # Read in data from previous save
-    save_path = os.path.join(base_save_folder, f'rept_data_{extMag}.npz')
+    save_path = os.path.join(base_save_folder, f'rept_data_{extMag}_new2.npz')
     if mode == 'load':
         complete_load = np.load(save_path, allow_pickle=True)
         REPT_data = load_data(complete_load)
