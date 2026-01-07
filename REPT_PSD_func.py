@@ -6,12 +6,21 @@ from spacepy.time import Ticktock
 from spacepy.coordinates import Coords
 import datetime as dt
 import matplotlib.dates as mdates
-import scipy.constants as sc
 import pandas as pd
 
-#%% Proccess REPT CDF
+#%% Process REPT Level 3 CDF Data
 def process_l3_data(file_paths):
-    # Initialize varaibles to be read in
+    """
+    Loads and processes Level 3 REPT CDF files into a standardized dictionary.
+
+    Args:
+        file_paths (list): List of file paths to REPT L3 CDF files.
+
+    Returns:
+        dict: Dictionary containing Epoch (Ticktock), Position (GSM Coords), MLT, Energy_Channels, Pitch_Angles, and FEDU flux.
+    """
+    
+    # Initialize dictionary to hold aggregated data
     sat_data = {}
     sat_data['Epoch'] = []
     sat_data['Position'] = []
@@ -20,73 +29,118 @@ def process_l3_data(file_paths):
     sat_data['Pitch_Angles'] = []
     sat_data['FEDU'] = None
     
-    # Itterate over files in file path
+    # Iterate over all provided daily files
     for file_path in file_paths:
         # Extract filename without path
         file_name = os.path.basename(file_path)
         print(f"Processing file: {file_name}")
-        # Load the CDF data
+
+        # Open CDF file
         cdf_data = pycdf.CDF(file_path)
-        # Read in data
+
+        # Append 1D data (Time, Position, MLT)
         sat_data['Epoch'].extend(cdf_data["Epoch"][:])
         sat_data['Position'].extend(cdf_data["Position"][:])
         sat_data['MLT'].extend(cdf_data["MLT"][:])
-        # Get energy channels from first file
+
+        # Handle Flux Data (FEDU) which is multidimensional
         if sat_data['FEDU'] is None:
+            # First file: Initialize array and store static energy channels
             sat_data['FEDU'] = cdf_data["FEDU"][:]
             sat_data['Energy_Channels'] = cdf_data["FEDU_Energy"][:]
         else:
+            # Subsequent files: Stack new time steps vertically
             sat_data['FEDU'] = np.vstack((sat_data['FEDU'], cdf_data["FEDU"][:]))
+        
+        # Process Pitch Angles: Map 90-180 deg to 0-90 deg (assuming symmetry/gyrotropy)
         sat_data['Pitch_Angles'] = cdf_data['FEDU_Alpha'][:]
-        sat_data['Pitch_Angles'] = np.where(sat_data['Pitch_Angles'] <= 90, sat_data['Pitch_Angles'], 180 - sat_data['Pitch_Angles'])
+        sat_data['Pitch_Angles'] = np.where(sat_data['Pitch_Angles'] <= 90, 
+                                            sat_data['Pitch_Angles'], 
+                                            180 - sat_data['Pitch_Angles'])
         cdf_data.close()
+
     print(f"Converting to GSM...")
-    # Convert to Ticktock
+    # Convert Epoch list to SpacePy Ticktock object for coordinate transforms
     sat_data['Epoch'] = Ticktock(sat_data['Epoch'], dtype='UTC')
-    # Convert from km to R_E, and from GEO to GSM
+
+    # Coordinate Transformation: GEO (km) -> GSM (Re)
     sat_data['Position'] = np.array(sat_data['Position'])
     Re = 6378.137 # Earth's Radius
+
+    # Create Coords object in GEO
     sat_data['Position'] = Coords(sat_data['Position'] / Re, 'GEO', 'car')
     sat_data['Position'].ticks = sat_data['Epoch']
+    # Perform conversion
     sat_data['Position'] = sat_data['Position'].convert('GSM','car')
+
     return sat_data
 
-#%% Time average for 1 minute resolution
+#%% Time Averaging (1-minute resolution)
 def time_average(sat_data, sat_name):
-    
+    """
+    Resamples satellite position and flux data into 1-minute time averages.
+
+    Args:
+        sat_data (dict): Dictionary containing satellite data (Epoch, Position, FEDU).
+        sat_name (str): Name of the satellite (unused in logic but good for context).
+
+    Returns:
+        dict: Updated sat_data with 1-minute averaged Epoch, Position, and FEDU arrays.
+    """
+
     epoch = sat_data['Epoch'].UTC
     position = sat_data['Position'].data # Shape: (time, 3)
     FEDU = sat_data['FEDU'] # Shape: (time, measured_pitch_angle, energy)
-    # Find minutes of whole period
+    
+    # Identify unique minute timestamps in the dataset
     epoch_minutes = [epoch[0].replace(second=0, microsecond=0)]
     for time_index in range(len(epoch[1:])):
         if epoch[time_index].minute != epoch[time_index-1].minute:
             epoch_minutes.append(epoch[time_index].replace(second=0, microsecond=0))
             
-    # Find average position each minute
+    # Initialize lists for averaged data
     average_epochs = []
     average_positions = []
     average_FEDU = []
-    minutes_mask = len(epoch_minutes)*[True]
+    minutes_mask = len(epoch_minutes)*[True] # Tracks valid minutes
+    
+    # Loop through each unique minute and average data within +/- 30 seconds
     for minute_index in range(len(epoch_minutes)):
         minute_start = epoch_minutes[minute_index] - dt.timedelta(seconds=30)
         minute_end =  epoch_minutes[minute_index] + dt.timedelta(seconds=30)
+        
+        # Find indices of all data points falling in this minute window
         minute_indices = np.where((np.array(epoch) >= minute_start) & (np.array(epoch) < minute_end))[0]
         
         if minute_indices.size > 0:
             average_epochs.append(epoch_minutes[minute_index])
+            # Average position and flux (axis=0 is time)
             average_positions.append(np.mean(position[minute_indices], axis=0))
             average_FEDU.append(np.mean(FEDU[minute_indices], axis=0))
         else:
-            minutes_mask[minute_index] = False
+            minutes_mask[minute_index] = False # Mark empty minutes
+    
+    # Update dictionary with averaged objects
     sat_data['Epoch'] = Ticktock(average_epochs, dtype='UTC')
     sat_data['Position'] = Coords(average_positions, 'GSM', 'car')
     sat_data['Position'].ticks = sat_data['Epoch']
     sat_data['FEDU'] = np.array(average_FEDU)
+
     return sat_data
 
-#%% Extract Magentometer Data and match with nearest time point
+#%% Extract Magnetometer Data and match with nearest time point
 def find_mag(sat_data, sat_name):
+    """
+    Loads EMFISIS magnetometer data and aligns the B-field magnitude to satellite epochs.
+
+    Args:
+        sat_data (dict): Dictionary containing satellite epochs.
+        sat_name (str): Name of the satellite (e.g., 'rbspa') to locate mag files.
+
+    Returns:
+        dict: Updated sat_data with 'b_satellite' key (Magnetic field magnitude in Gauss).
+    """
+
     mag_folder = '/home/wzt0020/sat_data_analysis/REPT_data/MagData/'
 
     Epoch = sat_data['Epoch'].UTC
@@ -97,48 +151,60 @@ def find_mag(sat_data, sat_name):
     mag_data['Epoch'] = []
     mag_data['b_satellite'] = []
 
-    
+    # Load daily mag files covering the entire data period
     if max(Epoch).year == min(Epoch).year:
         file_base = os.path.join(mag_folder, sat_name, str(max(Epoch).year))
         while date <= end_date:
             date_str = date.strftime("%Y%m%d")
+            # Find the specific daily file
             filename_pattern = f"*_magnetometer_4sec-gsm_emfisis-l3_{date_str}_v*.cdf"
             filepath_matches = glob.glob(os.path.join(file_base, filename_pattern))
+            
             file_path = filepath_matches[0]
             cdf_data = pycdf.CDF(file_path)
+            
+            # Handle variable naming inconsistencies (Epoch vs Epoch_centered)
             if 'Epoch_centered' in cdf_data:
                 mag_data['Epoch'].extend(cdf_data['Epoch_centered'][:])
             else:
                 mag_data['Epoch'].extend(cdf_data['Epoch'][:])
+            
             mag_data['b_satellite'].extend(cdf_data['Magnitude'][:])
             date += dt.timedelta(days=1)
+        
         mag_data['Epoch'] = Ticktock(mag_data['Epoch'], dtype='UTC')
         mag_data['b_satellite'] = np.array(mag_data['b_satellite'])*1e-5 # Convert to Gauss
 
+    # Match Mag data to Particle data using nearest-neighbor search
     epoch_nums = mdates.date2num(Epoch)
     mag_epochs_nums = mdates.date2num(mag_data['Epoch'].UTC)
+    
+    # Find insertion indices for particle times into mag times
     idx = np.searchsorted(mag_epochs_nums, epoch_nums)
     idx = np.clip(idx, 1, len(mag_epochs_nums) - 1)
+    
+    # Determine if left or right neighbor is closer
     nearest_time = np.where(np.abs(mag_epochs_nums[idx - 1] - epoch_nums) <= np.abs(mag_epochs_nums[idx] - epoch_nums), idx - 1, idx)
+    
+    # Assign matched B-field to sat_data
     sat_data['b_satellite'] = mag_data['b_satellite'][nearest_time]
+    
     return sat_data
 
-
-#%% Find the averages of fluzes with the same pitch angle
+#%% Average fluxes by Pitch Angle (Gyrotropy Assumption)
 def Average_FluxbyPA(sat_data, sat_name):
     """
-    Averages fluxes for matching pitch angles in FEDU.
+    Averages directional fluxes (FEDU) across symmetric pitch angles (0-90 and 180-90).
 
     Args:
-        FEDU (numpy.ndarray): 3D array of fluxes (time, pitch angle, energy).
-        alpha (list or numpy.ndarray): List or array of pitch angle values.
-        energy_channels (list or numpy.ndarray): List or array of energy channel values.
+        sat_data (dict): Dictionary containing 'FEDU', 'Energy_Channels', and 'Pitch_Angles'.
+        sat_name (str): Name of the satellite (unused in logic).
 
     Returns:
-        numpy.ndarray: Averaged fluxes array (time, unique pitch angle, energy).
+        dict: Updated sat_data with 'FEDU_averaged' and unique 'Pitch_Angles' (0-90).
     """
+
     FEDU = sat_data['FEDU'] # Shape: (time, measured_pitch_angle, energy)
-    Energy_Channels = sat_data['Energy_Channels'] # Shape: (energy,)
     
     # Ensure Pitch_Angles is a NumPy array for consistent indexing
     pitch_angles = np.asarray(sat_data['Pitch_Angles'])
@@ -170,11 +236,23 @@ def Average_FluxbyPA(sat_data, sat_name):
 
     sat_data['FEDU_averaged'] = FEDU_averaged
     sat_data['Pitch_Angles'] = alpha_unique # Update Pitch_Angles to be the unique, averaged ones
+    
     return sat_data
-
 
 #%% Interpolated Flux v Pitch Angle using exponential between points
 def Interp_Flux(sat_data, alphaofK, energyofMuAlpha):
+    """
+    Interpolates flux in log-space to target pitch angles (constant K) and energies (constant Mu).
+
+    Args:
+        sat_data (dict): Dictionary containing 'FEDU_averaged' and 'Pitch_Angles'.
+        alphaofK (DataFrame): Target pitch angles for specific K values over time.
+        energyofMuAlpha (dict): Target energies for specific Mu values over time.
+
+    Returns:
+        tuple: (FEDU_interp, FEDU_interp_alpha) DataFrames containing interpolated flux values.
+    """
+    
     FEDU_averaged = sat_data['FEDU_averaged']
     alpha_unique = sat_data['Pitch_Angles']
     alpha_set = alphaofK
@@ -189,7 +267,6 @@ def Interp_Flux(sat_data, alphaofK, energyofMuAlpha):
     FEDU_interp_alpha = {}
     FEDU_interp = {}
 
-    
     for i_K, K in enumerate(K_set):
         FEDU_interp_alpha[K] = np.zeros((len(sat_data['Epoch']), len(energy_channels)))
         FEDU_interp[K] = np.zeros((len(sat_data['Epoch']), len(Mu_set)))
@@ -256,4 +333,5 @@ def Interp_Flux(sat_data, alphaofK, energyofMuAlpha):
                         # Store NaN if there are fewer than two valid data points.
                         FEDU_interp[K][time_index, i_Mu] = np.nan
         FEDU_interp[K] = pd.DataFrame(FEDU_interp[K], index=epoch_list, columns=Mu_set)
+    
     return FEDU_interp, FEDU_interp_alpha

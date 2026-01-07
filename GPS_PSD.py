@@ -188,26 +188,6 @@ if __name__ == '__main__':
         flux_energyofmualpha[satellite] = energy_spectra(sat_data, energyofmualpha[satellite])
 
 ### Find Flux at Set Pitch Angle ####
-    #--- Extract Zhao Coefficients at each Epoch ---#
-    Zhao_epoch_coeffs_filename = f"Zhao_epoch_coeffs_{extMag}.npz"
-    Zhao_epoch_coeffs_save_path = os.path.join(base_save_folder, Zhao_epoch_coeffs_filename)
-    if mode == 'save':
-        Zhao_epoch_coeffs = {}
-        for satellite, sat_data in storm_data.items():
-            print(f"Finding PAD coefficients for satellite {satellite}", end='\r')
-            Zhao_epoch_coeffs[satellite] = find_Zhao_PAD_coeffs(sat_data, QD_storm_data, energyofmualpha[satellite], alphaofK[satellite], extMag)
-
-        # Save Data for later recall:
-        print("\nSaving Zhao coefficients for each Epoch...")
-        np.savez(Zhao_epoch_coeffs_save_path, **Zhao_epoch_coeffs)
-        print("Data Saved \n")
-    elif mode == 'load': 
-        # Load data from previous save
-        Zhao_epoch_coeffs_load = np.load(Zhao_epoch_coeffs_save_path, allow_pickle=True)
-        Zhao_epoch_coeffs = load_data(Zhao_epoch_coeffs_load)
-        Zhao_epoch_coeffs_load.close()
-        del Zhao_epoch_coeffs_load
-    
     #---Find PAD Model shapes---#
     PAD_filename = f"PAD_model_{extMag}.npz"
     PAD_save_path = os.path.join(base_save_folder, PAD_filename)
@@ -216,7 +196,7 @@ if __name__ == '__main__':
             PAD_models = {}
             for satellite, sat_data in storm_data.items():
                 print(f"Modeling PAD for satellite {satellite}", end='\r')
-                PAD_models[satellite] = create_PAD(sat_data, Zhao_epoch_coeffs[satellite], alphaofK[satellite])
+                PAD_models[satellite] = create_PAD(sat_data, QD_storm_data, energyofmualpha[satellite], extMag)
 
             # Save Data for later recall:
             print("\nSaving GPS PAD Model Data...")
@@ -235,7 +215,8 @@ if __name__ == '__main__':
     PAD_int = {}
     for satellite, sat_data in storm_data.items():
         print(f"Calculating Scale Factor for satellite {satellite}", end='\r')
-        scale_factor[satellite] = PAD_Scale_Factor(sat_data, Zhao_epoch_coeffs[satellite], alphaofK[satellite]) # nans either come from alphaofK or dividing by zero (integral)
+        scale_factor[satellite] = PAD_Scale_Factor(sat_data, QD_storm_data, energyofmualpha[satellite], alphaofK[satellite], extMag) 
+        # nans either come from alphaofK or dividing by zero (integral)
 
 ### Find Flux at Set Pitch Angle and Energy ###
     flux = {}
@@ -766,7 +747,7 @@ if plot_PAD==True:
     REPT_energyofmualpha_epoch[sat_select] = {}
     REPT_energyofmualpha_epoch[sat_select][k] = pd.DataFrame(REPT_energyofmualpha_val,index=[str(nearest_time_REPT)],columns=[mu])
     Zhao_coeffs_REPT = {}
-    Zhao_coeffs_REPT[sat_select] = find_Zhao_PAD_coeffs(REPT_data_epoch, QD_storm_data, REPT_energyofmualpha_epoch[sat_select], REPT_alphaofK[sat_select], extMag)
+    Zhao_coeffs_REPT[sat_select] = find_Zhao_PAD_coeffs(REPT_data_epoch, QD_storm_data, REPT_energyofmualpha_epoch[sat_select], extMag)
     
     REPT_alpha_val = REPT_alphaofK[sat_select][k].iloc[nearest_it_REPT]
     REPT_alphaofK_epoch = {}
