@@ -11,6 +11,10 @@ importlib.reload(GPS_PSD_func)
 
 #%% Initialize Global Variables
 ZHAO_MEDIAN_FILEPATH = '/home/wzt0020/sat_data_analysis/satellite-data-analysis/Zhao_2018_model_files/PAD_model_coeff_median.txt'
+global zhao_coeffs
+zhao_coeffs = {}
+global zhao_epoch_coeffs
+zhao_epoch_coeffs = None
 
 #%% Extract coefficients from Zhao_2018
 def import_zhao_coeffs(filepath=None):
@@ -32,8 +36,6 @@ def import_zhao_coeffs(filepath=None):
         filepath = ZHAO_MEDIAN_FILEPATH
         
     print("Importing Zhao Coefficients... \r")
-    global zhao_coeffs
-    zhao_coeffs = {}
 
     # Regex patterns for different header lines
     energy_pattern = re.compile(r"E=(\d+\.?\d*|\.\d+)\s*(keV|MeV)")
@@ -165,14 +167,15 @@ def find_Zhao_PAD_coeffs(sat_data, QD_data, energyofmualpha, extMag = 'T89c'):
     Returns:
         dict: Nested dict {K_val: {Mu_val: DataFrame}} containing 5 coeffs per epoch.
     """
-    extMag_label = 'T89' if extMag == 'T89c' else extMag
+    if extMag == 'T89c': extMag_label = 'T89'
+    else: extMag_label = extMag
     full_coeff_list = ['c2', 'c4', 'c6', 'c8', 'c10']
     
-    # Pre-load keys and data
-    # Note: 'zhao_coeffs' must be available in global scope or passed in. 
-    # Assuming it was loaded via import_Zhao_coeffs() and assigned globally or available.
-    if 'zhao_coeffs' not in globals():
-        raise ValueError("Global variable 'zhao_coeffs' not found. Run import_Zhao_coeffs first.")
+    global zhao_coeffs
+    if not zhao_coeffs:
+        zhao_coeffs = import_zhao_coeffs()
+        if not zhao_coeffs:
+            raise ValueError(f"Zhao coefficients dictionary is empty. Check file: {ZHAO_MEDIAN_FILEPATH}")
 
     # Extract energy bins from the global zhao_coeffs dictionary to serve as keys in the Zhao_epoch_coeff DataFrame
     energy_bins = np.array(list(zhao_coeffs.keys()), dtype=float)
@@ -189,7 +192,7 @@ def find_Zhao_PAD_coeffs(sat_data, QD_data, energyofmualpha, extMag = 'T89c'):
     # 2. Find Dst indices
     # Assumes QD_data['DateTime'] is sorted. using searchsorted is O(log N) vs argmin O(N)
     # Ensure QD_data times are sorted for searchsorted
-    qd_times = QD_data['DateTime']
+    qd_times = np.array(QD_data['DateTime'])
     time_indices = np.searchsorted(qd_times, rounded_times)
     # Clip to bounds just in case
     time_indices = np.clip(time_indices, 0, len(qd_times)-1)
@@ -332,7 +335,6 @@ def create_PAD(sat_data, QD_data, energyofmualpha, extMag = 'T89c'):
         dict: PAD_model containing 'Model' (flux) and 'pitch_angles' for each K/Mu.
     """
 
-    global zhao_epoch_coeffs
     zhao_epoch_coeffs = find_Zhao_PAD_coeffs(sat_data, QD_data, energyofmualpha, extMag)
     
     alpha_init = np.linspace(0,180,361)
@@ -402,7 +404,7 @@ def define_Legendre_Int_eq(b_sat, b_eq, b_fpt, b_min):
     ])
     return P_int.transpose()
 
-def PAD_Scale_Factor(sat_data, QD_data, energyofmualpha, alphaofK, extMag = 'T89c'):
+def PAD_Scale_Factor(sat_data, QD_data, energyofmualpha, alphaofK, extMag = 'T89c', zhao_epoch_coeffs=None):
     """
     Calculates the scale factor (normalization ratio) to map the PAD model to measured flux.
 
@@ -415,11 +417,9 @@ def PAD_Scale_Factor(sat_data, QD_data, energyofmualpha, alphaofK, extMag = 'T89
         dict: PAD_scale_factor[K_val] as a DataFrame of scaling ratios.
     """
 
-    if not zhao_epoch_coeffs:
-        global zhao_epoch_coeffs
+    if zhao_epoch_coeffs is None:
         zhao_epoch_coeffs = find_Zhao_PAD_coeffs(sat_data, QD_data, energyofmualpha, extMag)
-    
-    print('Calculating Scale Factor...')
+
     PAD_int_out = {}
     PAD_scale_factor = {}
     K_set = np.array(list(zhao_epoch_coeffs.keys()), dtype=float)
@@ -493,5 +493,4 @@ def PAD_Scale_Factor(sat_data, QD_data, energyofmualpha, alphaofK, extMag = 'T89
             ratio_result = PAD_models_val / integral_val
             PAD_scale_factor[K_val][Mu_val].values[valid_mask] = ratio_result
 
-    print('Scale Factor Calculated\n')
     return PAD_scale_factor
