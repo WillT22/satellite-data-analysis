@@ -770,8 +770,9 @@ def find_McIlwain_L(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
                 current_time.contents.Date, current_time.contents.Time, 
                 current_vec, pa_val, 0, 
                 pointer(I), pointer(Bm), pointer(M), MagInfo)
-                                                      
-    sat_data[f'L_LGM_{extMag}IGRF'] = l_shell_arr
+
+    extMag_label = 'T89' if extMag == 'T89c' else extMag                                          
+    sat_data[f'L_LGM_{extMag_label}IGRF'] = l_shell_arr
     lgm_lib.Lgm_FreeMagInfo(MagInfo)
 
     return sat_data
@@ -787,7 +788,7 @@ def find_Lstar(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
     ExtMagModel = c_int(lgm_lib.__dict__[f"LGM_EXTMODEL_{extMag}"])
     lgm_lib.Lgm_Set_MagModel(IntMagModel, ExtMagModel, LstarInfo.contents.mInfo)
     # variables are: tolerance, N Field lines, LstarInfo
-    lgm_lib.Lgm_SetLstarTolerances(3, 24, LstarInfo) #3, 24 for decent quality, 0, 10 for quick
+    lgm_lib.Lgm_SetLstarTolerances(0, 10, LstarInfo) #3, 24 for decent quality, 0, 10 for quick
     
     # Extract K values (columns) from the alphaofK DataFrame
     K_set = np.array(list(alphaofK.columns.tolist()), dtype=float)
@@ -813,7 +814,7 @@ def find_Lstar(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
         # b_min = sat_data['b_min'][i_epoch]
 
         for i_K, K in enumerate(K_set):
-            eq_pitch_angle = alphaofK.values[i_epoch,0] # this is equitorial pitch angle
+            eq_pitch_angle = alphaofK.values[i_epoch,i_K] # this is equitorial pitch angle
             #local_pitch_angle = np.rad2deg(np.arcsin(np.sqrt(np.sin(np.deg2rad(eq_pitch_angle))**2*b_local/b_min)))
             
             # Set Pitch Angle in C-Struct (required for mirror point determination)
@@ -826,5 +827,5 @@ def find_Lstar(sat_data, alphaofK, intMag = 'IGRF', extMag = 'T89c'):
             # Extract result (LS property of the structure)
             sat_data['Lstar'][i_epoch, i_K] = LstarInfo.contents.LS
 
-            lgm_lib.FreeLstarInfo(LstarInfo)
+            #lgm_lib.FreeLstarInfo(LstarInfo)
     return sat_data

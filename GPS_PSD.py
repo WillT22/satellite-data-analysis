@@ -7,6 +7,7 @@ import importlib
 import numpy as np
 import scipy.constants as sc
 import pandas as pd
+import gc # Garbage Collection for memory management
 
 # Add current directory to path for local imports
 current_script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -16,16 +17,16 @@ sys.path.insert(0, current_script_dir)
 import GPS_PSD_func
 importlib.reload(GPS_PSD_func)
 from GPS_PSD_func import (QinDenton_period, import_GPS, data_period, data_from_gps, 
-                          find_Loss_Cone, load_data, AlphaOfK, EnergyofMuAlpha, 
+                          load_data, AlphaOfK, EnergyofMuAlpha, 
                           energy_spectra, find_psd, find_Lstar)
 
 import Zhao_2018_PAD_Model
 importlib.reload(Zhao_2018_PAD_Model)
-from Zhao_2018_PAD_Model import (import_zhao_coeffs, find_Zhao_PAD_coeffs, 
-                                 create_PAD, PAD_Scale_Factor)
+from Zhao_2018_PAD_Model import (import_zhao_coeffs, create_PAD, PAD_Scale_Factor)
 
 import plotting_functions
-from plotting_functions import (plot_gps_flux, plot_gps_psd, plot_energy_mu_alpha, 
+importlib.reload(plotting_functions)
+from plotting_functions import (plot_monoenergetic_flux, plot_allenergy_flux, plot_gps_psd, plot_energy_mu_alpha, 
                                plot_combined_flux_all_channels, plot_combined_psd, 
                                plot_pad_comparison, plot_radial_profile_static, plot_radial_profile_dynamic)
 
@@ -38,7 +39,7 @@ Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G 
 K_set = np.array((0.1, 1, 2)) # R_E*G^(1/2) (2nd Invariant)
 
 # Workflow Control
-mode = 'load'          # 'save' (calculate & save) or 'load' (load existing npz)
+mode = 'save'          # 'save' (calculate & save) or 'load' (load existing npz)
 storm_name = 'sep2019storm' 
 extMag = 'TS04'        # Magnetic Model: 'T89c' or 'TS04'
 
@@ -76,191 +77,187 @@ QD_storm_data = QinDenton_period(start_date, stop_date)
 Zhao_coeffs = import_zhao_coeffs()
 
 #%% Main
+#%% Main Execution
 if __name__ == '__main__':
 
-    ### 1. Data Ingestion ###
-    # Be mindful of ns60 and ns69 data as they have poorer fits and more noise
-    raw_save_path = os.path.join(base_save_folder, 'raw_gps.npz')
+    # === File Paths ===
+    raw_save_path = os.path.join(base_save_folder, 'raw_gps_test.npz')
+    processed_save_path = os.path.join(base_save_folder, 'processed_gps_test.npz')
+
+    complete_save_path = os.path.join(base_save_folder, f"storm_data_{extMag}_test.npz")
+    alpha_save_path = os.path.join(base_save_folder, f"alphaofK_{extMag}_test.npz")
+    energy_save_path = os.path.join(base_save_folder, f"energyofmualpha_{extMag}_test.npz")
+    pad_save_path = os.path.join(base_save_folder, f"PAD_model_{extMag}_test.npz")
+
+    # ==========================================
+    # 1. Data Ingestion & Preprocessing
+    # ==========================================
     if mode == 'save':
+        # --- Step 1: Raw Import ---
+        print("Importing Raw GPS Data...")
         loaded_data = import_GPS(input_folder)
-        print("Saving Raw GPS Data...")
-        np.savez(raw_save_path, **loaded_data)
-        print("Data Saved \n")
-    elif mode == 'load':
-        raw_data_load = np.load(raw_save_path, allow_pickle=True)
-        loaded_data = load_data(raw_data_load)
-        raw_data_load.close()
-        del raw_data_load
-    
-    ### 2. Preprocessing & Filtering ###
-    # Restrict to time window, convert coordinates to GSM, filter by L-shell/Quality
-    processed_save_path = os.path.join(base_save_folder, 'processed_gps.npz')
-    
-    if mode == 'save':
+        np.savez(raw_save_path, **loaded_data) # Save raw backup
+        
+        # --- Step 2: Preprocessing ---
         storm_data_raw = {}
         for satellite, sat_data in loaded_data.items():
-            print(f'Restricting Time Period for satellite {satellite}', end='\r')
+            print(f'Restricting Time Period for {satellite}', end='\r')
             storm_data_raw[satellite] = data_period(sat_data, start_date, stop_date)
         del loaded_data
 
-        print('\nProcessing Data for each Satellite (L-shell & Efit filtering)...')
+        print('\nProcessing Data (L-shell & Efit filtering)...')
         storm_data = data_from_gps(storm_data_raw, Lshell=6)
         del storm_data_raw
-
+        
         print("Saving Processed GPS Data...")
         np.savez(processed_save_path, **storm_data)
-        print("Data Saved \n")
+        print("Processed Data Saved \n")
+
+        # ==========================================
+        # Vertical Pipeline: Steps 3 - 10
+        # Process one satellite fully, then clear memory
+        # ==========================================
+        final_results = {}
+        
+        # We need these lists to store aux data if you really need to plot them later
+        # (Optional: If you don't plot 'energy vs L' specifically, you don't need to save these)
+        energy_dict = {} 
+        alpha_dict = {}
+        pad_dict = {}
+
+        satellites = list(storm_data.keys())
+        
+        for satellite in satellites:
+            print(f"\n--- Running Pipeline for {satellite} ---")
+            sat_data = storm_data[satellite]
+
+            # 3. Alpha
+            print(f"Calculating Alpha...                    ")
+            alpha = AlphaOfK(sat_data, K_set, extMag=extMag)
+            
+            # 4. Energy
+            print(f"Calculating Energy...                   ")
+            energy = EnergyofMuAlpha(sat_data, Mu_set, alpha)
+
+            # 5. Quasiomni Flux
+            print(f"Calculating Quasiomni Flux...           ")
+            flux_energy = energy_spectra(sat_data, energy)
+
+            # 6. PAD Modeling
+            print(f"Modeling PAD...                         ")
+            pad_model = create_PAD(sat_data, QD_storm_data, energy, extMag)
+            
+            # 7. Scale Factor
+            print(f"Calculating Scale Factor...             ")
+            scale_factor = PAD_Scale_Factor(sat_data, QD_storm_data, energy, alpha, extMag)
+
+            # 8. Directional Flux
+            print(f"Calculating Directional Flux...         ")
+            # Initialize storage for this satellite's flux
+            epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
+            sat_flux_result = {}
+            
+            for K_value in K_set:
+                flux_mag = flux_energy[K_value].values
+                scale_val = scale_factor[K_value].values
+                directional_flux = flux_mag * (4 * np.pi) * scale_val
+                sat_flux_result[K_value] = pd.DataFrame(directional_flux, index=epoch_str, columns=Mu_set)
+
+            # 9. PSD
+            print(f"Calculating PSD...                      ")
+            psd_result = find_psd(sat_flux_result, energy)
+
+            # 10. L* (Roederer L)
+            print(f"Calculating L*...                       ")
+            lstar_data = find_Lstar(sat_data, alpha, extMag=extMag)
+            
+            # --- Store Results ---
+            # Attach other results to lstar_data dict
+            lstar_data['Flux'] = sat_flux_result
+            lstar_data['PSD'] = psd_result
+
+            # Save to master dict
+            final_results[satellite] = lstar_data
+            
+            # Optional: Save aux data if needed for specific plots
+            energy_dict[satellite] = energy
+            alpha_dict[satellite] = alpha
+            pad_dict[satellite] = pad_model
+
+            # --- Clean Memory ---
+            del sat_data, alpha, energy, flux_energy, pad_model, scale_factor, sat_flux_result, psd_result, lstar_data
+            gc.collect()
+
+# Update main variable
+        storm_data = final_results
+        
+        print("\nSaving Data...")
+        np.savez(complete_save_path, **storm_data)
+        np.savez(alpha_save_path, **alpha_dict)
+        np.savez(energy_save_path, **energy_dict)
+        np.savez(pad_save_path, **pad_dict)
+        
+        print("Pipeline Complete. \n")
 
     elif mode == 'load':
-        storm_data_load = np.load(processed_save_path, allow_pickle=True)
-        storm_data = load_data(storm_data_load)
-        storm_data_load.close()
-        del storm_data_load
-
-    ### 3. Calculate Equatorial Pitch Angles (Alpha) ###
-    # Determine the pitch angle required to conserve K (2nd Invariant)
-    alphaofK_filename = f"alphaofK_{extMag}.npz"
-    alphaofK_save_path = os.path.join(base_save_folder, alphaofK_filename)
-
-    if mode == 'save':
-        alphaofK = {}
-        for satellite, sat_data in storm_data.items():
-            print(f"Calculating Pitch Angle for satellite {satellite}", end='\r')
-            alphaofK[satellite] = AlphaOfK(sat_data, K_set, extMag=extMag)
-
-        print("Saving AlphaofK Data...")
-        np.savez(alphaofK_save_path, **alphaofK)
-        print("Data Saved \n")
-        
-    elif mode == 'load':   
-        alphaofK_load = np.load(alphaofK_save_path, allow_pickle=True)
-        alphaofK = load_data(alphaofK_load)
-        # Restore DataFrame structure lost in npz save
-        for satellite, sat_data in storm_data.items():
-            epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-            alphaofK[satellite] = pd.DataFrame(alphaofK[satellite], index=epoch_str, columns=K_set)
-        alphaofK_load.close()
-        del alphaofK_load
-    
-    ### 4. Calculate Energies ###
-    # Determine the Energy required to conserve Mu (1st Invariant) at the calculated Alpha
-    energyofmualpha = {}
-    energyofmualpha_filename = f"energyofmualpha_{extMag}.npz"
-    energyofmualpha_save_path = os.path.join(base_save_folder, energyofmualpha_filename)
-    
-    for satellite, sat_data in storm_data.items():
-        print(f"Calculating Energy of Mu and Alpha for satellite {satellite}", end='\r')
-        energyofmualpha[satellite] = EnergyofMuAlpha(sat_data, Mu_set, alphaofK[satellite])
-    
-    if mode == 'save':
-        print("\nSaving Energy Data...")
-        np.savez(energyofmualpha_save_path, **energyofmualpha)
-        print("Data Saved \n")
-
-    ### 5. Calculate Omnidirectional Flux at Target Coordinates ###
-    # Interpolate/Fit instrument spectrum to the specific Energies calculated above
-    flux_energyofmualpha = {}
-    for satellite, sat_data in storm_data.items():
-        print(f"Calculating Energy Spectra for satellite {satellite}", end='\r')
-        flux_energyofmualpha[satellite] = energy_spectra(sat_data, energyofmualpha[satellite])
-
-    ### 6. Pitch Angle Distribution (PAD) Modeling ###
-    PAD_filename = f"PAD_model_{extMag}.npz"
-    PAD_save_path = os.path.join(base_save_folder, PAD_filename)
-    
-    # Generate Zhao 2018 PAD models for the specific conditions 
-    if mode == 'save':
-        PAD_models = {}
-        for satellite, sat_data in storm_data.items():
-            print(f"Modeling PAD for satellite {satellite}", end='\r')
-            PAD_models[satellite] = create_PAD(sat_data, QD_storm_data, energyofmualpha[satellite], extMag)
-
-        print("\nSaving GPS PAD Model Data...")
-        np.savez(PAD_save_path, **PAD_models)
-        print("Data Saved \n")
-
-    elif mode == 'load': 
-        PAD_models_load = np.load(PAD_save_path, allow_pickle=True)
-        PAD_models = load_data(PAD_models_load)
-        PAD_models_load.close()
-        del PAD_models_load
-
-    ### 7. Calculate Geometric Scale Factor ###
-    # Ratio: Model Value (at Alpha) / Integrated Model Flux
-    # Used to convert Omnidirectional Flux -> Directional Flux
-    scale_factor = {}
-    PAD_int = {}
-    for satellite, sat_data in storm_data.items():
-        print(f"Calculating Scale Factor for satellite {satellite}", end='\r')
-        # Returns Tuple: (Scale Factor, Integral)
-        scale_factor[satellite] = PAD_Scale_Factor(sat_data, QD_storm_data, energyofmualpha[satellite], alphaofK[satellite], extMag) 
-    print('Scale Factor Calculated\n')
-
-    ### 8. Calculate Final Directional Flux ###
-    # Directional Flux = Omni_Flux * (Model_Value / Model_Integral) * Geometry_Factors
-    flux = {}
-    for satellite, sat_data in storm_data.items():
-        flux[satellite] = {}
-        epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
-        
-        for i_K, K_value in enumerate(K_set):
-            # Scale Factor Application:
-            flux_mag = flux_energyofmualpha[satellite][K_value].values
-            scale_val = scale_factor[satellite][K_value].values
-            
-            # Apply scaling
-            # 2 * 2 * pi: accounts for 2*hemispheric detection (Hemispheric -> Directional normalization)
-            directional_flux = flux_mag * (4 * np.pi) * scale_val
-            
-            flux[satellite][K_value] = pd.DataFrame(directional_flux, index=epoch_str, columns=Mu_set)
-
-    ### 9. Calculate Phase Space Density (PSD) ###
-    # PSD = Flux / p^2 (with relativistic corrections)
-    for satellite, sat_data in storm_data.items():
-        storm_data[satellite]['PSD'] = {}
-        storm_data[satellite]['PSD'] = find_psd(flux[satellite], energyofmualpha[satellite])
-
-    ### 10. Calculate L* (Roederer L) ###
-    # Computationally expensive tracing step
-    complete_filename = f"storm_data_{extMag}.npz"
-    complete_save_path = os.path.join(base_save_folder, complete_filename)
-    
-    if mode == 'save':
-        for satellite, sat_data in storm_data.items():
-            print(f"Calculating L* for satellite {satellite}")
-            storm_data[satellite] = find_Lstar(sat_data, alphaofK[satellite], extMag=extMag)
-
-        print("\nSaving Final Processed GPS Data...")
-        np.savez(complete_save_path, **storm_data)
-        print("Data Saved \n")
-        
-    elif mode == 'load': 
+        print("Loading Final Processed Data...")
         complete_load = np.load(complete_save_path, allow_pickle=True)
         storm_data = load_data(complete_load)
         complete_load.close()
         del complete_load
+        
+        # --- Restore Alpha, Energy, and PAD ---
+        print("Loading Aux Data (Alpha, Energy, PAD)...")
+        
+        # Load Raw Files
+        alpha_load = np.load(alpha_save_path, allow_pickle=True)
+        energy_load = np.load(energy_save_path, allow_pickle=True)
+        pad_load = np.load(pad_save_path, allow_pickle=True)
+        
+        # Convert using helper
+        alpha_raw = load_data(alpha_load)
+        energy_raw = load_data(energy_load)
+        PAD_models = load_data(pad_load) # Restore PAD Dictionary
+        
+        # Initialize containers for reconstructed DataFrames
+        alphaofK = {}
+        energyofmualpha = {}
+        
+        for satellite, sat_data in storm_data.items():
+            if satellite in alpha_raw and satellite in energy_raw:
+                epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
+                
+                # Restore Alpha DataFrame
+                alphaofK[satellite] = pd.DataFrame(
+                    alpha_raw[satellite], index=epoch_str, columns=K_set
+                )
+                
+                # Restore Energy DataFrame
+                energyofmualpha[satellite] = pd.DataFrame(
+                    energy_raw[satellite], index=epoch_str, columns=Mu_set
+                )
+        
+        # Cleanup
+        alpha_load.close()
+        energy_load.close()
+        pad_load.close()
+        del alpha_load, energy_load, pad_load, alpha_raw, energy_raw
+        gc.collect()
 
     # --- Runtime Statistics ---
     end_time = time.perf_counter()
-    elapsed_time = end_time - start_time
-
-    def format_runtime(elapsed_time):
-        hours = int(elapsed_time // 3600)
-        minutes = int((elapsed_time % 3600) // 60)
-        seconds = elapsed_time % 60
-        return f"Script runtime: {hours}h {minutes}m {seconds:.2f}s"
-
-    print(format_runtime(elapsed_time))
+    print(f"Script runtime: {(end_time - start_time)/60:.2f} minutes")
 
 #%% Plot Data
 # Control Plotting Options
-plot_flux_flag = False
-plot_flux_all_flag = False
+plot_monoenergetic_flux_flag = False
+plot_allenergy_flux_flag = True
+plot_flux_all_flag = True
 plot_psd_flag = False
-plot_combined_psd_flag = False
+plot_combined_psd_flag = True
 plot_energies_flag = False
 plot_PAD_flag = False
-plot_radial_flag = True
+plot_radial_flag = False
 plot_radial_dynamic_flag = False
 
 # --- LOAD REFERENCE REPT DATA (Once for all plots) ---
@@ -295,15 +292,29 @@ if rept_needed:
         print(f"Error: REPT data not found at {rept_path}")
 
 # Plot GPS Flux for a Single Energy Channel
-if  plot_flux_flag:
+if  plot_monoenergetic_flux_flag:
     print("Generating Plot: Single Energy Flux...")
-    plot_gps_flux(
-        gps_data=storm_data,
+    plot_monoenergetic_flux(
+        satellite_data=storm_data,
         start_date=start_date,
         stop_date=stop_date,
         extMag=extMag,
         target_energy=2.1, # You can change this
-        textsize=textsize
+        min_val=1e0, max_val=1e7,
+        figsize=(16, 4), textsize=textsize
+    )
+
+# Plot GPS Flux for ALL Energy Channels
+if plot_allenergy_flux_flag:
+    print("Generating Plot: Flux for All Energy Channels...")
+    plot_allenergy_flux(
+        satellite_data=storm_data, QD_storm_data=QD_storm_data,
+        start_date=start_date,
+        stop_date=stop_date,
+        extMag=extMag,
+        min_energy=1.8, max_energy=4,
+        min_val=1e0, max_val=1e7,
+        figsize=(24, 10), textsize=textsize
     )
 
 # Plot Flux from REPT and CXD for All Energy Channels
@@ -360,8 +371,7 @@ if plot_PAD_flag:
     time_select = dt.datetime(start_date.year, 8, 31, 8, 30, 0)
     # Call Function
     plot_pad_comparison(
-        gps_data=storm_data,
-        gps_flux=flux,              
+        gps_data=storm_data,            
         gps_energy=energyofmualpha, 
         gps_alpha=alphaofK,
         REPT_data=REPT_data,

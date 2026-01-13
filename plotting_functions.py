@@ -16,30 +16,21 @@ sys.path.insert(0, current_script_dir)
 
 from GPS_PSD_func import energy_spectra  # Required for GPS spectral fit
 
-#%% RBSP (ONLY) Plotting Functions
+#%% Individual Plotting Functions
 '''
 
 
-PLOTS ONLY DATA FROM RBSP SATELLITES
-
-
-'''
-
-#%% GPS (ONLY) Plotting Functions
-'''
-
-
-PLOTS ONLY DATA FROM GPS SATELLITES
+PLOTS ONLY DATA FROM ONE SATELLITE TYPE
 
 
 '''
 
 #%% Plot Flux for a Single Energy Channel for GPS Data
-def plot_gps_flux(gps_data, start_date, stop_date, extMag='T89c', 
-                          target_energy=2.1, textsize=16):
+def plot_monoenergetic_flux(satellite_data, start_date, stop_date, extMag='T89c', 
+                            target_energy=2.1, min_val=1e2, max_val=1e6, figsize=(16, 4), textsize=16):
     """
     Args:
-        gps_data (dict): Dictionary containing processed GPS satellite data.
+        satellite_data (dict): Dictionary containing processed satellite data.
         start_date (datetime): Start time for the plot.
         stop_date (datetime): Stop time for the plot.
         extMag (str): External magnetic field model identifier (e.g., 'T89c', 'TS04').
@@ -49,23 +40,33 @@ def plot_gps_flux(gps_data, start_date, stop_date, extMag='T89c',
     
     # 1. Setup Parameters
     # Find index of closest energy channel from the first satellite
-    first_sat = list(gps_data.keys())[0]
-    energy_channels = gps_data[first_sat]['Energy_Channels']
+    first_sat = list(satellite_data.keys())[0]
+    energy_channels = satellite_data[first_sat]['Energy_Channels']
     i_energy = np.argmin(np.abs(energy_channels - target_energy))
     actual_energy = energy_channels[i_energy]
 
     # 2. Configure Limits
-    min_val = np.nanmin(np.log10(1e2))
-    max_val = np.nanmax(np.log10(1e6))
+    min_val = np.nanmin(np.log10(min_val))
+    max_val = np.nanmax(np.log10(max_val))
     extMag_label = 'T89' if extMag == 'T89c' else extMag
 
     # 3. Create Plot
-    fig, ax = plt.subplots(figsize=(16, 4))
+    fig, ax = plt.subplots(figsize=figsize)
     
     scatter_A = None
-    for satellite, sat_data in gps_data.items():     
+    for satellite, sat_data in satellite_data.items():     
         # Filter valid flux data
-        flux_plot = sat_data['electron_diff_flux'][:, i_energy]
+        if 'electron_diff_flux' in sat_data:
+            flux_plot = sat_data['electron_diff_flux'][:, i_energy]
+            sat_label = 'GPS CXD'
+            marker = '*'
+        elif 'FEDU_averaged' in sat_data:
+            flux_slice = sat_data['FEDU_averaged'][:,:,i_energy]
+            flux_temp_mask = np.where(flux_slice >= 0, flux_slice, np.nan)
+            # Average over pitch angles (axis 1)
+            flux_plot = np.nanmean(flux_temp_mask, axis=1)/2
+            sat_label = 'RBSP REPT'
+            marker = 'o'
         flux_mask = (flux_plot > 0) & (~np.isnan(flux_plot))
         
         # Determine L-shell variable key
@@ -78,7 +79,7 @@ def plot_gps_flux(gps_data, start_date, stop_date, extMag='T89c',
         scatter_A = ax.scatter(sat_data['Epoch'].UTC[flux_mask], 
                                sat_data[l_key][flux_mask],
                                c=np.log10(flux_plot[flux_mask]), 
-                               vmin=min_val, vmax=max_val)
+                               vmin=min_val, vmax=max_val, marker=marker)
 
     if scatter_A is None:
         print("No valid flux data found to plot.")
@@ -86,7 +87,7 @@ def plot_gps_flux(gps_data, start_date, stop_date, extMag='T89c',
         return
 
     # 4. Format Axes
-    ax.set_title(f"GPS CXD, {actual_energy:.2f} MeV Electron Differential Flux", fontsize=textsize + 2)
+    ax.set_title(f"{sat_label}, {actual_energy:.2f} MeV Electron Differential Flux", fontsize=textsize + 2)
     ax.set_ylabel(r"McIlwain L", fontsize=textsize)
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
     ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
@@ -112,6 +113,128 @@ def plot_gps_flux(gps_data, start_date, stop_date, extMag='T89c',
     plt.subplots_adjust(top=0.82, right=0.95)
     plt.show()
 
+#%% Plot Flux from REPT or CXD for All Energy Channels + DST
+def plot_allenergy_flux(satellite_data, QD_storm_data, start_date, stop_date, extMag='T89c', 
+                            min_energy=0, max_energy=4, min_val=1e2, max_val=1e6, figsize = (24, 10), textsize=16):
+    """
+    Args:
+        satellite_data (dict): Processed satellite data.
+        QD_storm_data (dict): Qin-Denton OMNI data for DST plotting.
+        start_date, stop_date (datetime): Time range.
+        extMag (str): Magnetic model label.
+        min_energy, max_energy (float): Minimum and maximum energy channels to include (MeV).
+        min_val, max_val (float): Minimum and maximum flux values for color scale.
+        textsize (int): Base font size.
+    """
+    
+    # 1. Select Energy Channels
+    # Get channels from the first available satellite
+    first_satellite = list(satellite_data.keys())[0]
+    energy_channels = satellite_data[first_satellite]['Energy_Channels']
+    energy_channels = energy_channels[(energy_channels >= min_energy) & (energy_channels <= max_energy)]
+
+    # 2. Configure Limits
+    min_val = np.nanmin(np.log10(min_val))
+    max_val = np.nanmax(np.log10(max_val))
+    extMag_label = 'T89' if extMag == 'T89c' else extMag
+
+    # 3. Setup Multi-Panel Plot
+    fig, axes = plt.subplots(len(energy_channels) + 1, 1, figsize=figsize, sharex=True, sharey=False)
+    
+    colormap_name = 'viridis'
+    cmap = plt.cm.get_cmap(colormap_name)
+    
+    scatter_A = None # Placeholder for colorbar mapping
+
+    # 4. Loop through Energy Channels
+    for i_energy, energy in enumerate(energy_channels):
+        ax = axes[i_energy]
+        
+        # --- A. Plot REPT Data  ---
+        scatter_A = None
+        for satellite, sat_data in satellite_data.items():     
+            # Filter valid flux data
+            if 'electron_diff_flux' in sat_data:
+                flux_plot = sat_data['electron_diff_flux'][:, i_energy]
+                sat_label = 'GPS CXD'
+                marker = '*'
+            elif 'FEDU_averaged' in sat_data:
+                flux_slice = sat_data['FEDU_averaged'][:,:,i_energy]
+                flux_temp_mask = np.where(flux_slice >= 0, flux_slice, np.nan)
+                # Average over pitch angles (axis 1)
+                flux_plot = np.nanmean(flux_temp_mask, axis=1)/2
+                sat_label = 'RBSP REPT'
+                marker = 'o'
+            flux_mask = (flux_plot > 0) & (~np.isnan(flux_plot))
+            
+            # Determine L-shell variable key
+            l_key = f'L_LGM_{extMag_label}IGRF'
+            if l_key not in sat_data:
+                print(f"Warning: L-shell key {l_key} not found for {satellite}. Skipping.")
+                continue
+
+            # Scatter Plot: Time vs L, colored by log10(Flux)
+            scatter_A = ax.scatter(sat_data['Epoch'].UTC[flux_mask], 
+                                sat_data[l_key][flux_mask],
+                                c=np.log10(flux_plot[flux_mask]), 
+                                vmin=min_val, vmax=max_val, marker=marker)
+
+        if scatter_A is None:
+            print("No valid flux data found to plot.")
+            plt.close(fig)
+            return
+        
+        # Formatting
+        ax.set_title(f"{energy:.2f} MeV", fontsize=textsize+4, pad=5)
+        ax.tick_params(axis='both', labelsize=textsize, pad=5)
+        ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
+        ax.set_ylim(3, 6.5)
+        ax.grid(True)
+
+    # 5. Colorbar (Global)
+    pos_top = axes[0].get_position()
+    pos_bot = axes[-2].get_position()
+    bottom = pos_bot.y0 
+    height = pos_top.y1 - pos_bot.y0
+    if scatter_A:
+        cbar_ax = fig.add_axes([0.96, bottom, 0.02, height])
+        cbar = fig.colorbar(scatter_A, cax=cbar_ax, 
+                            format=ticker.FuncFormatter(lambda val, pos: r"$10^{{{:.0f}}}$".format(val)))
+        tick_locations = np.arange(min_val, max_val + 1)
+        cbar.set_ticks(tick_locations)
+        cbar.set_label(label=r'Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', fontsize=textsize, labelpad=5)
+        cbar.ax.tick_params(labelsize=textsize)
+
+    # 6. Plot DST Index (Bottom Subplot)
+    ax = axes[-1]
+    QD_dates_array = np.array(QD_storm_data['DateTime'])
+    iepoch_mask = (QD_dates_array >= start_date) & (QD_dates_array <= stop_date)
+    
+    ax.plot(QD_dates_array[iepoch_mask], QD_storm_data['Dst'][iepoch_mask], color='black')
+    
+    ax.tick_params(axis='both', labelsize=textsize, pad=5)
+    ax.yaxis.set_major_locator(ticker.MultipleLocator(20))
+    
+    min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+    max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+    ax.set_xlim(min_epoch, max_epoch)
+    
+    ax.axhline(0, color='gray', linestyle='--', linewidth=0.8, alpha=0)
+    ax.set_ylabel(r'DST (nT)', fontsize=textsize)
+    ax.grid(True)
+
+    # X-Axis Formatting (Bottom Only)
+    ax.set_xlabel('Time (UTC)', fontsize=textsize+2, labelpad=2)
+    ax.xaxis.set_major_locator(mdates.HourLocator(interval=12))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H'))
+    ax.tick_params(axis='x', labelsize=textsize+2, pad=12)
+
+    # Global Labels
+    fig.suptitle(f"{sat_label} Electron Differential Flux", fontsize=textsize + 4, y=0.98, x=0.52)
+    fig.text(0.08, 0.575, r'McIlwain L', fontsize=textsize+2, rotation='vertical', va='center')
+    
+    plt.subplots_adjust(right=0.95, hspace=(0.05 * (len(energy_channels)+1)) + 0.1)
+    plt.show()
 
 #%% Plot Phase Space Density (PSD) for GPS data
 def plot_gps_psd(gps_data, start_date, stop_date, K=0.1, Mu=2000, textsize=16):
@@ -305,7 +428,7 @@ def plot_combined_flux_all_channels(gps_data, REPT_data, QD_storm_data, start_da
         textsize (int): Base font size.
     """
     
-    # 1. Select Energy Channels (< 4 MeV)
+    # 1. Select Energy Channels
     # Get channels from the first available REPT satellite
     first_rept = list(REPT_data.keys())[0]
     energy_channels = REPT_data[first_rept]['Energy_Channels']
@@ -553,7 +676,7 @@ def plot_pad_comparison(gps_data, gps_flux, gps_energy, gps_alpha, REPT_data,
     """ 
     Args:
         gps_data (dict): GPS satellite data.
-        gps_flux, gps_energy, gps_alpha (dict): Pre-calculated GPS dictionaries.
+        gps_energy, gps_alpha (dict): Pre-calculated GPS dictionaries.
         REPT_data (dict): REPT satellite data.
         REPT_energyofmualpha (dict): REPT energy calculations.
         QD_storm_data (dict): Qin-Denton OMNI data.
@@ -715,7 +838,7 @@ def plot_pad_comparison(gps_data, gps_flux, gps_energy, gps_alpha, REPT_data,
     
     for sat, pads in Model_GPS_PAD.items():
         for i, idx in enumerate(near_time_idx[sat]):
-            scale = gps_flux[sat][K][Mu].values[idx]
+            scale = gps_data[sat]['Flux'][K][Mu].values[idx]
             l_plot = ax.plot(Model_GPS_PA[sat][i], pads[i] * scale, label=sat, 
                     zorder=1, alpha=0.7, linewidth=3, linestyle='dotted')
             
@@ -812,60 +935,61 @@ def plot_radial_profile_static(gps_data, REPT_data,
                                    dt.timedelta(minutes=time_delta)).astype(dt.datetime)
 
     # 4. Collect GPS Data
-    temp_data = []
-    for satellite, sat_data in gps_data.items():
-        # Apply Time Mask
-        window_start = time_start - dt.timedelta(minutes=time_delta-1)
-        window_stop = time_stop + dt.timedelta(minutes=time_delta-1)
-        sat_iepoch_mask = (sat_data['Epoch'].UTC >= window_start) & (sat_data['Epoch'].UTC <= window_stop)
+    if SHOW_GPS_DATA:
+        temp_data = []
+        for satellite, sat_data in gps_data.items():
+            # Apply Time Mask
+            window_start = time_start - dt.timedelta(minutes=time_delta-1)
+            window_stop = time_stop + dt.timedelta(minutes=time_delta-1)
+            sat_iepoch_mask = (sat_data['Epoch'].UTC >= window_start) & (sat_data['Epoch'].UTC <= window_stop)
 
-        # Extract Data
-        sat_epoch = sat_data['Epoch'].UTC[sat_iepoch_mask]
-        sat_MLT = sat_data['MLT'][sat_iepoch_mask]
-        sat_Lstar = sat_data['Lstar'][sat_iepoch_mask, i_K].flatten()
+            # Extract Data
+            sat_epoch = sat_data['Epoch'].UTC[sat_iepoch_mask]
+            sat_MLT = sat_data['MLT'][sat_iepoch_mask]
+            sat_Lstar = sat_data['Lstar'][sat_iepoch_mask, i_K].flatten()
+            
+            # Check if PSD exists in gps_data structure
+            if 'PSD' in sat_data and actual_K in sat_data['PSD']:
+                sat_PSD = sat_data['PSD'][actual_K].values[sat_iepoch_mask, i_mu].flatten()
+            else:
+                # Skip satellite if PSD not found
+                continue
+
+            sat_name_array = np.full(len(sat_epoch), satellite, dtype='<U10')
+
+            # Combine arrays
+            valid_mask = ~np.isnan(sat_Lstar) & ~np.isnan(sat_PSD)
+            
+            if np.sum(valid_mask) > 0:
+                combined_satellite_data = np.vstack((
+                    sat_epoch[valid_mask],
+                    sat_name_array[valid_mask],
+                    sat_Lstar[valid_mask],
+                    sat_MLT[valid_mask],
+                    sat_PSD[valid_mask]
+                )).T
+                temp_data.append(combined_satellite_data)
+
+        if not temp_data:
+            print("No valid GPS data found in the specified window.")
+            return
+
+        GPS_plot_data = np.concatenate(temp_data, axis=0)
+        GPS_plot_data = GPS_plot_data[GPS_plot_data[:, 0].argsort()]
+
+        # 5. MLT Filtering against REPT
+        nearest_time = np.zeros(len(GPS_plot_data), dtype=int)
+        MLT_mask = np.zeros(len(GPS_plot_data), dtype=bool)
         
-        # Check if PSD exists in gps_data structure
-        if 'PSD' in sat_data and actual_K in sat_data['PSD']:
-             sat_PSD = sat_data['PSD'][actual_K].values[sat_iepoch_mask, i_mu].flatten()
-        else:
-             # Skip satellite if PSD not found
-             continue
-
-        sat_name_array = np.full(len(sat_epoch), satellite, dtype='<U10')
-
-        # Combine arrays
-        valid_mask = ~np.isnan(sat_Lstar) & ~np.isnan(sat_PSD)
+        rept_epochs = REPT_data[REPT_sat_select]['Epoch'].UTC
         
-        if np.sum(valid_mask) > 0:
-            combined_satellite_data = np.vstack((
-                sat_epoch[valid_mask],
-                sat_name_array[valid_mask],
-                sat_Lstar[valid_mask],
-                sat_MLT[valid_mask],
-                sat_PSD[valid_mask]
-            )).T
-            temp_data.append(combined_satellite_data)
-
-    if not temp_data:
-        print("No valid GPS data found in the specified window.")
-        return
-
-    GPS_plot_data = np.concatenate(temp_data, axis=0)
-    GPS_plot_data = GPS_plot_data[GPS_plot_data[:, 0].argsort()]
-
-    # 5. MLT Filtering against REPT
-    nearest_time = np.zeros(len(GPS_plot_data), dtype=int)
-    MLT_mask = np.zeros(len(GPS_plot_data), dtype=bool)
-    
-    rept_epochs = REPT_data[REPT_sat_select]['Epoch'].UTC
-    
-    for i_epoch, epoch in enumerate(GPS_plot_data[:,0]):
-        nearest_time[i_epoch] = np.argmin(np.abs(rept_epochs - epoch))
-        MLT_ref = REPT_data[REPT_sat_select]['MLT'][nearest_time[i_epoch]]
-        MLT_gps = GPS_plot_data[i_epoch, 3]
-        
-        mlt_diff = np.minimum(np.abs(MLT_ref - MLT_gps), 24 - np.abs(MLT_ref - MLT_gps))
-        MLT_mask[i_epoch] = (mlt_diff <= MLT_range/2)
+        for i_epoch, epoch in enumerate(GPS_plot_data[:,0]):
+            nearest_time[i_epoch] = np.argmin(np.abs(rept_epochs - epoch))
+            MLT_ref = REPT_data[REPT_sat_select]['MLT'][nearest_time[i_epoch]]
+            MLT_gps = GPS_plot_data[i_epoch, 3]
+            
+            mlt_diff = np.minimum(np.abs(MLT_ref - MLT_gps), 24 - np.abs(MLT_ref - MLT_gps))
+            MLT_mask[i_epoch] = (mlt_diff <= MLT_range/2)
 
     # 6. Plotting Setup (RBSP Background)
     Epoch_np = np.array(REPT_data[REPT_sat_select]['Epoch'].UTC)
@@ -974,9 +1098,12 @@ def plot_radial_profile_static(gps_data, REPT_data,
     
     handle_rbsp = mlines.Line2D([], [], color='gray', marker='o', linestyle='None', markersize=10, label=rbsp_label) 
     handle_gps = mlines.Line2D([], [], color='gray', marker='*', linestyle='None', markersize=12, label='GPS') 
-    
-    ax.legend(handles=[handle_rbsp, handle_gps], title='Satellite', title_fontsize=textsize,
-              loc='lower right', bbox_to_anchor=(1.0, 0), handlelength=1, fontsize=textsize-2)
+    if SHOW_GPS_DATA:
+        ax.legend(handles=[handle_rbsp, handle_gps], title='Satellite', title_fontsize=textsize,
+                  loc='lower right', bbox_to_anchor=(1.0, 0), handlelength=1, fontsize=textsize-2)
+    else:
+        ax.legend(handles=[handle_rbsp], title='Satellite', title_fontsize=textsize,
+                  loc='lower right', bbox_to_anchor=(1.0, 0), handlelength=1, fontsize=textsize-2)
 
     title_str = f"Time Interval: {time_start.strftime('%Y-%m-%d %H:%M')} to {time_stop.strftime('%Y-%m-%d %H:%M')}"
     ax.set_title(title_str, fontsize=textsize+10)
