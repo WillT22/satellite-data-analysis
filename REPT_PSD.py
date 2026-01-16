@@ -9,13 +9,9 @@ current_script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0,current_script_dir)
 import numpy as np
 import scipy.constants as sc
-import matplotlib.dates as mdates
-from matplotlib import colors
-import matplotlib
-import matplotlib.pyplot as plt
-import matplotlib.lines as mlines
 import pandas as pd
 import importlib
+
 # --- Import Custom Libraries for Data Processing ---
 # GPS_PSD_func contains physics functions for adiabatic invariants (L, L*, Alpha, Mu)
 import GPS_PSD_func
@@ -51,9 +47,6 @@ extMag = 'TS04'        # Magnetic Model: 'T89c' or 'TS04'
 REPT_data_root = '/home/wzt0020/sat_data_analysis/REPT_data/'
 input_folder = os.path.join(REPT_data_root, storm_name)
 base_save_folder = os.path.join(REPT_data_root, storm_name)
-
-# External Magnetic Field Model
-extMag = 'TS04' # 'T89c', 'TS04', NOT 'TS07'
 
 # Define storm time periods based on name
 storm_dates = {

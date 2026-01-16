@@ -26,7 +26,7 @@ from Zhao_2018_PAD_Model import (import_zhao_coeffs, create_PAD, PAD_Scale_Facto
 
 import plotting_functions
 importlib.reload(plotting_functions)
-from plotting_functions import (plot_monoenergetic_flux, plot_allenergy_flux, plot_gps_psd, plot_energy_mu_alpha, 
+from plotting_functions import (plot_monoenergetic_flux, plot_allenergy_flux, plot_psd, plot_energy_mu_alpha, 
                                plot_combined_flux_all_channels, plot_combined_psd, 
                                plot_pad_comparison, plot_radial_profile_static, plot_radial_profile_dynamic)
 
@@ -40,7 +40,7 @@ K_set = np.array((0.1, 1, 2)) # R_E*G^(1/2) (2nd Invariant)
 
 # Workflow Control
 mode = 'save'          # 'save' (calculate & save) or 'load' (load existing npz)
-storm_name = 'sep2019storm' 
+storm_name = 'oct2012storm' 
 extMag = 'TS04'        # Magnetic Model: 'T89c' or 'TS04'
 
 # Data Paths
@@ -81,13 +81,13 @@ Zhao_coeffs = import_zhao_coeffs()
 if __name__ == '__main__':
 
     # === File Paths ===
-    raw_save_path = os.path.join(base_save_folder, 'raw_gps_test.npz')
-    processed_save_path = os.path.join(base_save_folder, 'processed_gps_test.npz')
+    raw_save_path = os.path.join(base_save_folder, 'raw_gps.npz')
+    processed_save_path = os.path.join(base_save_folder, 'processed_gps.npz')
 
-    complete_save_path = os.path.join(base_save_folder, f"storm_data_{extMag}_test.npz")
-    alpha_save_path = os.path.join(base_save_folder, f"alphaofK_{extMag}_test.npz")
-    energy_save_path = os.path.join(base_save_folder, f"energyofmualpha_{extMag}_test.npz")
-    pad_save_path = os.path.join(base_save_folder, f"PAD_model_{extMag}_test.npz")
+    complete_save_path = os.path.join(base_save_folder, f"storm_data_{extMag}.npz")
+    alpha_save_path = os.path.join(base_save_folder, f"alphaofK_{extMag}.npz")
+    energy_save_path = os.path.join(base_save_folder, f"energyofmualpha_{extMag}.npz")
+    pad_save_path = os.path.join(base_save_folder, f"PAD_model_{extMag}.npz")
 
     # ==========================================
     # 1. Data Ingestion & Preprocessing
@@ -106,7 +106,7 @@ if __name__ == '__main__':
         del loaded_data
 
         print('\nProcessing Data (L-shell & Efit filtering)...')
-        storm_data = data_from_gps(storm_data_raw, Lshell=6)
+        storm_data = data_from_gps(storm_data_raw, Lshell=6, extMag=extMag)
         del storm_data_raw
         
         print("Saving Processed GPS Data...")
@@ -121,9 +121,9 @@ if __name__ == '__main__':
         
         # We need these lists to store aux data if you really need to plot them later
         # (Optional: If you don't plot 'energy vs L' specifically, you don't need to save these)
-        energy_dict = {} 
-        alpha_dict = {}
-        pad_dict = {}
+        energyofmualpha = {} 
+        alphaofK = {}
+        PAD_models = {}
 
         satellites = list(storm_data.keys())
         
@@ -139,8 +139,8 @@ if __name__ == '__main__':
             print(f"Calculating Energy...                   ")
             energy = EnergyofMuAlpha(sat_data, Mu_set, alpha)
 
-            # 5. Quasiomni Flux
-            print(f"Calculating Quasiomni Flux...           ")
+            # 5. Omni Flux
+            print(f"Calculating (quasi) Omni Flux...           ")
             flux_energy = energy_spectra(sat_data, energy)
 
             # 6. PAD Modeling
@@ -160,6 +160,7 @@ if __name__ == '__main__':
             for K_value in K_set:
                 flux_mag = flux_energy[K_value].values
                 scale_val = scale_factor[K_value].values
+                # 2 * 2 * pi: accounts for 2*hemispheric detection (Hemispheric -> Directional normalization)
                 directional_flux = flux_mag * (4 * np.pi) * scale_val
                 sat_flux_result[K_value] = pd.DataFrame(directional_flux, index=epoch_str, columns=Mu_set)
 
@@ -180,9 +181,9 @@ if __name__ == '__main__':
             final_results[satellite] = lstar_data
             
             # Optional: Save aux data if needed for specific plots
-            energy_dict[satellite] = energy
-            alpha_dict[satellite] = alpha
-            pad_dict[satellite] = pad_model
+            energyofmualpha[satellite] = energy
+            alphaofK[satellite] = alpha
+            PAD_models[satellite] = pad_model
 
             # --- Clean Memory ---
             del sat_data, alpha, energy, flux_energy, pad_model, scale_factor, sat_flux_result, psd_result, lstar_data
@@ -193,9 +194,9 @@ if __name__ == '__main__':
         
         print("\nSaving Data...")
         np.savez(complete_save_path, **storm_data)
-        np.savez(alpha_save_path, **alpha_dict)
-        np.savez(energy_save_path, **energy_dict)
-        np.savez(pad_save_path, **pad_dict)
+        np.savez(alpha_save_path, **alphaofK)
+        np.savez(energy_save_path, **energyofmualpha)
+        np.savez(pad_save_path, **PAD_models)
         
         print("Pipeline Complete. \n")
 
@@ -216,48 +217,52 @@ if __name__ == '__main__':
         
         # Convert using helper
         alpha_raw = load_data(alpha_load)
-        energy_raw = load_data(energy_load)
+        energyofmualpha = load_data(energy_load)
         PAD_models = load_data(pad_load) # Restore PAD Dictionary
         
         # Initialize containers for reconstructed DataFrames
-        alphaofK = {}
-        energyofmualpha = {}
-        
+        alphaofK = {}     
         for satellite, sat_data in storm_data.items():
-            if satellite in alpha_raw and satellite in energy_raw:
+            if satellite in alpha_raw:
                 epoch_str = [dt_obj.strftime("%Y-%m-%dT%H:%M:%S") for dt_obj in sat_data['Epoch'].UTC]
                 
                 # Restore Alpha DataFrame
                 alphaofK[satellite] = pd.DataFrame(
                     alpha_raw[satellite], index=epoch_str, columns=K_set
                 )
-                
-                # Restore Energy DataFrame
-                energyofmualpha[satellite] = pd.DataFrame(
-                    energy_raw[satellite], index=epoch_str, columns=Mu_set
-                )
         
         # Cleanup
         alpha_load.close()
         energy_load.close()
         pad_load.close()
-        del alpha_load, energy_load, pad_load, alpha_raw, energy_raw
+        del alpha_load, energy_load, pad_load, alpha_raw
         gc.collect()
 
     # --- Runtime Statistics ---
     end_time = time.perf_counter()
-    print(f"Script runtime: {(end_time - start_time)/60:.2f} minutes")
+    elapsed_time = end_time - start_time
+
+    def format_runtime(elapsed_time):
+        # Calculate whole hours
+        hours = int(elapsed_time // 3600)
+        # Calculate remaining minutes
+        minutes = int((elapsed_time % 3600) // 60)
+        # Calculate remaining seconds (including decimals)
+        seconds = elapsed_time % 60
+        return f"Script runtime: {hours}h {minutes}m {seconds:.2f}s"
+    
+    print(format_runtime(elapsed_time))
 
 #%% Plot Data
 # Control Plotting Options
-plot_monoenergetic_flux_flag = False
+plot_monoenergetic_flux_flag = True
 plot_allenergy_flux_flag = True
 plot_flux_all_flag = True
-plot_psd_flag = False
+plot_psd_flag = True
 plot_combined_psd_flag = True
-plot_energies_flag = False
-plot_PAD_flag = False
-plot_radial_flag = False
+plot_energies_flag = True
+plot_PAD_flag = True
+plot_radial_flag = True
 plot_radial_dynamic_flag = False
 
 # --- LOAD REFERENCE REPT DATA (Once for all plots) ---
@@ -333,8 +338,8 @@ if plot_flux_all_flag:
 # Plot Phase Space Density (PSD) for GPS data   
 if plot_psd_flag:
     print("Generating Plot: GPS PSD...")
-    plot_gps_psd(
-        gps_data=storm_data,
+    plot_psd(
+        satellite_data=storm_data,
         start_date=start_date,
         stop_date=stop_date,
         K=0.1, Mu=2000,
@@ -357,7 +362,7 @@ if plot_combined_psd_flag:
 if plot_energies_flag:
     print("Generating Plot: Energy vs L*...")
     plot_energy_mu_alpha(
-        gps_data=storm_data,
+        satellite_data=storm_data,
         energyofmualpha=energyofmualpha,
         start_date=start_date,
         stop_date=stop_date,
@@ -419,3 +424,4 @@ if plot_radial_dynamic_flag:
         anim_name = f'test', 
         MLT_range=12, lstar_delta=0.1, time_delta=30, 
         min_val = 1e-9, max_val = 1e-5, textsize=textsize)
+# %%

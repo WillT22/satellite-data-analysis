@@ -115,7 +115,7 @@ def plot_monoenergetic_flux(satellite_data, start_date, stop_date, extMag='T89c'
 
 #%% Plot Flux from REPT or CXD for All Energy Channels + DST
 def plot_allenergy_flux(satellite_data, QD_storm_data, start_date, stop_date, extMag='T89c', 
-                            min_energy=0, max_energy=4, min_val=1e2, max_val=1e6, figsize = (24, 10), textsize=16):
+                            min_energy=0, max_energy=4, target_K_set=0.1, min_val=1e2, max_val=1e6, figsize = (24, 10), textsize=16):
     """
     Args:
         satellite_data (dict): Processed satellite data.
@@ -123,6 +123,7 @@ def plot_allenergy_flux(satellite_data, QD_storm_data, start_date, stop_date, ex
         start_date, stop_date (datetime): Time range.
         extMag (str): Magnetic model label.
         min_energy, max_energy (float): Minimum and maximum energy channels to include (MeV).
+        
         min_val, max_val (float): Minimum and maximum flux values for color scale.
         textsize (int): Base font size.
     """
@@ -141,9 +142,6 @@ def plot_allenergy_flux(satellite_data, QD_storm_data, start_date, stop_date, ex
     # 3. Setup Multi-Panel Plot
     fig, axes = plt.subplots(len(energy_channels) + 1, 1, figsize=figsize, sharex=True, sharey=False)
     
-    colormap_name = 'viridis'
-    cmap = plt.cm.get_cmap(colormap_name)
-    
     scatter_A = None # Placeholder for colorbar mapping
 
     # 4. Loop through Energy Channels
@@ -155,16 +153,30 @@ def plot_allenergy_flux(satellite_data, QD_storm_data, start_date, stop_date, ex
         for satellite, sat_data in satellite_data.items():     
             # Filter valid flux data
             if 'electron_diff_flux' in sat_data:
-                flux_plot = sat_data['electron_diff_flux'][:, i_energy]
                 sat_label = 'GPS CXD'
                 marker = '*'
+            
+                energy_input = {}
+                epoch_index = sat_data['Epoch'].UTC
+                
+                energy_input[target_K_set] = {}
+                energy_input[target_K_set][energy] = pd.Series(
+                    data=np.full(len(epoch_index), energy), 
+                    index=epoch_index
+                )
+            
+                # Calculate Flux using Spectral Fit
+                flux_result = energy_spectra(sat_data, energy_input)
+                flux_plot = flux_result[target_K_set][energy]
             elif 'FEDU_averaged' in sat_data:
+                sat_label = 'RBSP REPT'
+                marker = 'o'
+            
                 flux_slice = sat_data['FEDU_averaged'][:,:,i_energy]
                 flux_temp_mask = np.where(flux_slice >= 0, flux_slice, np.nan)
                 # Average over pitch angles (axis 1)
                 flux_plot = np.nanmean(flux_temp_mask, axis=1)/2
-                sat_label = 'RBSP REPT'
-                marker = 'o'
+
             flux_mask = (flux_plot > 0) & (~np.isnan(flux_plot))
             
             # Determine L-shell variable key
@@ -236,11 +248,11 @@ def plot_allenergy_flux(satellite_data, QD_storm_data, start_date, stop_date, ex
     plt.subplots_adjust(right=0.95, hspace=(0.05 * (len(energy_channels)+1)) + 0.1)
     plt.show()
 
-#%% Plot Phase Space Density (PSD) for GPS data
-def plot_gps_psd(gps_data, start_date, stop_date, K=0.1, Mu=2000, textsize=16):
+#%% Plot Phase Space Density (PSD) for satellite data
+def plot_psd(satellite_data, start_date, stop_date, K=0.1, Mu=2000, textsize=16):
     """
     Args:
-        gps_data (dict): Dictionary containing processed GPS satellite data, including PSD.
+        satellite_data (dict): Dictionary containing processed satellite data, including PSD.
         start_date (datetime): Start time for the plot.
         stop_date (datetime): Stop time for the plot.
         K (float, optional): Specific K value to plot. Defaults to 0.1.
@@ -249,8 +261,8 @@ def plot_gps_psd(gps_data, start_date, stop_date, K=0.1, Mu=2000, textsize=16):
     """
 
     # 1. Setup Parameters
-    K_set = np.array(list(gps_data[next(iter(gps_data))]['PSD'].keys()))
-    Mu_set = np.array(list(gps_data[next(iter(gps_data))]['PSD'][K_set[0]].keys()))
+    K_set = np.array(list(satellite_data[next(iter(satellite_data))]['PSD'].keys()))
+    Mu_set = np.array(list(satellite_data[next(iter(satellite_data))]['PSD'][K_set[0]].keys()))
     i_K = np.where(K_set == K)[0]
     i_mu = np.where(Mu_set == Mu)[0]
 
@@ -267,7 +279,7 @@ def plot_gps_psd(gps_data, start_date, stop_date, K=0.1, Mu=2000, textsize=16):
     scatter_A = None
 
     # 3. Plot Data
-    for satellite, sat_data in gps_data.items():
+    for satellite, sat_data in satellite_data.items():
 
         psd_plot = sat_data['PSD'][K].values[:,i_mu].copy().flatten()
         psd_mask = (psd_plot > 0) & (~np.isnan(psd_plot))
@@ -315,10 +327,10 @@ def plot_gps_psd(gps_data, start_date, stop_date, K=0.1, Mu=2000, textsize=16):
     plt.show()
 
 #%% Plot Energies corresponding to Mu and Alpha across L*
-def plot_energy_mu_alpha(gps_data, energyofmualpha, start_date, stop_date, K=0.1, Mu=2000, textsize=16):
+def plot_energy_mu_alpha(satellite_data, energyofmualpha, start_date, stop_date, K=0.1, Mu=2000, textsize=16):
     """
     Args:
-        gps_data (dict): Processed GPS data containing Lstar.
+        satellite_data (dict): Processed satellite data containing Lstar.
         energyofmualpha (dict): Dictionary of calculated energies for specific Mu/K.
         start_date, stop_date (datetime): Time range for the plot.
         K (float): Specific K value to plot. Defaults to 0.1.
@@ -356,7 +368,7 @@ def plot_energy_mu_alpha(gps_data, energyofmualpha, start_date, stop_date, K=0.1
     fig, ax = plt.subplots(figsize=(20, 8))
     
     scatter_plot = None
-    for satellite, sat_data in gps_data.items():
+    for satellite, sat_data in satellite_data.items():
         if satellite not in energyofmualpha: continue
         
         # Masking
@@ -669,7 +681,7 @@ def plot_combined_psd(gps_data, REPT_data, start_date, stop_date, K=0.1, Mu=2000
 
 #%% Plot Pitch Angle Distribution (PAD) Comparison. 
 # Compares instantaneous REPT PAD vs Model vs GPS Data.
-def plot_pad_comparison(gps_data, gps_flux, gps_energy, gps_alpha, REPT_data, 
+def plot_pad_comparison(gps_data, gps_energy, gps_alpha, REPT_data, 
                              REPT_energyofmualpha, QD_storm_data, time_select,
                              gps_pad_models=None, REPT_sat_select='rbspa', 
                              extMag='T89c', K=0.1, Mu=2000, textsize=16):
@@ -851,7 +863,7 @@ def plot_pad_comparison(gps_data, gps_flux, gps_energy, gps_alpha, REPT_data,
                 ax.vlines(val, 0, 1e8, color=col, linestyle=sty)
                 ax.vlines(180-val, 0, 1e8, color=col, linestyle=sty)
 
-    ax.text(0.54, 0.96, r"K = " + f"{K:.1f} " + r"$G^{{1/2}}R_E$, $\mu = $" + f"{Mu:.0f}" + r" $MeV/G$", 
+    ax.text(1.04, 0.9, r"K = " + f"{K:.1f} " + r"$G^{{1/2}}R_E$," + f"\n" + r"$\mu = $" + f"{Mu:.0f}" + r" $MeV/G$", 
             transform=ax.transAxes, fontsize=textsize)
 
     gray = [0.6, 0.6, 0.6]
@@ -863,7 +875,9 @@ def plot_pad_comparison(gps_data, gps_flux, gps_energy, gps_alpha, REPT_data,
     final_h = exist_h + [h_loss, h_90, h_alpha]
     final_l = exist_l + [h_loss.get_label(), h_90.get_label(), h_alpha.get_label()]
     
-    ax.legend(handles=final_h, labels=final_l, fontsize=textsize-4, loc='lower center')
+    ax.legend(handles=final_h, labels=final_l, fontsize=textsize-4, loc='lower left',
+              bbox_to_anchor=(1.02, 0),
+              handlelength=1)
     
     ax.set_xlim(0, 180)
     y_min = np.floor(np.log10(np.nanmin(Model_PAD_vals * Model_scale)))
@@ -896,6 +910,7 @@ def plot_radial_profile_static(gps_data, REPT_data,
         time_stop (datetime): End time for the plot axis.
         gps_time_start (datetime, optional): Start time for collecting GPS profiles. Defaults to time_start.
         gps_time_stop (datetime, optional): End time for collecting GPS profiles. Defaults to time_stop.
+        SHOW_GPS_DATA (boolean, optional): Truth value for whether GPS data should be shown on plot.
         REPT_sat_select (str, optional): REPT satellite to use ('rbspa' or 'rbspb'). Defaults to 'rbspa'.
         K (float, optional): Second adiabatic invariant. Defaults to 0.1.
         Mu (float, optional): First adiabatic invariant. Defaults to 2000.
@@ -1030,7 +1045,7 @@ def plot_radial_profile_static(gps_data, REPT_data,
                 
                 combined_mask = time_mask_GPS & lstar_mask & MLT_mask
                 
-                if np.sum(combined_mask) > 1:
+                if np.sum(combined_mask) > 0:
                     psd_data = GPS_plot_data[combined_mask, 4].astype(float)
                     valid_psd = psd_data[(~np.isnan(psd_data)) & (psd_data > min_val)]
                     if len(valid_psd) > 0:

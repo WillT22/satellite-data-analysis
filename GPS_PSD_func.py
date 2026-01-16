@@ -257,36 +257,6 @@ def QD_inform_MagInfo(time_dt, MagInfo):
     
     return
 
-#%% Find local pitch angle
-def find_local90PA(sat_data):
-    """
-    Calculates the Local Pitch Angle that corresponds to a 90-degree Equatorial Pitch Angle.
-    Based on the First Adiabatic Invariant (Conservation of Magnetic Moment).
-
-    Args:
-        sat_data (dict): Must contain 'b_satellite' and 'b_min' (or 'b_equator').
-
-    Returns:
-        numpy.ndarray: Array of local pitch angles in degrees.
-    """
-
-    local90PA = {}
-    if sat_data.get('b_min') is not None:
-        Beq = sat_data['b_min']
-    else:
-        Beq = sat_data['b_equator']
-    Bsat = sat_data['b_satellite']
-
-    # Only calculate where data is valid (B > 0)
-    mask = (Beq > 0) & (Bsat > 0)
-    local90PA = np.full_like(Beq, np.nan)
-
-    # Conservation of 1st Adiabatic Invariant: sin^2(alpha_loc)/B_loc = sin^2(alpha_eq)/B_eq
-    # Solve for alpha_eq given alpha_loc = 90 degrees:
-    # sin(alpha_eq) = sqrt(B_eq / B_loc)
-    local90PA[mask] = np.rad2deg(np.arcsin(np.sqrt(Beq[mask] / Bsat[mask])))
-    return local90PA
-
 #%% Convert TickTock to Lgm_DateTime
 def ticktock_to_Lgm_DateTime(ticktock, c):
     """Helper to create Lgm_DateTime C-struct from Python Ticktock/Datetime."""
@@ -357,15 +327,43 @@ def find_Loss_Cone(sat_data, height = 100, extMag='T89c'):
 
     return b_min, P_min, b_footpoint, loss_cone
 
+#%% Find local pitch angle
+def find_local90PA(sat_data):
+    """
+    Calculates the Local Pitch Angle that corresponds to a 90-degree Equatorial Pitch Angle.
+    Based on the First Adiabatic Invariant (Conservation of Magnetic Moment).
+
+    Args:
+        sat_data (dict): Must contain 'b_satellite' and 'b_min' (or 'b_equator').
+
+    Returns:
+        numpy.ndarray: Array of local pitch angles in degrees.
+    """
+
+    local90PA = {}
+    Beq = sat_data['b_min']
+    Bsat = sat_data['b_satellite']
+
+    # Only calculate where data is valid (B > 0)
+    mask = (Beq > 0) & (Bsat > 0)
+    local90PA = np.full_like(Beq, np.nan)
+
+    # Conservation of 1st Adiabatic Invariant: sin^2(alpha_loc)/B_loc = sin^2(alpha_eq)/B_eq
+    # Solve for alpha_eq given alpha_loc = 90 degrees:
+    # sin(alpha_eq) = sqrt(B_eq / B_loc)
+    local90PA[mask] = np.rad2deg(np.arcsin(np.sqrt(Beq[mask] / Bsat[mask])))
+    return local90PA
+
 #%% Extract relevant information from time processed data
-def data_from_gps(time_restricted_data, Lshell = [], intMag = 'IGRF', extMag = 'T89'):
+def data_from_gps(time_restricted_data, Lshell = [], intMag = 'IGRF', extMag = 'T89c'):
     """
     Extracts and structures specific GPS data variables for further analysis.
     Filters based on L-shell and electron flux quality flags.
     """
     
     gps_data_out = {}
-    model_var = f"L_LGM_{extMag}{intMag}"
+    extMag_label = 'T89' if extMag == 'T89c' else extMag   
+    model_var = f"L_LGM_{extMag_label}{intMag}"
 
     chosen_vars = ['Epoch', 'local_time',
                    'b_satellite','b_equator',
@@ -414,11 +412,11 @@ def data_from_gps(time_restricted_data, Lshell = [], intMag = 'IGRF', extMag = '
                 gps_data_out[satellite][var_name] = time_restricted_data[satellite][var_name][mask]
 
         # Calculate Derived Magnetic Properties
-        gps_data_out[satellite]['local90PA'] = find_local90PA(gps_data_out[satellite])
         (gps_data_out[satellite]['b_min'], 
          gps_data_out[satellite]['P_min'], 
          gps_data_out[satellite]['b_footpoint'], 
          gps_data_out[satellite]['loss_cone']) = find_Loss_Cone(gps_data_out[satellite], extMag=extMag)
+        gps_data_out[satellite]['local90PA'] = find_local90PA(gps_data_out[satellite])
     
     return gps_data_out
 
