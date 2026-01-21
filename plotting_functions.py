@@ -429,7 +429,10 @@ PLOTS DATA FROM BOTH GPS AND RBSP SATELLITES TOGETHER
 '''
 
 #%% Plot Combined Flux from REPT and CXD for All Energy Channels + DST
-def plot_combined_flux_all_channels(gps_data, REPT_data, QD_storm_data, start_date, stop_date, extMag='T89c', max_energy=4, target_K_set=0.1, textsize=16):
+def plot_combined_flux_all_channels(gps_data, REPT_data, QD_storm_data, 
+                                    start_date, stop_date, extMag='T89c', 
+                                    max_energy=4, target_K_set=0.1, 
+                                    figsize=(24, 10),textsize=16):
     """
     Args:
         gps_data (dict): Processed GPS data.
@@ -437,6 +440,9 @@ def plot_combined_flux_all_channels(gps_data, REPT_data, QD_storm_data, start_da
         QD_storm_data (dict): Qin-Denton OMNI data for DST plotting.
         start_date, stop_date (datetime): Time range.
         extMag (str): Magnetic model label.
+        max_energy (float): Maximum energy channel to include (MeV).
+        target_K_set (float): K value for GPS spectral fit.
+        figsize (tuple): Figure size.
         textsize (int): Base font size.
     """
     
@@ -449,7 +455,7 @@ def plot_combined_flux_all_channels(gps_data, REPT_data, QD_storm_data, start_da
     extMag_label = 'T89' if extMag == 'T89c' else extMag
 
     # 2. Setup Multi-Panel Plot
-    fig, axes = plt.subplots(len(energy_channels) + 1, 1, figsize=(24, 10), sharex=True, sharey=False)
+    fig, axes = plt.subplots(len(energy_channels) + 1, 1, figsize=figsize, sharex=True, sharey=False)
     
     colormap_name = 'viridis'
     cmap = plt.cm.get_cmap(colormap_name)
@@ -527,7 +533,7 @@ def plot_combined_flux_all_channels(gps_data, REPT_data, QD_storm_data, start_da
     ax.plot(QD_dates_array[iepoch_mask], QD_storm_data['Dst'][iepoch_mask], color='black')
     
     ax.tick_params(axis='both', labelsize=textsize, pad=5)
-    ax.yaxis.set_major_locator(ticker.MultipleLocator(20))
+    ax.yaxis.set_major_locator(ticker.MultipleLocator(40))
     
     min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
     max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
@@ -850,18 +856,19 @@ def plot_pad_comparison(gps_data, gps_energy, gps_alpha, REPT_data,
     
     for sat, pads in Model_GPS_PAD.items():
         for i, idx in enumerate(near_time_idx[sat]):
-            scale = gps_data[sat]['Flux'][K][Mu].values[idx]
-            l_plot = ax.plot(Model_GPS_PA[sat][i], pads[i] * scale, label=sat, 
-                    zorder=1, alpha=0.7, linewidth=3, linestyle='dotted')
-            
-            col = l_plot[0].get_color()
-            loss = gps_data[sat]['loss_cone'][idx]
-            loc90 = gps_data[sat]['local90PA'][idx]
-            alpha_val = gps_alpha[sat][K].iloc[idx]
-            
-            for val, sty in [(loss, '-.'), (loc90, '-'), (alpha_val, '--')]:
-                ax.vlines(val, 0, 1e8, color=col, linestyle=sty)
-                ax.vlines(180-val, 0, 1e8, color=col, linestyle=sty)
+            if sat=='ns73':
+                scale = gps_data[sat]['Flux'][K][Mu].values[idx]
+                l_plot = ax.plot(Model_GPS_PA[sat][i], pads[i] * scale*2.5, label=sat, 
+                        zorder=1, alpha=0.7, linewidth=3, linestyle='dotted')
+                
+                col = l_plot[0].get_color()
+                loss = gps_data[sat]['loss_cone'][idx]
+                loc90 = gps_data[sat]['local90PA'][idx]
+                alpha_val = gps_alpha[sat][K].iloc[idx]
+                
+                for val, sty in [(loss, '-.'), (loc90, '-')]:#, (alpha_val, '--')]:
+                    ax.vlines(val, 0, 1e8, color=col, linestyle=sty)
+                    ax.vlines(180-val, 0, 1e8, color=col, linestyle=sty)
 
     ax.text(1.04, 0.9, r"K = " + f"{K:.1f} " + r"$G^{{1/2}}R_E$," + f"\n" + r"$\mu = $" + f"{Mu:.0f}" + r" $MeV/G$", 
             transform=ax.transAxes, fontsize=textsize)
@@ -869,20 +876,22 @@ def plot_pad_comparison(gps_data, gps_energy, gps_alpha, REPT_data,
     gray = [0.6, 0.6, 0.6]
     h_loss = mlines.Line2D([], [], color=gray, linestyle='-.', linewidth=2, label='GPS Loss Cone')
     h_90 = mlines.Line2D([], [], color=gray, linestyle='-', linewidth=2, label='GPS Local 90')
-    h_alpha = mlines.Line2D([], [], color=gray, linestyle='--', linewidth=2, label=r'PA at K=' + f'{K:.1f}')
+    #h_alpha = mlines.Line2D([], [], color=gray, linestyle='--', linewidth=2, label=r'PA at K=' + f'{K:.1f}')
     
     exist_h, exist_l = ax.get_legend_handles_labels()
-    final_h = exist_h + [h_loss, h_90, h_alpha]
-    final_l = exist_l + [h_loss.get_label(), h_90.get_label(), h_alpha.get_label()]
+    final_h = exist_h + [h_loss, h_90] #, h_alpha]
+    final_l = exist_l + [h_loss.get_label(), h_90.get_label()] #, h_alpha.get_label()]
     
     ax.legend(handles=final_h, labels=final_l, fontsize=textsize-4, loc='lower left',
               bbox_to_anchor=(1.02, 0),
               handlelength=1)
     
     ax.set_xlim(0, 180)
+    ax.set_xticks(np.arange(0, 181, 20))
     y_min = np.floor(np.log10(np.nanmin(Model_PAD_vals * Model_scale)))
     y_max = np.ceil(np.log10(np.nanmax(Model_PAD_vals * Model_scale)))
     ax.set_ylim(10**y_min, 10**y_max)
+    #ax.set_ylim(0.15, 2)
     
     plt.yscale('log')
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
@@ -898,8 +907,9 @@ def plot_radial_profile_static(gps_data, REPT_data,
                                 time_start, time_stop, 
                                 gps_time_start=None, gps_time_stop=None, SHOW_GPS_DATA=True,
                                 REPT_sat_select='rbspb',K=0.1, Mu=2000, 
-                                MLT_range=12, lstar_delta=0.1, time_delta=30, 
-                                min_val = 1e-9, max_val = 1e-5, textsize=16):
+                                MLT_range=12, time_delta=30, skip_interval=1,
+                                lstar_min = 3.5, lstar_max = 6.0, lstar_delta=0.1,
+                                min_val = 1e-12, max_val = 1e-5, textsize=16):
     """
     Generates a static PSD Radial Profile plot with L* binning and REPT background.
     
@@ -915,9 +925,12 @@ def plot_radial_profile_static(gps_data, REPT_data,
         K (float, optional): Second adiabatic invariant. Defaults to 0.1.
         Mu (float, optional): First adiabatic invariant. Defaults to 2000.
         MLT_range (float, optional): MLT acceptance window width. Defaults to 12.
-        lstar_delta (float, optional): L* bin width. Defaults to 0.1.
         time_delta (int, optional): GPS time integration window in minutes. Defaults to 30.
-        min_val (float, optional): Minimum PSD value for colormap. Defaults to 1e-9.
+        skip_interval (int, optional): Number of time steps to skip between radial profile calculations. Defaults to 1.
+        lstar_min (float, optional): Minimum L* for radial profile. Defaults to 3.5.
+        lstar_max (float, optional): Maximum L* for radial profile. Defaults to 6.0.
+        lstar_delta (float, optional): L* bin size for radial profile. Defaults to 0.1.
+        min_val (float, optional): Minimum PSD value for colormap. Defaults to 1e-12.
         max_val (float, optional): Maximum PSD value for colormap. Defaults to 1e-5.
         textsize (int, optional): Base font size. Defaults to 16.
     """
@@ -948,6 +961,7 @@ def plot_radial_profile_static(gps_data, REPT_data,
     # Generate Time Steps
     time_intervals_GPS = np.arange(gps_time_start, gps_time_stop + dt.timedelta(minutes=time_delta), 
                                    dt.timedelta(minutes=time_delta)).astype(dt.datetime)
+    time_intervals_GPS = time_intervals_GPS[0::skip_interval]
 
     # 4. Collect GPS Data
     if SHOW_GPS_DATA:
@@ -1022,10 +1036,6 @@ def plot_radial_profile_static(gps_data, REPT_data,
     psd_range_sorted = psd_range[sort_indices]
 
     # Calculate binned averages for GPS lines
-    valid_l = lstar_range[lstar_range > 0]
-    lstar_min = np.nanmin(valid_l) if len(valid_l) > 0 else 3
-    lstar_max = np.nanmax(valid_l) if len(valid_l) > 0 else 6
-    
     lstar_intervals = np.arange(np.floor(lstar_min/lstar_delta)*lstar_delta, 
                                 np.ceil(lstar_max/lstar_delta)*lstar_delta + lstar_delta, 
                                 lstar_delta)
@@ -1098,7 +1108,7 @@ def plot_radial_profile_static(gps_data, REPT_data,
                         bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="none", alpha=0.7))
 
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
-    ax.set_xlim(4, 5.3)
+    ax.set_xlim(lstar_min, lstar_max) 
     ax.set_xlabel(r"L*", fontsize=textsize+2, labelpad=10)
     ax.set_ylim(min_val, max_val)
     ax.set_ylabel(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize+2)
@@ -1128,10 +1138,11 @@ def plot_radial_profile_static(gps_data, REPT_data,
 def plot_radial_profile_dynamic(gps_data, REPT_data, 
                                 time_start, time_stop, 
                                 gps_time_start=None, gps_time_stop=None, SHOW_GPS_DATA=True,
-                                REPT_sat_select='rbspb', K=0.1, Mu=2000, 
-                                anim_name='test', 
-                                MLT_range=12, lstar_delta=0.1, time_delta=30, 
-                                min_val=1e-9, max_val=1e-5, textsize=16):
+                                REPT_sat_select='rbspb', K=0.1, Mu=2000,  
+                                MLT_range=12, time_delta=30, skip_interval=1,
+                                lstar_min=3.5, lstar_max=6.0, lstar_delta=0.1, 
+                                min_val=1e-12, max_val=1e-5, textsize=16, 
+                                base_save_folder=None, anim_name='test', sliding_window=False):
     """
     Generates an animated MP4 of the PSD Radial Profile.
     Plots REPT data cumulatively and overlays GPS radial profiles.
@@ -1147,13 +1158,18 @@ def plot_radial_profile_dynamic(gps_data, REPT_data,
         REPT_sat_select (str, optional): REPT satellite ('rbspa' or 'rbspb'). Defaults to 'rbspb'.
         K (float, optional): Second adiabatic invariant. Defaults to 0.1.
         Mu (float, optional): First adiabatic invariant. Defaults to 2000.
-        anim_name (str, optional): Filename for the output MP4. Defaults to 'test'.
         MLT_range (float, optional): MLT acceptance window. Defaults to 12.
-        lstar_delta (float, optional): L* bin width. Defaults to 0.1.
         time_delta (int, optional): GPS time integration window in minutes. Defaults to 30.
-        min_val (float, optional): Minimum PSD value for colormap. Defaults to 1e-9.
+        skip_interval (int, optional): Number of time steps to skip between radial profile calculations. Defaults to 1 (no skips).
+        lstar_min (float, optional): Minimum L* for radial profile. Defaults to 3.5.
+        lstar_max (float, optional): Maximum L* for radial profile. Defaults to 6.0.
+        lstar_delta (float, optional): L* bin size for radial profile. Defaults to 0.1.
+        min_val (float, optional): Minimum PSD value for colormap. Defaults to 1e-12.
         max_val (float, optional): Maximum PSD value for colormap. Defaults to 1e-5.
         textsize (int, optional): Base font size. Defaults to 16.
+        base_save_folder (str, optional): Folder to save the animation. Defaults to None.
+        anim_name (str, optional): Filename for the output MP4. Defaults to 'test'.
+        sliding_window (bool, optional): If True, the GPS collection window slides with the animation
     """
     
     # Handle default arguments for GPS collection window
@@ -1170,7 +1186,6 @@ def plot_radial_profile_dynamic(gps_data, REPT_data,
         # Get Mu index
         Mu_keys = np.array(list(REPT_data[REPT_sat_select]['PSD'][actual_K].columns), dtype=float)
         i_mu = np.where(np.isclose(Mu_keys, Mu))[0][0]
-        actual_Mu = list(REPT_data[REPT_sat_select]['PSD'][actual_K].columns)[i_mu]
     except (IndexError, KeyError):
         print(f"Error: Requested K={K} or Mu={Mu} not found in REPT data for {REPT_sat_select}.")
         return
@@ -1180,6 +1195,7 @@ def plot_radial_profile_dynamic(gps_data, REPT_data,
     # Generate Time Steps for GPS Lines
     time_intervals_GPS = np.arange(gps_time_start, gps_time_stop + dt.timedelta(minutes=time_delta), 
                                    dt.timedelta(minutes=time_delta)).astype(dt.datetime)
+    time_intervals_GPS = time_intervals_GPS[0::skip_interval]
 
     # 2. Collect and Filter GPS Data
     temp_data = []
@@ -1256,11 +1272,7 @@ def plot_radial_profile_dynamic(gps_data, REPT_data,
     psd_range_sorted = psd_range[sort_indices]
 
     # 5. Pre-calculate Averaged GPS Radial Profiles
-    # Define L* bins based on REPT data range
-    valid_l = lstar_range[lstar_range > 0]
-    lstar_min = np.nanmin(valid_l) if len(valid_l) > 0 else 3.0
-    lstar_max = np.nanmax(valid_l) if len(valid_l) > 0 else 6.0
-    
+    # Define L* bins based on REPT data range  
     lstar_intervals = np.arange(np.floor(lstar_min/lstar_delta)*lstar_delta, 
                                 np.ceil(lstar_max/lstar_delta)*lstar_delta + lstar_delta, 
                                 lstar_delta)
@@ -1354,7 +1366,7 @@ def plot_radial_profile_dynamic(gps_data, REPT_data,
 
     # Axis Formatting
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
-    ax.set_xlim(4, 5.3) 
+    ax.set_xlim(lstar_min, lstar_max) 
     ax.set_xlabel(r"L*", fontsize=textsize+2, labelpad=10)
     ax.set_ylim(min_val, max_val)
     ax.set_ylabel(r"PSD $[(c/MeV/cm)^3]$", fontsize=textsize+2)
@@ -1397,11 +1409,23 @@ def plot_radial_profile_dynamic(gps_data, REPT_data,
         # ax.set_title(title_str, fontsize=textsize+10)
 
         # Toggle GPS Lines based on Time
+        triggered_items = [item for item in gps_artists if item['trigger_time'] <= current_time_dt]
+        if sliding_window is True:
+            # SLIDING WINDOW MODE: Select only the last 4 items
+            visible_items = triggered_items[-4:]
+        else:
+            # CUMULATIVE MODE: Show everything triggered so far
+            visible_items = triggered_items
+
         for item in gps_artists:
-            if not item['shown'] and current_time_dt >= item['trigger_time']:
-                item['line'].set_visible(True)
-                item['annotation'].set_visible(True)
-                item['shown'] = True 
+                if item in visible_items:
+                    # Show if it's in our "recent 4" list
+                    item['line'].set_visible(True)
+                    item['annotation'].set_visible(True)
+                else:
+                    # Hide if it's too old or hasn't happened yet
+                    item['line'].set_visible(False)
+                    item['annotation'].set_visible(False)
         
         # Return all dynamic artists for blitting
         all_dynamic_artists = [scatter_plot, cbar_line]
@@ -1415,8 +1439,9 @@ def plot_radial_profile_dynamic(gps_data, REPT_data,
     ani = animation.FuncAnimation(fig, update, frames=len(time_range_num_sorted), interval=20, blit=True)
     
     print(f"Saving Animation as {anim_name}.mp4...")
+    save_path = os.path.join(base_save_folder or '.', f'{anim_name}.mp4')
     try:
-        ani.save(f'{anim_name}.mp4', writer='ffmpeg', fps=30, dpi=100)
+        ani.save(save_path, writer='ffmpeg', fps=30, dpi=100)
         print(f"Success! Saved as {anim_name}.mp4")
     except Exception as e:
         print(f"Error saving animation: {e}")

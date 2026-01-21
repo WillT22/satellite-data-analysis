@@ -75,59 +75,6 @@ def process_l3_data(file_paths):
 
     return sat_data
 
-#%% Time Averaging (1-minute resolution)
-def time_average(sat_data, sat_name):
-    """
-    Resamples satellite position and flux data into 1-minute time averages.
-
-    Args:
-        sat_data (dict): Dictionary containing satellite data (Epoch, Position, FEDU).
-        sat_name (str): Name of the satellite (unused in logic but good for context).
-
-    Returns:
-        dict: Updated sat_data with 1-minute averaged Epoch, Position, and FEDU arrays.
-    """
-
-    epoch = sat_data['Epoch'].UTC
-    position = sat_data['Position'].data # Shape: (time, 3)
-    FEDU = sat_data['FEDU'] # Shape: (time, measured_pitch_angle, energy)
-    
-    # Identify unique minute timestamps in the dataset
-    epoch_minutes = [epoch[0].replace(second=0, microsecond=0)]
-    for time_index in range(len(epoch[1:])):
-        if epoch[time_index].minute != epoch[time_index-1].minute:
-            epoch_minutes.append(epoch[time_index].replace(second=0, microsecond=0))
-            
-    # Initialize lists for averaged data
-    average_epochs = []
-    average_positions = []
-    average_FEDU = []
-    minutes_mask = len(epoch_minutes)*[True] # Tracks valid minutes
-    
-    # Loop through each unique minute and average data within +/- 30 seconds
-    for minute_index in range(len(epoch_minutes)):
-        minute_start = epoch_minutes[minute_index] - dt.timedelta(seconds=30)
-        minute_end =  epoch_minutes[minute_index] + dt.timedelta(seconds=30)
-        
-        # Find indices of all data points falling in this minute window
-        minute_indices = np.where((np.array(epoch) >= minute_start) & (np.array(epoch) < minute_end))[0]
-        
-        if minute_indices.size > 0:
-            average_epochs.append(epoch_minutes[minute_index])
-            # Average position and flux (axis=0 is time)
-            average_positions.append(np.mean(position[minute_indices], axis=0))
-            average_FEDU.append(np.mean(FEDU[minute_indices], axis=0))
-        else:
-            minutes_mask[minute_index] = False # Mark empty minutes
-    
-    # Update dictionary with averaged objects
-    sat_data['Epoch'] = Ticktock(average_epochs, dtype='UTC')
-    sat_data['Position'] = Coords(average_positions, 'GSM', 'car')
-    sat_data['Position'].ticks = sat_data['Epoch']
-    sat_data['FEDU'] = np.array(average_FEDU)
-
-    return sat_data
-
 #%% Extract Magnetometer Data and match with nearest time point
 def find_mag(sat_data, sat_name):
     """
@@ -189,6 +136,59 @@ def find_mag(sat_data, sat_name):
     # Assign matched B-field to sat_data
     sat_data['b_satellite'] = mag_data['b_satellite'][nearest_time]
     
+    return sat_data
+
+#%% Time Averaging (1-minute resolution)
+def time_average(sat_data, sat_name):
+    """
+    Resamples satellite position and flux data into 1-minute time averages.
+
+    Args:
+        sat_data (dict): Dictionary containing satellite data (Epoch, Position, FEDU).
+        sat_name (str): Name of the satellite (unused in logic but good for context).
+
+    Returns:
+        dict: Updated sat_data with 1-minute averaged Epoch, Position, and FEDU arrays.
+    """
+
+    epoch = sat_data['Epoch'].UTC
+    position = sat_data['Position'].data # Shape: (time, 3)
+    FEDU = sat_data['FEDU'] # Shape: (time, measured_pitch_angle, energy)
+    
+    # Identify unique minute timestamps in the dataset
+    epoch_minutes = [epoch[0].replace(second=0, microsecond=0)]
+    for time_index in range(len(epoch[1:])):
+        if epoch[time_index].minute != epoch[time_index-1].minute:
+            epoch_minutes.append(epoch[time_index].replace(second=0, microsecond=0))
+            
+    # Initialize lists for averaged data
+    average_epochs = []
+    average_positions = []
+    average_FEDU = []
+    minutes_mask = len(epoch_minutes)*[True] # Tracks valid minutes
+    
+    # Loop through each unique minute and average data within +/- 30 seconds
+    for minute_index in range(len(epoch_minutes)):
+        minute_start = epoch_minutes[minute_index] - dt.timedelta(seconds=30)
+        minute_end =  epoch_minutes[minute_index] + dt.timedelta(seconds=30)
+        
+        # Find indices of all data points falling in this minute window
+        minute_indices = np.where((np.array(epoch) >= minute_start) & (np.array(epoch) < minute_end))[0]
+        
+        if minute_indices.size > 0:
+            average_epochs.append(epoch_minutes[minute_index])
+            # Average position and flux (axis=0 is time)
+            average_positions.append(np.mean(position[minute_indices], axis=0))
+            average_FEDU.append(np.mean(FEDU[minute_indices], axis=0))
+        else:
+            minutes_mask[minute_index] = False # Mark empty minutes
+    
+    # Update dictionary with averaged objects
+    sat_data['Epoch'] = Ticktock(average_epochs, dtype='UTC')
+    sat_data['Position'] = Coords(average_positions, 'GSM', 'car')
+    sat_data['Position'].ticks = sat_data['Epoch']
+    sat_data['FEDU'] = np.array(average_FEDU)
+
     return sat_data
 
 #%% Average fluxes by Pitch Angle (Gyrotropy Assumption)

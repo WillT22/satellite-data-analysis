@@ -14,11 +14,14 @@ current_script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_script_dir)
 
 # --- Import Custom Modules ---
+import all_PSD_func
+importlib.reload(all_PSD_func)
+from all_PSD_func import (QinDenton_period, data_period, load_data, 
+                          AlphaOfK, EnergyofMuAlpha, find_psd, find_Lstar)
+
 import GPS_PSD_func
 importlib.reload(GPS_PSD_func)
-from GPS_PSD_func import (QinDenton_period, import_GPS, data_period, data_from_gps, 
-                          load_data, AlphaOfK, EnergyofMuAlpha, 
-                          energy_spectra, find_psd, find_Lstar)
+from GPS_PSD_func import (import_GPS, data_from_gps, energy_spectra)
 
 import Zhao_2018_PAD_Model
 importlib.reload(Zhao_2018_PAD_Model)
@@ -39,8 +42,8 @@ Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G 
 K_set = np.array((0.1, 1, 2)) # R_E*G^(1/2) (2nd Invariant)
 
 # Workflow Control
-mode = 'save'          # 'save' (calculate & save) or 'load' (load existing npz)
-storm_name = 'oct2012storm' 
+mode = 'load'          # 'save' (calculate & save) or 'load' (load existing npz)
+storm_name = 'sep2019storm' 
 extMag = 'TS04'        # Magnetic Model: 'T89c' or 'TS04'
 
 # Data Paths
@@ -105,7 +108,7 @@ if __name__ == '__main__':
             storm_data_raw[satellite] = data_period(sat_data, start_date, stop_date)
         del loaded_data
 
-        print('\nProcessing Data (L-shell & Efit filtering)...')
+        print('Processing Data (L-shell & Efit filtering)...')
         storm_data = data_from_gps(storm_data_raw, Lshell=6, extMag=extMag)
         del storm_data_raw
         
@@ -128,7 +131,7 @@ if __name__ == '__main__':
         satellites = list(storm_data.keys())
         
         for satellite in satellites:
-            print(f"\n--- Running Pipeline for {satellite} ---")
+            print(f"--- Running Pipeline for {satellite} ---")
             sat_data = storm_data[satellite]
 
             # 3. Alpha
@@ -192,7 +195,7 @@ if __name__ == '__main__':
 # Update main variable
         storm_data = final_results
         
-        print("\nSaving Data...")
+        print("Saving Data...")
         np.savez(complete_save_path, **storm_data)
         np.savez(alpha_save_path, **alphaofK)
         np.savez(energy_save_path, **energyofmualpha)
@@ -255,13 +258,13 @@ if __name__ == '__main__':
 
 #%% Plot Data
 # Control Plotting Options
-plot_monoenergetic_flux_flag = True
-plot_allenergy_flux_flag = True
-plot_flux_all_flag = True
-plot_psd_flag = True
-plot_combined_psd_flag = True
-plot_energies_flag = True
-plot_PAD_flag = True
+plot_monoenergetic_flux_flag = False
+plot_allenergy_flux_flag = False
+plot_flux_all_flag = False
+plot_psd_flag = False
+plot_combined_psd_flag = False
+plot_energies_flag = False
+plot_PAD_flag = False
 plot_radial_flag = True
 plot_radial_dynamic_flag = False
 
@@ -332,7 +335,7 @@ if plot_flux_all_flag:
         start_date=start_date,
         stop_date=stop_date,
         extMag=extMag,
-        textsize=textsize
+        figsize=(24, 12), textsize=textsize
     )
 
 # Plot Phase Space Density (PSD) for GPS data   
@@ -373,7 +376,8 @@ if plot_energies_flag:
 # Plot PAD Comparison between GPS and REPT
 if plot_PAD_flag:
     print("Generating Plot: PAD Comparison...")
-    time_select = dt.datetime(start_date.year, 8, 31, 8, 30, 0)
+    #time_select = dt.datetime(start_date.year, 8, 31, 8, 30, 0)
+    time_select = dt.datetime(start_date.year, 10, 9, 13, 30, 0)
     # Call Function
     plot_pad_comparison(
         gps_data=storm_data,            
@@ -392,11 +396,19 @@ if plot_PAD_flag:
 
 # Plot PSD Radial Profile with REPT and CXD data (Static)
 if plot_radial_flag:
+    '''
     time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
     time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0) # for sep2019storm
     
     gps_time_start = dt.datetime(start_date.year, 8, 31, 10, 0, 0) # for sep2019storm
     gps_time_stop = dt.datetime(stop_date.year, 8, 31, 14, 0, 0) # for sep2019storm
+    '''
+    time_start = dt.datetime(start_date.year, 10, 8, 4, 0, 0) # for oct2012storm
+    time_stop = dt.datetime(stop_date.year, 10, 10, 0, 0) # for oct2012storm
+
+    # oct2012storm: 8,4 to 8,12 ; 8,12 8,20 ; 8,20 to 9,4 ; 9,4 to 9,12 ; 9,12 to 9,20
+    gps_time_start = dt.datetime(start_date.year, 10, 9, 4, 0, 0) # for oct2012storm
+    gps_time_stop = dt.datetime(stop_date.year, 10, 9, 12, 0, 0) # for oct2012storm
 
     print("Generating Plot: Static Radial Profile...")
     plot_radial_profile_static(
@@ -404,24 +416,26 @@ if plot_radial_flag:
         time_start=time_start, time_stop=time_stop,
         gps_time_start=gps_time_start, gps_time_stop=gps_time_stop, SHOW_GPS_DATA=True,
         REPT_sat_select='rbspa', K=0.1, Mu=2000, 
-        MLT_range=12, lstar_delta=0.1, time_delta=30, 
-        min_val = 1e-9, max_val = 1e-5, textsize=textsize)
+        MLT_range=12, time_delta=30, skip_interval=4,
+        lstar_min = 3.4, lstar_max = 5.4, lstar_delta=0.1,
+        min_val = 1e-11, max_val = 1e-5, textsize=16)
 
 # Plot PSD Radial Profile with REPT and CXD data (Dynamic)
 if plot_radial_dynamic_flag:
-    time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
-    time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0) # for sep2019storm
-    
-    gps_time_start = dt.datetime(start_date.year, 8, 31, 10, 0, 0) # for sep2019storm
-    gps_time_stop = dt.datetime(stop_date.year, 8, 31, 14, 0, 0) # for sep2019storm
+    time_start = dt.datetime(start_date.year, 10, 8, 4, 0, 0) # for oct2012storm
+    time_stop = dt.datetime(stop_date.year, 10, 10, 0, 0) # for oct2012storm
+
+    gps_time_start = dt.datetime(start_date.year, 10, 8, 4, 0, 0) # for oct2012storm
+    gps_time_stop = dt.datetime(stop_date.year, 10, 10, 0, 0, 0) # for oct2012storm
 
     print("Generating Plot: Dynamic Radial Profile...")
     plot_radial_profile_dynamic(
         gps_data=storm_data, REPT_data=REPT_data,
         time_start=time_start, time_stop=time_stop,
         gps_time_start=gps_time_start, gps_time_stop=gps_time_stop, SHOW_GPS_DATA=True,
-        REPT_sat_select='rbspa', K=0.1, Mu=2000,
-        anim_name = f'test', 
-        MLT_range=12, lstar_delta=0.1, time_delta=30, 
-        min_val = 1e-9, max_val = 1e-5, textsize=textsize)
+        REPT_sat_select='rbspb', K=0.1, Mu=2000,
+        MLT_range=12, time_delta=30, skip_interval=1,
+        lstar_min = 3.4, lstar_max = 5.4, lstar_delta=0.1,
+        min_val = 1e-11, max_val = 1e-5, textsize=16, 
+        base_save_folder = base_save_folder, anim_name = f'{storm_name}_radial_profile_sliding', sliding_window=True)
 # %%
