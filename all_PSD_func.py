@@ -3,21 +3,17 @@ import os
 import sys
 import spacepy.datamodel as dm
 import datetime as dt
+import spacepy.time as spt
 from spacepy.time import Ticktock
 import numpy as np
 np.set_printoptions(threshold=sys.maxsize)
 import scipy.constants as sc
 import math
 import pandas as pd
-import importlib
 
 from lgmpy import Lgm_Vector
 import lgmpy.Lgm_Wrap as lgm_lib
 from ctypes import c_int, c_long, c_double, pointer
-
-import GPS_PSD_func
-importlib.reload(GPS_PSD_func)
-from GPS_PSD_func import (convert_time)
 
 # Physical Constants
 # Rest mass energy of an electron in MeV (m_0 * c^2)
@@ -79,6 +75,7 @@ def data_period(sat_data, start_date, stop_date):
     """
     
     if ('Epoch' in sat_data) == False:
+        from GPS_PSD_func import convert_time
         sat_data = convert_time(sat_data)
 
     time_restricted_data = {}

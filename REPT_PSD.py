@@ -302,7 +302,7 @@ if plot_allenergy_flux_flag:
 if plot_psd_flag:
     print("Generating Plot: REPT PSD...")
     plot_psd(
-        gps_data=REPT_data,
+        satellite_data=REPT_data,
         start_date=start_date,
         stop_date=stop_date,
         K=0.1, Mu=2000,
@@ -313,7 +313,7 @@ if plot_psd_flag:
 if plot_energies_flag:
     print("Generating Plot: Energy vs L*...")
     plot_energy_mu_alpha(
-        gps_data=REPT_data,
+        satellite_data=REPT_data,
         energyofmualpha=energyofmualpha,
         start_date=start_date,
         stop_date=stop_date,
@@ -331,7 +331,7 @@ if plot_radial_flag:
 
     print("Generating Plot: Static Radial Profile...")
     plot_radial_profile_static(
-        gps_data=None, REPT_data=REPT_data,
+        satellite_data=None, REPT_data=REPT_data,
         time_start=time_start, time_stop=time_stop,
         SHOW_GPS_DATA=False,
         REPT_sat_select='rbspa', K=0.1, Mu=2000, 

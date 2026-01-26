@@ -12,10 +12,7 @@ from spacepy.coordinates import Coords
 import scipy
 import scipy.constants as sc
 import pandas as pd
-import importlib
 
-import all_PSD_func
-importlib.reload(all_PSD_func)
 from all_PSD_func import (find_Loss_Cone, find_local90PA)
 
 # Physical Constants

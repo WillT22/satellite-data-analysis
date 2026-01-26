@@ -281,6 +281,11 @@ def plot_psd(satellite_data, start_date, stop_date, K=0.1, Mu=2000, textsize=16)
     # 3. Plot Data
     for satellite, sat_data in satellite_data.items():
 
+        if 'electron_diff_flux' in sat_data:
+            sat_label = 'GPS CXD'
+        elif 'FEDU_averaged' in sat_data:
+            sat_label = 'RBSP REPT'
+
         psd_plot = sat_data['PSD'][K].values[:,i_mu].copy().flatten()
         psd_mask = (psd_plot > 0) & (~np.isnan(psd_plot))
         
@@ -299,7 +304,7 @@ def plot_psd(satellite_data, start_date, stop_date, K=0.1, Mu=2000, textsize=16)
         return
 
     # 4. Format Axes
-    ax.set_title(f"GPS CXD, K={K:.1f} $G^{{1/2}}R_E$, $\\mu$={Mu:.0f} $MeV/G$", fontsize=textsize + 2)
+    ax.set_title(f"{sat_label}, K={K:.1f} $G^{{1/2}}R_E$, $\\mu$={Mu:.0f} $MeV/G$", fontsize=textsize + 2)
     ax.set_ylabel(r"L*", fontsize=textsize)
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
     ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
@@ -478,13 +483,17 @@ def plot_combined_flux_all_channels(gps_data, REPT_data, QD_storm_data,
             flux_mask = (flux_plot > 0) & (flux_plot != np.nan)
             combined_mask = np.zeros_like(sat_iepoch_mask, dtype=bool)
             combined_mask[sat_iepoch_mask] = flux_mask
-            
-            vmax = 7 
+
+            # Determine L-shell variable key
+            l_key = f'L_LGM_{extMag_label}IGRF'
+            if l_key not in sat_data:
+                print(f"Warning: L-shell key {l_key} not found for {satellite}. Skipping.")
+                continue
             
             scatter_A = ax.scatter(sat_data['Epoch'].UTC[combined_mask], 
                                    sat_data[f'L_LGM_{extMag_label}IGRF'][combined_mask],
                                    c=np.log10(flux_plot[flux_mask]), 
-                                   cmap=cmap, vmin=0, vmax=vmax, zorder=2)
+                                   cmap=cmap, vmin=0, vmax=7, zorder=2)
 
         # --- B. Plot GPS CXD Data (Overlay) ---
         for satellite, sat_data in gps_data.items():    
@@ -508,7 +517,7 @@ def plot_combined_flux_all_channels(gps_data, REPT_data, QD_storm_data,
                        sat_data[f'L_LGM_{extMag_label}IGRF'][flux_mask],
                        marker='*', s=80, alpha=0.7,
                        c=np.log10(flux_plot[flux_mask]), 
-                       vmin=0, vmax=vmax, zorder=1)
+                       vmin=0, vmax=7, zorder=1)
 
         # Formatting
         ax.set_title(f"{energy:.2f} MeV", fontsize=textsize+4)
@@ -770,7 +779,7 @@ def plot_pad_comparison(gps_data, gps_energy, gps_alpha, REPT_data,
             rept_epoch_data[k_key] = v[nearest_it_REPT,:,:]
         elif k_key == 'Mu_calc': 
             continue
-        elif k_key == 'PSD':
+        elif k_key in ['Flux', 'PSD']:
             rept_epoch_data[k_key] = {}
             if K in v and Mu in v[K]:
                  val = v[K][Mu].values[nearest_it_REPT]
@@ -856,19 +865,18 @@ def plot_pad_comparison(gps_data, gps_energy, gps_alpha, REPT_data,
     
     for sat, pads in Model_GPS_PAD.items():
         for i, idx in enumerate(near_time_idx[sat]):
-            if sat=='ns73':
-                scale = gps_data[sat]['Flux'][K][Mu].values[idx]
-                l_plot = ax.plot(Model_GPS_PA[sat][i], pads[i] * scale*2.5, label=sat, 
-                        zorder=1, alpha=0.7, linewidth=3, linestyle='dotted')
-                
-                col = l_plot[0].get_color()
-                loss = gps_data[sat]['loss_cone'][idx]
-                loc90 = gps_data[sat]['local90PA'][idx]
-                alpha_val = gps_alpha[sat][K].iloc[idx]
-                
-                for val, sty in [(loss, '-.'), (loc90, '-')]:#, (alpha_val, '--')]:
-                    ax.vlines(val, 0, 1e8, color=col, linestyle=sty)
-                    ax.vlines(180-val, 0, 1e8, color=col, linestyle=sty)
+            scale = gps_data[sat]['Flux'][K][Mu].values[idx]
+            l_plot = ax.plot(Model_GPS_PA[sat][i], pads[i] * scale, label=sat, 
+                    zorder=1, alpha=0.7, linewidth=3, linestyle='dotted')
+            
+            col = l_plot[0].get_color()
+            loss = gps_data[sat]['loss_cone'][idx]
+            loc90 = gps_data[sat]['local90PA'][idx]
+            alpha_val = gps_alpha[sat][K].iloc[idx]
+            
+            for val, sty in [(loss, '-.'), (loc90, '-'), (alpha_val, '--')]:
+                ax.vlines(val, 0, 1e8, color=col, linestyle=sty)
+                ax.vlines(180-val, 0, 1e8, color=col, linestyle=sty)
 
     ax.text(1.04, 0.9, r"K = " + f"{K:.1f} " + r"$G^{{1/2}}R_E$," + f"\n" + r"$\mu = $" + f"{Mu:.0f}" + r" $MeV/G$", 
             transform=ax.transAxes, fontsize=textsize)
@@ -876,11 +884,11 @@ def plot_pad_comparison(gps_data, gps_energy, gps_alpha, REPT_data,
     gray = [0.6, 0.6, 0.6]
     h_loss = mlines.Line2D([], [], color=gray, linestyle='-.', linewidth=2, label='GPS Loss Cone')
     h_90 = mlines.Line2D([], [], color=gray, linestyle='-', linewidth=2, label='GPS Local 90')
-    #h_alpha = mlines.Line2D([], [], color=gray, linestyle='--', linewidth=2, label=r'PA at K=' + f'{K:.1f}')
+    h_alpha = mlines.Line2D([], [], color=gray, linestyle='--', linewidth=2, label=r'PA at K=' + f'{K:.1f}')
     
     exist_h, exist_l = ax.get_legend_handles_labels()
-    final_h = exist_h + [h_loss, h_90] #, h_alpha]
-    final_l = exist_l + [h_loss.get_label(), h_90.get_label()] #, h_alpha.get_label()]
+    final_h = exist_h + [h_loss, h_90, h_alpha]
+    final_l = exist_l + [h_loss.get_label(), h_90.get_label(), h_alpha.get_label()]
     
     ax.legend(handles=final_h, labels=final_l, fontsize=textsize-4, loc='lower left',
               bbox_to_anchor=(1.02, 0),
@@ -891,13 +899,12 @@ def plot_pad_comparison(gps_data, gps_energy, gps_alpha, REPT_data,
     y_min = np.floor(np.log10(np.nanmin(Model_PAD_vals * Model_scale)))
     y_max = np.ceil(np.log10(np.nanmax(Model_PAD_vals * Model_scale)))
     ax.set_ylim(10**y_min, 10**y_max)
-    #ax.set_ylim(0.15, 2)
     
     plt.yscale('log')
     ax.tick_params(axis='both', labelsize=textsize, pad=10)
     ax.set_xlabel(r"Equatorial Pitch Angle (degrees)", fontsize=textsize)
     ax.set_ylabel(r'Directional Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)', fontsize=textsize)
-    ax.grid(True)
+    ax.grid(True, axis='y', alpha=0.5)
     ax.set_title(f"Time: {time_select.strftime('%Y-%m-%d %H:%M')}", fontsize=textsize)
     
     plt.show()
@@ -1055,7 +1062,7 @@ def plot_radial_profile_static(gps_data, REPT_data,
                 
                 combined_mask = time_mask_GPS & lstar_mask & MLT_mask
                 
-                if np.sum(combined_mask) > 0:
+                if np.sum(combined_mask) > 1:
                     psd_data = GPS_plot_data[combined_mask, 4].astype(float)
                     valid_psd = psd_data[(~np.isnan(psd_data)) & (psd_data > min_val)]
                     if len(valid_psd) > 0:
