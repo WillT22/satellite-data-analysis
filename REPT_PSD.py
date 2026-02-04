@@ -43,7 +43,7 @@ K_set = np.array((0.1, 1, 2)) # R_E*G^(1/2) (2nd Invariant)
 
 # Workflow Control
 mode = 'save'          # 'save' (calculate & save) or 'load' (load existing npz)
-storm_name = 'oct2012storm' 
+storm_name = 'oct2012storm'  # Storm Identifier
 extMag = 'TS04'        # Magnetic Model: 'T89c' or 'TS04'
 
 # Data Paths
@@ -53,9 +53,10 @@ base_save_folder = os.path.join(REPT_data_root, storm_name)
 
 # --- Storm Date Definitions (Dictionary Map) ---
 storm_dates = {
+    'oct2012storm':     (dt.datetime(2012, 10, 7), dt.datetime(2012, 10, 11)),
+    'sep2013drop':      (dt.datetime(2013, 9, 22), dt.datetime(2013, 9, 27)),
     'april2017storm':   (dt.datetime(2017, 4, 21), dt.datetime(2017, 4, 26)),
     'aug2018storm':     (dt.datetime(2018, 8, 25), dt.datetime(2018, 8, 28)),
-    'oct2012storm':     (dt.datetime(2012, 10, 7), dt.datetime(2012, 10, 11)),
     'latefeb2019storm': (dt.datetime(2019, 2, 27), dt.datetime(2019, 3, 4)),
     'may2019storm':     (dt.datetime(2019, 5, 10), dt.datetime(2019, 5, 17)),
     'sep2019storm':     (dt.datetime(2019, 8, 31), dt.datetime(2019, 9, 3))
@@ -93,28 +94,22 @@ if __name__ == '__main__':
     # ==========================================
     if mode == 'save':
         # --- Step 1: Raw Import ---
-        if not os.path.exists(raw_save_path):
-            print("Processing Raw CDF Files...")
-            if not os.path.exists(input_folder):
-                raise FileNotFoundError(f"Error: Folder path not found: {input_folder}")
-            
-            file_paths_l3_A = glob.glob(input_folder + "/rbspa*[!r]*.cdf") 
-            file_paths_l3_B = glob.glob(input_folder + "/rbspb*[!r]*.cdf")
-            
-            REPT_data_raw = {}
-            if len(file_paths_l3_A) != 0:
-                REPT_data_raw['rbspa'] = process_l3_data(file_paths_l3_A)
-            if len(file_paths_l3_B) != 0:
-                REPT_data_raw['rbspb'] = process_l3_data(file_paths_l3_B)
-            
-            print("Saving Raw REPT Data...")
-            np.savez(raw_save_path, **REPT_data_raw)
-            print("Raw Data Saved \n")
-        else:
-            print("Loading existing Raw REPT Data...")
-            raw_data_load = np.load(raw_save_path, allow_pickle=True)
-            REPT_data_raw = load_data(raw_data_load)
-            raw_data_load.close()
+        print("Processing Raw CDF Files...")
+        if not os.path.exists(input_folder):
+            raise FileNotFoundError(f"Error: Folder path not found: {input_folder}")
+        
+        file_paths_l3_A = glob.glob(input_folder + "/rbspa*[!r]*.cdf") 
+        file_paths_l3_B = glob.glob(input_folder + "/rbspb*[!r]*.cdf")
+        
+        REPT_data_raw = {}
+        if len(file_paths_l3_A) != 0:
+            REPT_data_raw['rbspa'] = process_l3_data(file_paths_l3_A)
+        if len(file_paths_l3_B) != 0:
+            REPT_data_raw['rbspb'] = process_l3_data(file_paths_l3_B)
+        
+        print("Saving Raw REPT Data...")
+        np.savez(raw_save_path, **REPT_data_raw)
+        print("Raw Data Saved \n")
 
         # ==========================================
         # Vertical Pipeline: Steps 2 - 12
@@ -156,7 +151,7 @@ if __name__ == '__main__':
 
             # --- 6. Loss Cone & Eq B ---
             print(f"Calculating Loss Cone...                ", end='\r')
-            sat_data['b_min'], sat_data['P_min'], sat_data['b_footpoint'], sat_data['loss_cone'] = find_Loss_Cone(sat_data, extMag=extMag)
+            sat_data['b_local'], sat_data['b_min'], sat_data['P_min'], sat_data['b_footpoint'], sat_data['loss_cone'] = find_Loss_Cone(sat_data, extMag=extMag)
             sat_data['local90PA'] = find_local90PA(sat_data)
     
             # --- 7. Energy --- 
@@ -338,3 +333,61 @@ if plot_radial_flag:
         MLT_range=12, time_delta=30, skip_interval=1,
         lstar_min = 3.5, lstar_max = 6.0, lstar_delta=0.1,
         min_val = 1e-9, max_val = 1e-5, textsize=textsize)
+    
+
+#%% Diagnostic Bfield plot
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots(figsize=(12, 6))
+scatter = ax.scatter(sat_data['b_satellite'][sat_data['b_satellite']>0], sat_data['b_local'][sat_data['b_satellite']>0])
+ax.set_xlabel('Measured B-field (nT)')
+ax.set_ylabel('Modeled B-field (nT)')
+ax.set_title('Comparison of Measured and Modeled B-field at Satellite Location')
+ax.plot([0, sat_data['b_satellite'].max()],
+        [0, sat_data['b_satellite'].max()],
+        color='red', linestyle='--', label='y=x Line')
+ax.legend()
+plt.show()
+
+# Calculate percent error at each time point
+percent_error = np.abs(sat_data['b_satellite'][sat_data['b_satellite']>0] - sat_data['b_local'][sat_data['b_satellite']>0]) / sat_data['b_satellite'][sat_data['b_satellite']>0] * 100
+mean_error = np.mean(percent_error)
+std_error = np.std(percent_error)
+print(f"Mean Percent Error: {mean_error:.2f}%")
+print(f"Standard Deviation of Percent Error: {std_error:.2f}%")
+# find max error
+max_error_index = np.argmax(percent_error)
+print(f"Max Percent Error: {percent_error[max_error_index]:.2f}% at index {max_error_index}, Time: {sat_data['Epoch'].UTC[max_error_index]}")
+
+# Plot percent error wrt time
+fig, ax = plt.subplots(figsize=(12, 2))
+ax.scatter(sat_data['Epoch'].UTC[sat_data['b_satellite']>0], percent_error, marker='o', linestyle='-')
+min_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.floor((start_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12) 
+max_epoch = dt.datetime(1970, 1, 1) + dt.timedelta(hours=np.ceil((stop_date - dt.datetime(1970, 1, 1)).total_seconds() / 3600 / 12) * 12)
+ax.set_xlim(min_epoch, max_epoch)
+ax.set_xlabel('Time')
+ax.set_ylabel('Percent Error (%)')
+ax.set_title('Percent Error between Measured and Modeled B-field over Time')
+plt.show()  
+
+# Plot percent error with L*
+fig, ax = plt.subplots(figsize=(12, 6))
+
+# 1. Create the Boolean Mask for the "parent" filter (B_sat > 0)
+#    This defines which rows actually exist in 'percent_error'
+b_sat_valid = sat_data['b_satellite'] > 0
+
+# 2. Extract L* values that correspond to 'percent_error'
+#    Now 'l_star_subset' and 'percent_error' have the SAME length.
+l_star_subset = sat_data['Lstar'][b_sat_valid, 0]
+
+# 3. Create a new mask based on this subset (L* > 0)
+final_mask = l_star_subset > 0
+
+# 4. Plot using the subset mask on both
+scatter = ax.scatter(l_star_subset[final_mask], percent_error[final_mask])
+
+ax.set_xlabel('L*')
+ax.set_ylabel('Percent Error (%)')
+ax.set_title('Percent Error between Measured and Modeled B-field vs L*')
+plt.grid()
+plt.show()

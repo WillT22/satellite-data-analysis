@@ -283,8 +283,10 @@ def plot_psd(satellite_data, start_date, stop_date, K=0.1, Mu=2000, textsize=16)
 
         if 'electron_diff_flux' in sat_data:
             sat_label = 'GPS CXD'
+            scatter_maker = '*'
         elif 'FEDU_averaged' in sat_data:
             sat_label = 'RBSP REPT'
+            scatter_maker = 'o'
 
         psd_plot = sat_data['PSD'][K].values[:,i_mu].copy().flatten()
         psd_mask = (psd_plot > 0) & (~np.isnan(psd_plot))
@@ -296,7 +298,7 @@ def plot_psd(satellite_data, start_date, stop_date, K=0.1, Mu=2000, textsize=16)
                                sat_data[l_key][psd_mask, i_K],
                                c=np.log10(psd_plot[psd_mask]), 
                                cmap=cmap, vmin=min_val, vmax=max_val, 
-                               marker='*', s=80, alpha=0.7)
+                               marker=scatter_maker, s=80, alpha=0.7)
 
     if scatter_A is None:
         print("No valid PSD data found to plot.")
@@ -577,7 +579,9 @@ def plot_combined_flux_all_channels(gps_data, REPT_data, QD_storm_data,
     plt.show()
 
 #%% Plot Combined Phase Space Density (PSD) from REPT and GPS CXD
-def plot_combined_psd(gps_data, REPT_data, start_date, stop_date, K=0.1, Mu=2000, textsize=16):
+def plot_combined_psd(gps_data, REPT_data, start_date, stop_date, 
+                      K=0.1, Mu=2000, lstar_min=3.5, lstar_max=6.0, 
+                      textsize=16):
     """
     Args:
         gps_data (dict): Dictionary containing processed GPS satellite data.
@@ -587,6 +591,8 @@ def plot_combined_psd(gps_data, REPT_data, start_date, stop_date, K=0.1, Mu=2000
         extMag (str, optional): External magnetic field model identifier. Defaults to 'T89c'.
         K (float, optional): Specific K value to plot. Defaults to 0.1.
         Mu (float, optional): Specific Mu value to plot. Defaults to 2000.
+        lstar_min (float, optional): Minimum L* value for y-axis. Defaults to 3.5.
+        lstar_max (float, optional): Maximum L* value for y-axis. Defaults to 6.0.
         textsize (int, optional): Font size for plot labels. Defaults to 16.
     """
     # 1. Setup Parameters (Derive indices from REPT data structure)
@@ -664,7 +670,7 @@ def plot_combined_psd(gps_data, REPT_data, start_date, stop_date, K=0.1, Mu=2000
     ax.set_xlim(start_date, stop_date)
     ax.xaxis.set_major_locator(mdates.HourLocator(interval=24))
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
-    ax.set_ylim(3.6, 5.4)
+    ax.set_ylim(lstar_min, lstar_max)
     ax.grid(True)
 
     # Colorbar
@@ -763,7 +769,7 @@ def plot_pad_comparison(gps_data, gps_energy, gps_alpha, REPT_data,
     
     arg = np.sin(np.deg2rad(PA_local))**2 * (B_min / B_sat)
     PA_eq = np.rad2deg(np.arcsin(np.sqrt(np.clip(arg, 0, 1))))
-    PA_eq = np.unique(np.concatenate((PA_eq, 180 - PA_eq)))
+    PA_eq = np.sort(np.concatenate((PA_eq, 180 - PA_eq)))
     PA_local90 = PA_eq[len(PA_local)-1]
     
     PAD_data = REPT_data[REPT_sat_select]['FEDU'][nearest_it_REPT, :, i_energy]
@@ -856,7 +862,7 @@ def plot_pad_comparison(gps_data, gps_energy, gps_alpha, REPT_data,
 
     # 7. Create Plot
     fig, ax = plt.subplots(figsize=(9, 9))
-    
+
     ax.scatter(PA_eq[PAD_data > 0], PAD_data[PAD_data > 0], label=rbsp_label, 
                zorder=3, color='black', marker='+', s=200)
     
@@ -898,6 +904,10 @@ def plot_pad_comparison(gps_data, gps_energy, gps_alpha, REPT_data,
     ax.set_xticks(np.arange(0, 181, 20))
     y_min = np.floor(np.log10(np.nanmin(Model_PAD_vals * Model_scale)))
     y_max = np.ceil(np.log10(np.nanmax(Model_PAD_vals * Model_scale)))
+    if np.isnan(y_min) or np.isnan(y_max):
+        y_min = 1
+        y_max = 6
+        return
     ax.set_ylim(10**y_min, 10**y_max)
     
     plt.yscale('log')
@@ -1308,7 +1318,7 @@ def plot_radial_profile_dynamic(gps_data, REPT_data,
                     avg_psd[i_time, i_lstar] = np.nanmean(valid_psd) * gps_scale
 
     # 6. Initialize Figure and Plotting Elements
-    fig, ax = plt.subplots(figsize=(24, 8), dpi=100)
+    fig, ax = plt.subplots(figsize=(24, 10), dpi=100)
     
     # Setup Colormap
     colormap_name = 'plasma'
@@ -1448,7 +1458,7 @@ def plot_radial_profile_dynamic(gps_data, REPT_data,
     print(f"Saving Animation as {anim_name}.mp4...")
     save_path = os.path.join(base_save_folder or '.', f'{anim_name}.mp4')
     try:
-        ani.save(save_path, writer='ffmpeg', fps=30, dpi=100)
+        ani.save(save_path, writer='ffmpeg', fps=10, dpi=100)
         print(f"Success! Saved as {anim_name}.mp4")
     except Exception as e:
         print(f"Error saving animation: {e}")

@@ -210,12 +210,14 @@ def find_Loss_Cone(sat_data, height = 100, extMag='T89c'):
 
     # Pre-allocate output arrays
     n_points = len(sat_data['Epoch'])
+    b_local = np.zeros(n_points)
     b_min = np.zeros(n_points)
     P_min = np.zeros((n_points, 3))
     b_footpoint = np.zeros(n_points)
         
     # Loop through epochs (Tracing is inherently iterative in this library)    
     for i_epoch, epoch in enumerate(sat_data['Epoch'].UTC):
+        print(f"    Time Index: {i_epoch+1}/{len(sat_data['Epoch'])}", end='\r')
         # Setup Time and Coords
         current_time = ticktock_to_Lgm_DateTime(epoch, MagInfo.contents.c)
         lgm_lib.Lgm_Set_Coord_Transforms(current_time.contents.Date, current_time.contents.Time, MagInfo.contents.c)
@@ -233,6 +235,9 @@ def find_Loss_Cone(sat_data, height = 100, extMag='T89c'):
                             height, 0.01, 1e-7, MagInfo)
                 
         # Extract Results
+        b_vec = Lgm_Vector.Lgm_Vector()
+        MagInfo.contents.Bfield(pointer(current_vec),pointer(b_vec),MagInfo)
+        b_local[i_epoch] = lgm_lib.Lgm_Magnitude(pointer(b_vec)) * 1e-5 # nT -> Gauss
         b_min[i_epoch] = MagInfo.contents.Bmin * 1e-5 # nT -> Gauss
         P_min[i_epoch,:] = [MagInfo.contents.Pmin.x, MagInfo.contents.Pmin.y, MagInfo.contents.Pmin.z]
 
@@ -248,7 +253,7 @@ def find_Loss_Cone(sat_data, height = 100, extMag='T89c'):
     # Clean up memory
     lgm_lib.Lgm_FreeMagInfo(MagInfo)
 
-    return b_min, P_min, b_footpoint, loss_cone
+    return b_local, b_min, P_min, b_footpoint, loss_cone
 
 #%% Find local pitch angle
 def find_local90PA(sat_data):

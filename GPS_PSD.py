@@ -42,8 +42,8 @@ Mu_set = np.array((2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000)) # MeV/G 
 K_set = np.array((0.1, 1, 2)) # R_E*G^(1/2) (2nd Invariant)
 
 # Workflow Control
-mode = 'save'          # 'save' (calculate & save) or 'load' (load existing npz)
-storm_name = 'oct2012storm' 
+mode = 'load'          # 'save' (calculate & save) or 'load' (load existing npz)
+storm_name = 'oct2012storm'  # Storm Identifier
 extMag = 'TS04'        # Magnetic Model: 'T89c' or 'TS04'
 
 # Data Paths
@@ -53,9 +53,10 @@ base_save_folder = os.path.join(GPS_data_root, storm_name)
 
 # --- Storm Date Definitions (Dictionary Map) ---
 storm_dates = {
+    'oct2012storm':     (dt.datetime(2012, 10, 7), dt.datetime(2012, 10, 11)),
+    'sep2013drop':      (dt.datetime(2013, 9, 22), dt.datetime(2013, 9, 27)),
     'april2017storm':   (dt.datetime(2017, 4, 21), dt.datetime(2017, 4, 26)),
     'aug2018storm':     (dt.datetime(2018, 8, 25), dt.datetime(2018, 8, 28)),
-    'oct2012storm':     (dt.datetime(2012, 10, 7), dt.datetime(2012, 10, 11)),
     'latefeb2019storm': (dt.datetime(2019, 2, 27), dt.datetime(2019, 3, 4)),
     'may2019storm':     (dt.datetime(2019, 5, 10), dt.datetime(2019, 5, 17)),
     'sep2019storm':     (dt.datetime(2019, 8, 31), dt.datetime(2019, 9, 3))
@@ -259,12 +260,12 @@ if __name__ == '__main__':
 #%% Plot Data
 # Control Plotting Options
 plot_monoenergetic_flux_flag = False
-plot_allenergy_flux_flag = True
+plot_allenergy_flux_flag = False
 plot_flux_all_flag = False
-plot_psd_flag = True
+plot_psd_flag = False
 plot_combined_psd_flag = False
-plot_energies_flag = True
-plot_PAD_flag = False
+plot_energies_flag = False
+plot_PAD_flag = True
 plot_radial_flag = False
 plot_radial_dynamic_flag = False
 
@@ -376,66 +377,118 @@ if plot_energies_flag:
 # Plot PAD Comparison between GPS and REPT
 if plot_PAD_flag:
     print("Generating Plot: PAD Comparison...")
-    time_select = dt.datetime(start_date.year, 8, 31, 8, 30, 0)
-    #time_select = dt.datetime(start_date.year, 10, 9, 13, 30, 0)
-    # Call Function
-    plot_pad_comparison(
-        gps_data=storm_data,            
-        gps_energy=energyofmualpha, 
-        gps_alpha=alphaofK,
-        REPT_data=REPT_data,
-        REPT_energyofmualpha=REPT_energyofmualpha,
-        QD_storm_data=QD_storm_data,
-        time_select=time_select, 
-        gps_pad_models=PAD_models,
-        REPT_sat_select='rbspa',
-        extMag=extMag,
-        K=0.1, Mu=2000, 
-        textsize=textsize
-    )
+    # time_start = dt.datetime(start_date.year, 10, 9, 7, 0, 0) # for oct2012storm
+    # time_stop = dt.datetime(stop_date.year, 10, 10, 0, 0) # for oct2012storm
+
+    time_start = dt.datetime(start_date.year, 9, 23, 12, 0, 0) # for sep2013drop
+    time_stop = dt.datetime(stop_date.year, 9, 25, 12, 0, 0) # for sep2013drop
+
+    # time_start = dt.datetime(start_date.year, 2, 28, 8, 0, 0) # for feb2019storm
+    # time_stop = dt.datetime(stop_date.year, 3, 1, 6, 0, 0) # for feb2019storm
+
+    # time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
+    # time_stop = dt.datetime(stop_date.year, 9, 1, 0, 0, 0) # for sep2019storm
+
+    time_select = None
+    #time_select = dt.datetime(start_date.year, 10, 9, 12, 0, 0)
+
+    if time_select:
+        print(f" Generating PAD Comparison at {time_select}...")
+        # Call Function
+        plot_pad_comparison(
+            gps_data=storm_data,            
+            gps_energy=energyofmualpha, 
+            gps_alpha=alphaofK,
+            REPT_data=REPT_data,
+            REPT_energyofmualpha=REPT_energyofmualpha,
+            QD_storm_data=QD_storm_data,
+            time_select=time_select, 
+            gps_pad_models=PAD_models,
+            REPT_sat_select='rbspa',
+            extMag=extMag,
+            K=0.1, Mu=2000, 
+            textsize=textsize
+        )
+    else:
+        current_time = time_start
+        while current_time <= time_stop:
+            print(f" Generating PAD Comparison at {current_time}...")
+            # Call Function
+            plot_pad_comparison(
+                gps_data=storm_data,            
+                gps_energy=energyofmualpha, 
+                gps_alpha=alphaofK,
+                REPT_data=REPT_data,
+                REPT_energyofmualpha=REPT_energyofmualpha,
+                QD_storm_data=QD_storm_data,
+                time_select=current_time, 
+                gps_pad_models=PAD_models,
+                REPT_sat_select='rbspa',
+                extMag=extMag,
+                K=0.1, Mu=2000, 
+                textsize=textsize
+            )
+            current_time += dt.timedelta(minutes=30)
 
 # Plot PSD Radial Profile with REPT and CXD data (Static)
 if plot_radial_flag:
+    # time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
+    # time_stop = dt.datetime(stop_date.year, 9, 1, 0, 0, 0) # for sep2019storm
     
-    time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
-    time_stop = dt.datetime(stop_date.year, 8, 31, 20, 0, 0) # for sep2019storm
-    
-    gps_time_start = dt.datetime(start_date.year, 8, 31, 10, 0, 0) # for sep2019storm
-    gps_time_stop = dt.datetime(stop_date.year, 8, 31, 14, 0, 0) # for sep2019storm
-    '''
-    time_start = dt.datetime(start_date.year, 10, 8, 4, 0, 0) # for oct2012storm
-    time_stop = dt.datetime(stop_date.year, 10, 10, 0, 0) # for oct2012storm
+    # gps_time_start = dt.datetime(start_date.year, 8, 31, 10, 0, 0) # for sep2019storm
+    # gps_time_stop = dt.datetime(stop_date.year, 8, 31, 14, 0, 0) # for sep2019storm
+
+    # time_start = dt.datetime(start_date.year, 10, 8, 4, 0, 0) # for oct2012storm
+    # time_stop = dt.datetime(stop_date.year, 10, 10, 0, 0) # for oct2012storm
 
     # oct2012storm: 8,4 to 8,12 ; 8,12 8,20 ; 8,20 to 9,4 ; 9,4 to 9,12 ; 9,12 to 9,20
-    gps_time_start = dt.datetime(start_date.year, 10, 9, 4, 0, 0) # for oct2012storm
-    gps_time_stop = dt.datetime(stop_date.year, 10, 9, 12, 0, 0) # for oct2012storm
-    '''
+    #gps_time_start = dt.datetime(start_date.year, 10, 9, 4, 0, 0) # for oct2012storm
+    #gps_time_stop = dt.datetime(stop_date.year, 10, 9, 12, 0, 0) # for oct2012storm
+
+    time_start = dt.datetime(start_date.year, 9, 23, 12, 0, 0) # for sep2013drop
+    time_stop = dt.datetime(stop_date.year, 9, 25, 12, 0, 0) # for sep2013drop
+
+    gps_time_start = dt.datetime(start_date.year, 9, 24, 10, 0, 0) # for sep2019storm
+    gps_time_stop = dt.datetime(stop_date.year, 9, 24, 13, 0, 0) # for sep2019storm
+
+    # time_start = dt.datetime(start_date.year, 2, 28, 8, 0, 0) # for feb2019storm
+    # time_stop = dt.datetime(stop_date.year, 3, 1, 6, 0, 0) # for feb2019storm
+
     print("Generating Plot: Static Radial Profile...")
     plot_radial_profile_static(
         gps_data=storm_data, REPT_data=REPT_data,
         time_start=time_start, time_stop=time_stop,
         gps_time_start=gps_time_start, gps_time_stop=gps_time_stop, SHOW_GPS_DATA=True,
         REPT_sat_select='rbspa', K=0.1, Mu=2000, 
-        MLT_range=12, time_delta=30, skip_interval=1,
-        lstar_min = 4, lstar_max = 5.3, lstar_delta=0.1,
-        min_val = 1e-9, max_val = 1e-5, textsize=textsize)
+        MLT_range=12, time_delta=10, skip_interval=1,
+        lstar_min = 3.8, lstar_max = 5.7, lstar_delta=0.1,
+        min_val = 1e-10, max_val = 1e-6, textsize=textsize)
 
 # Plot PSD Radial Profile with REPT and CXD data (Dynamic)
 if plot_radial_dynamic_flag:
-    time_start = dt.datetime(start_date.year, 10, 8, 4, 0, 0) # for oct2012storm
-    time_stop = dt.datetime(stop_date.year, 10, 10, 0, 0) # for oct2012storm
+    # time_start = dt.datetime(start_date.year, 8, 31, 8, 0, 0) # for sep2019storm
+    # time_stop = dt.datetime(stop_date.year, 9, 1, 0, 0, 0) # for sep2019storm
+    
+    # time_start = dt.datetime(start_date.year, 10, 8, 4, 0, 0) # for oct2012storm
+    # time_stop = dt.datetime(stop_date.year, 10, 10, 0, 0) # for oct2012storm
 
-    gps_time_start = dt.datetime(start_date.year, 10, 8, 4, 0, 0) # for oct2012storm
-    gps_time_stop = dt.datetime(stop_date.year, 10, 10, 0, 0, 0) # for oct2012storm
+    # gps_time_start = dt.datetime(start_date.year, 10, 8, 4, 0, 0) # for oct2012storm
+    # gps_time_stop = dt.datetime(stop_date.year, 10, 10, 0, 0, 0) # for oct2012storm
+        
+    time_start = dt.datetime(start_date.year, 9, 24, 10, 0, 0) # for sep2013drop
+    time_stop = dt.datetime(stop_date.year, 9, 24, 13, 0, 0) # for sep2013drop
+
+    # time_start = dt.datetime(start_date.year, 2, 28, 8, 0, 0) # for feb2019storm
+    # time_stop = dt.datetime(stop_date.year, 3, 1, 6, 0, 0) # for feb2019storm
 
     print("Generating Plot: Dynamic Radial Profile...")
     plot_radial_profile_dynamic(
         gps_data=storm_data, REPT_data=REPT_data,
         time_start=time_start, time_stop=time_stop,
         gps_time_start=gps_time_start, gps_time_stop=gps_time_stop, SHOW_GPS_DATA=True,
-        REPT_sat_select='rbspb', K=0.1, Mu=2000,
-        MLT_range=12, time_delta=30, skip_interval=1,
-        lstar_min = 3.4, lstar_max = 5.4, lstar_delta=0.1,
-        min_val = 1e-11, max_val = 1e-5, textsize=textsize, 
-        base_save_folder = base_save_folder, anim_name = f'{storm_name}_radial_profile_sliding', sliding_window=True)
+        REPT_sat_select='rbspa', K=0.1, Mu=2000, 
+        MLT_range=12, time_delta=10, skip_interval=1,
+        lstar_min = 3.8, lstar_max = 5.7, lstar_delta=0.1,
+        min_val = 1e-10, max_val = 1e-6, textsize=textsize,
+        base_save_folder = base_save_folder, anim_name = f'{storm_name}_radial_profile_sliding_dropout', sliding_window=True)
 # %%
